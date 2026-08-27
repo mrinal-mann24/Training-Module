@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  // Self-contained server bundle for the Docker image: `node server.js`
+  // runs without node_modules or the source tree (see Dockerfile).
+  output: "standalone",
   experimental: {
     // The proxy layer (proxy.ts) has its OWN body cap (10 MB default),
     // separate from serverActions.bodySizeLimit below. A learner attaching

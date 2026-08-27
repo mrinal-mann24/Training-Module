@@ -19,6 +19,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-08-27 (later 6): PRODUCTION DEPLOYMENT SETUP — Docker + compose + runbook for the Hostinger VPS (code-complete; NOT yet deployed)
+
+User has a Hostinger VPS (`srv1701205.hstgr.cloud` / 187.127.173.25, KVM 8, Docker Manager with existing containers incl. Traefik and Uptime Kuma) and asked for a proper production deployment. Built the full containerization + runbook; **no server-side steps executed yet — deployment itself is the user's next action.**
+
+- `next.config.ts`: `output: 'standalone'` (self-contained `server.js`, no node_modules in the runtime image). Build verified clean with the change.
+- `Dockerfile`: 3-stage (npm ci → build → node:22-alpine runner), non-root `nextjs` user, `NEXT_PUBLIC_*` as build ARGs (inlined client-side at build time), `HOSTNAME=0.0.0.0`.
+- `.dockerignore`: excludes `.env*` (secrets never enter build context/layers), node_modules, context/, xmls/, seed/, scripts/, supabase/.
+- `docker-compose.yml`: host port `${APP_PORT:-3005}` (3000 range is crowded on that VPS), `env_file: .env`, restart unless-stopped, healthcheck on `/api/health`, log rotation, commented Traefik-labels block for the domain+HTTPS step (network/certresolver names must be read off the existing Traefik config).
+- `app/api/health/route.ts` (new): liveness-only probe (deliberately touches no dependency) for the compose healthcheck + Uptime Kuma.
+- `.github/workflows/deploy.yml`: manual-dispatch deploy (SSH → git pull → compose up --build → image prune); needs `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY` repo secrets. Push-trigger auto-deploy documented as an opt-in one-liner.
+- `DEPLOYMENT.md` (new, the runbook): one-time prereqs (production `.env` — **`INNGEST_DEV` must be REMOVED** and real Inngest keys set; Langfuse keys reachable-or-deleted; Supabase Auth Site/Redirect URLs → public URL; `seed-pack.mjs` run from local against prod; **Inngest Cloud app sync at `<url>/api/inngest` after first boot** — scoring queues forever without it), first-deploy SSH steps, update procedure, ops table, troubleshooting.
+- `architecture.md` gained a Deployment section (invariants renumbered to §7).
+- Gates: build clean (standalone `server.js` emitted, `/api/health` in the route table). Pending (user, on the VPS): clone → `.env` → `docker compose up -d --build` → Inngest sync → live smoke test per DEPLOYMENT.md; decide subdomain-via-Traefik vs IP:3005 quick start.
+
 ## Session log — 2026-08-27 (later 5): WANDOR REDESIGN — landing, auth, dashboard restyled; dark mode removed (frontend only)
 
 User supplied a full "Wandor" landing-page design spec (Geist body font, Special Elite typewriter wordmark, white minimal palette, terracotta `#905831` accent, pill buttons, frosted-glass card over a looping background video) and asked for it to be applied across the product with this project's content: landing, login/logout, onboarding, dashboard, and the inner surfaces inheriting the same fonts/colors. White only, no dark theme. **No backend code touched** — server actions, auth logic, redirects, queries all unchanged.

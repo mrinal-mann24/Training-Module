@@ -1,0 +1,31 @@
+name: Deploy to VPS
+
+# Manual one-click deploy from the Actions tab. To auto-deploy every push
+# to master, add:
+#   push:
+#     branches: [master]
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull and rebuild on the VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            cd /opt/apps/ai-tutor
+            git pull
+            docker compose up -d --build
+            docker image prune -f
+            docker compose ps

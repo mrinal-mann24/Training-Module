@@ -1,0 +1,19 @@
+node_modules
+.next
+.git
+.github
+.claude
+.vscode
+
+# Never bake secrets into image layers — runtime env comes from docker-compose env_file.
+.env
+.env.*
+!.env.example
+
+# Not needed to build or run the app
+context
+xmls
+seed
+scripts
+supabase
+*.md

@@ -120,7 +120,15 @@ Every LLM response is validated against its Zod schema before it is persisted or
 
 All jobs are durable — if the process restarts mid-window, the job resumes from its persisted state rather than restarting or being lost.
 
-## 6. Invariants
+## 6. Deployment
+
+- **Target:** self-hosted Hostinger VPS (`srv1701205.hstgr.cloud`), one Docker container (`ai-tutor`) alongside the VPS's existing containers, managed by Docker Compose. Supabase, OpenRouter, Inngest, and Langfuse remain external SaaS — the container is stateless and disposable; all learner data lives in Supabase.
+- **Image:** multi-stage Dockerfile → Next.js `output: 'standalone'`, non-root user, runtime env injected via `env_file` (secrets never baked into layers; `.dockerignore` excludes `.env*`). `NEXT_PUBLIC_*` values are build args (inlined into the browser bundle).
+- **Health:** `/api/health` liveness route, wired to the compose healthcheck (and available for uptime monitoring).
+- **Deploys:** `git pull && docker compose up -d --build` on the VPS, or the manual-dispatch GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs the same over SSH. Full runbook: `DEPLOYMENT.md`.
+- **Production requirements:** `INNGEST_DEV` unset + real Inngest keys + the app synced in Inngest Cloud at `<public-url>/api/inngest` (jobs silently queue forever otherwise); Supabase Auth Site/Redirect URLs pointed at the public URL.
+
+## 7. Invariants
 
 These rules must never be violated by any code path, feature, or shortcut:
 
