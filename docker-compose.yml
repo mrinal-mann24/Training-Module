@@ -11,11 +11,17 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    # No `ports:` mapping — Traefik reaches the container over the internal
-    # Docker network below, so this app's port 3000 never touches the host
-    # and can't collide with any other container already using host port 3000.
-    expose:
-      - "3000"
+    # Published to localhost only (127.0.0.1), not 0.0.0.0 — never reachable
+    # directly from the internet, only from Traefik. This mirrors how the
+    # existing apps on this VPS are wired: Traefik runs with
+    # `network_mode: host` and routes to a fixed `loadbalancer.server.url`
+    # (confirmed via `docker inspect aia-flagged-automation...`, which uses
+    # `http://127.0.0.1:8000`) rather than reaching into each app's own
+    # bridge network. APP_PORT picks the host-loopback port for this app;
+    # must not collide with another app's published port — check
+    # `ss -tlnp` or `docker ps` on the VPS first (8000 is taken by aia).
+    ports:
+      - "127.0.0.1:${APP_PORT:-3005}:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -28,32 +34,15 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Served via the Traefik project template already running on this VPS
-    # (Hostinger Docker Manager's default Traefik: external "traefik-proxy"
-    # network, "websecure" entrypoint, "letsencrypt" certresolver).
-    # APP_DOMAIN defaults to a sslip.io address (wildcard DNS that resolves
-    # to your VPS IP automatically, no DNS setup needed) — set the exact
-    # value from your Traefik container's TRAEFIK_HOST env var in .env.
-    # Swap in a real domain later by changing APP_DOMAIN and redeploying —
-    # no rebuild needed, it's routing only.
-    networks:
-      - traefik-proxy
+    # Traefik discovers this container purely from labels (Docker provider
+    # has exposedbydefault=false, so traefik.enable=true is required).
+    # APP_DOMAIN must be set in .env — this VPS's Traefik uses sslip.io
+    # addresses in the form <label>.187-127-173-25.sslip.io (confirmed from
+    # the aia-flagged-automation app's own labels), so
+    # APP_DOMAIN=ai-tutor.187-127-173-25.sslip.io is the expected value.
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ai-tutor.rule=Host(`${APP_DOMAIN}`)"
       - "traefik.http.routers.ai-tutor.entrypoints=websecure"
       - "traefik.http.routers.ai-tutor.tls.certresolver=letsencrypt"
-      - "traefik.http.services.ai-tutor.loadbalancer.server.port=3000"
-
-    # --- Fallback: expose directly on a host port instead of Traefik ---
-    # Only needed if this VPS's Traefik network isn't actually named
-    # "traefik-proxy" (check with `docker network ls`) or you'd rather skip
-    # the reverse proxy for now. Comment out the `networks:`/`labels:` block
-    # above (and the top-level `networks:` section below), then uncomment:
-    #
-    # ports:
-    #   - "${APP_PORT:-3005}:3000"
-
-networks:
-  traefik-proxy:
-    external: true
+      - "traefik.http.services.ai-tutor.loadbalancer.server.url=http://127.0.0.1:${APP_PORT:-3005}"
