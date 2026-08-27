@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -10,6 +9,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        wandor: {
+          dark: "#0a0a0a",
+          text: "#1a1a1a",
+          muted: "#767676",
+          prompt: "#905831",
+        },
         neutral: {
           0: "#FFFFFF",
           50: "#F7F7F8",
@@ -37,7 +42,7 @@ const config: Config = {
         "status-success": "#1F9254",
         "status-warning": "#B7791F",
         "status-error": "#D0342C",
-        "status-info": "#314DD0",
+        "status-info": "#905831",
       },
       borderRadius: {
         sm: "6px",
@@ -47,12 +52,8 @@ const config: Config = {
         full: "9999px",
       },
       fontFamily: {
-        sans: [
-          '"Helvetica Neue"',
-          "Helvetica",
-          "Arial",
-          "sans-serif",
-        ],
+        sans: ["Geist", "sans-serif"],
+        display: ['"Special Elite"', "serif"],
         mono: [
           "ui-monospace",
           '"SF Mono"',

@@ -36,7 +36,7 @@ export default async function ProgressPage() {
 
   return (
     <main className="min-h-screen bg-bg-canvas px-4 py-10">
-      <div className="mx-auto flex w-full max-w-[1150px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-287.5 flex-col gap-6">
         <div>
           <h1 className="text-xl text-text-primary">
             Module {currentModule} · Level {currentLevel}

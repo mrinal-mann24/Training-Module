@@ -19,6 +19,19 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-08-27 (later 5): WANDOR REDESIGN — landing, auth, dashboard restyled; dark mode removed (frontend only)
+
+User supplied a full "Wandor" landing-page design spec (Geist body font, Special Elite typewriter wordmark, white minimal palette, terracotta `#905831` accent, pill buttons, frosted-glass card over a looping background video) and asked for it to be applied across the product with this project's content: landing, login/logout, onboarding, dashboard, and the inner surfaces inheriting the same fonts/colors. White only, no dark theme. **No backend code touched** — server actions, auth logic, redirects, queries all unchanged.
+
+- **Fonts**: Google Fonts `<link>` (preconnect + Special Elite 400 / Geist 400-700) in `app/layout.tsx`; Tailwind `font-sans` → Geist, new `font-display` → Special Elite. `lucide-react` installed (Upload, ArrowUpRight icons).
+- **Dark mode removed**: theme init script deleted from layout, `.dark` block deleted from `globals.css`, `darkMode: "class"` removed from Tailwind config, `ThemeToggle.tsx` + `TokenSwatches.tsx` deleted (only the old landing used them; no `dark:` variants existed anywhere).
+- **Tokens repointed, not renamed** (`globals.css`), so every existing component restyles itself with zero markup churn: ink `#1a1a1a`, accent black `#0a0a0a` (blue `#314DD0` retired), user bubble/accent-subtle warm sand `#f4efe9`, ai-thinking terracotta pulse, warm borders. New Tailwind `wandor.{dark,text,muted,prompt}` colors.
+- **New landing** (`app/page.tsx` → `app/components/Hero.tsx` + shared `VideoBackdrop.tsx`): spec-faithful hero — nav (wordmark "ai tutor", center links, Login + Start Training pills → /login), clamp headline "Ready to run real books?", project subtitle, liquid-glass prompt card with terracotta sample learner prompt, `.xml` upload button, black CTA.
+- **Auth**: new `app/(auth)/layout.tsx` renders the same video backdrop + wordmark for login AND onboarding; both pages became `bg-white/[0.55]` glass cards; AuthForm/OnboardingForm inputs restyled (`rounded-2xl` glass inputs, black pill submits, terracotta links/notes). All form behavior identical.
+- **Dashboard**: landing-style nav (wordmark + Log out outline pill), "Welcome back." headline, two `rounded-[32px]` cards — Modules placeholder (muted, "Coming soon") and Task (black-bordered, terracotta eyebrow, arrow-circle CTA, hover lift → /chat).
+- Chat + progress pages untouched by design (they inherit fonts/tokens); `context/ui-context.md` rewritten for the new system.
+- Gates: tsc clean, lint clean, tests pass, build clean (see below). Live check pending: video loads from the external Figma URL (page still reads fine white-on-white if it ever 404s).
+
 ## Session log — 2026-08-27 (later 4): pack answer-key leak via help button FIXED (136/136)
 
 Live find: on the Blossom pack, each help click past step 3 generated a FRESH step 3 that solved a different random transaction (the button carries no which-transaction signal against a 99-transaction key) — clicking repeatedly leaked the authored answer key one entry per click. Two fixes:
