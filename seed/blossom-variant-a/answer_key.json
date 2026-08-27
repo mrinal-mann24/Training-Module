@@ -1,0 +1,4801 @@
+{
+  "entries": [
+    {
+      "sequence": 1,
+      "correct_account": "Ludhiana Woodworks",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 112100.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-010",
+      "narration": "Being goods sold to Ludhiana Woodworks vide INV-010",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 1,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 95000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-010",
+      "narration": "Being goods sold to Ludhiana Woodworks vide INV-010",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 2,
+      "correct_account": "Office Equipment",
+      "account_aliases": [
+        "Office Computers",
+        "Computers",
+        "Fixed Assets"
+      ],
+      "dr_cr": "Dr",
+      "amount": 80000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-115",
+      "narration": "Being office computers from Deccan Traders vide bill DT-115",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 2,
+      "correct_account": "Deccan Traders",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 94400.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-115",
+      "narration": "Being office computers from Deccan Traders vide bill DT-115",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 3,
+      "correct_account": "Deccan Traders",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 50000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-99",
+      "narration": "NEFT/N26040201/DECCAN/MARCHPMT — Deccan Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 3,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 50000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-99",
+      "narration": "NEFT/N26040201/DECCAN/MARCHPMT — Deccan Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 4,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 250000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B1",
+      "narration": "Being trading goods from Mumbai Suppliers vide bill MS-B1",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 4,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 295000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B1",
+      "narration": "Being trading goods from Mumbai Suppliers vide bill MS-B1",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 5,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 80000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B3",
+      "narration": "Being trading goods (3rd bill) from Mumbai Suppliers vide bill MS-B3",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 5,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 94400.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B3",
+      "narration": "Being trading goods (3rd bill) from Mumbai Suppliers vide bill MS-B3",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 6,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 75000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-M-101",
+      "narration": "UPI/26040301/KAREMP/MARCH-INV — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 6,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 75000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-M-101",
+      "narration": "UPI/26040301/KAREMP/MARCH-INV — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 7,
+      "correct_account": "Rajasthan Home Decor",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 129800.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-011",
+      "narration": "Being goods sold to Rajasthan Home Decor vide INV-011",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 7,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 110000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-011",
+      "narration": "Being goods sold to Rajasthan Home Decor vide INV-011",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 8,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 120000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B2",
+      "narration": "Being trading goods (2nd bill) from Mumbai Suppliers vide bill MS-B2",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 8,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 141600.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B2",
+      "narration": "Being trading goods (2nd bill) from Mumbai Suppliers vide bill MS-B2",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 9,
+      "correct_account": "Cash",
+      "account_aliases": [
+        "Cash-in-Hand",
+        "Cash A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 17700.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being cash sale to walk-in customer",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 9,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 15000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being cash sale to walk-in customer",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 10,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 55000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CW-101",
+      "narration": "Being trading goods from Coimbatore Wholesale vide bill CW-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 10,
+      "correct_account": "Coimbatore Wholesale",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 64900.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CW-101",
+      "narration": "Being trading goods from Coimbatore Wholesale vide bill CW-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 11,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 120000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-M1",
+      "narration": "NEFT/N26040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 11,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 120000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-M1",
+      "narration": "NEFT/N26040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 12,
+      "correct_account": "Coimbatore Wholesale",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 64900.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CW-101",
+      "narration": "NEFT/N26040502/COIMWHL/PMT — Coimbatore Wholesale",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 12,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 64900.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CW-101",
+      "narration": "NEFT/N26040502/COIMWHL/PMT — Coimbatore Wholesale",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 13,
+      "correct_account": "Coimbatore Interiors",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 76700.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-012",
+      "narration": "Being goods sold to Coimbatore Interiors vide INV-012",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 13,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 65000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-012",
+      "narration": "Being goods sold to Coimbatore Interiors vide INV-012",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 14,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 112100.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-010",
+      "narration": "UPI/26040601/LUDWOODS/PMT — Ludhiana Woodworks",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 14,
+      "correct_account": "Ludhiana Woodworks",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 112100.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-010",
+      "narration": "UPI/26040601/LUDWOODS/PMT — Ludhiana Woodworks",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 15,
+      "correct_account": "Ahmedabad Elite",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 212400.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-013",
+      "narration": "Being goods sold to Ahmedabad Elite vide INV-013",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 15,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 180000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-013",
+      "narration": "Being goods sold to Ahmedabad Elite vide INV-013",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 16,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 90000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-092",
+      "narration": "Being trading goods from Chennai Suppliers vide bill CS-092",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 16,
+      "correct_account": "Chennai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 106200.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-092",
+      "narration": "Being trading goods from Chennai Suppliers vide bill CS-092",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 17,
+      "correct_account": "TDS Payable — u/s 194J",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 5000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "GOVT PMT — TDS DEPOSIT 194J MARCH — TDS Payable — u/s 194J",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 17,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 5000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "GOVT PMT — TDS DEPOSIT 194J MARCH — TDS Payable — u/s 194J",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 18,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 90000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-M-102",
+      "narration": "UPI/26040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 18,
+      "correct_account": "Delhi Bazaar",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 90000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-M-102",
+      "narration": "UPI/26040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 19,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 212400.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-001",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 19,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 180000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-001",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 20,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 120000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "KT-055",
+      "narration": "Being trading goods from Kolkata Traders vide bill KT-055",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 20,
+      "correct_account": "Kolkata Traders",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 141600.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "KT-055",
+      "narration": "Being trading goods from Kolkata Traders vide bill KT-055",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 21,
+      "correct_account": "Ahmedabad Import",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 106200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "AI-201",
+      "narration": "NEFT/N26040801/AHMDIMPT/PMT — Ahmedabad Import",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 21,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 106200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "AI-201",
+      "narration": "NEFT/N26040801/AHMDIMPT/PMT — Ahmedabad Import",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 22,
+      "correct_account": "Kochi Modern",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 103840.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-014",
+      "narration": "Being goods sold to Kochi Modern vide INV-014",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 22,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 88000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-014",
+      "narration": "Being goods sold to Kochi Modern vide INV-014",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 23,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 90000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "AI-201",
+      "narration": "Being trading goods from Ahmedabad Import vide bill AI-201",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 23,
+      "correct_account": "Ahmedabad Import",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 106200.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "AI-201",
+      "narration": "Being trading goods from Ahmedabad Import vide bill AI-201",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 24,
+      "correct_account": "Chennai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 106200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-092",
+      "narration": "NEFT/N26040901/CHENSUP/PMT — Chennai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 24,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 106200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-092",
+      "narration": "NEFT/N26040901/CHENSUP/PMT — Chennai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 25,
+      "correct_account": "Kerala Handicrafts",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 259600.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-002",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-002",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 25,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 220000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-002",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-002",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 26,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 129800.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-011",
+      "narration": "UPI/26041001/RAJHOME/PMT — Rajasthan Home Decor",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 26,
+      "correct_account": "Rajasthan Home Decor",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 129800.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-011",
+      "narration": "UPI/26041001/RAJHOME/PMT — Rajasthan Home Decor",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 27,
+      "correct_account": "Vizag Furnishings",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 84960.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-015",
+      "narration": "Being goods sold to Vizag Furnishings vide INV-015",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 27,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 72000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-015",
+      "narration": "Being goods sold to Vizag Furnishings vide INV-015",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 28,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 76700.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-012",
+      "narration": "NEFT/N26041101/COIMINT/PMT — Coimbatore Interiors",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 28,
+      "correct_account": "Coimbatore Interiors",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 76700.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-012",
+      "narration": "NEFT/N26041101/COIMINT/PMT — Coimbatore Interiors",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 29,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 35400.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-016",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-016",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 29,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 30000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-016",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-016",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 30,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 45000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-093",
+      "narration": "Being trading goods (2nd bill) from Chennai Suppliers vide bill CS-093",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 30,
+      "correct_account": "Chennai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 53100.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-093",
+      "narration": "Being trading goods (2nd bill) from Chennai Suppliers vide bill CS-093",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 31,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 150000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "ADV-01",
+      "narration": "UPI/26041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 31,
+      "correct_account": "Kerala Handicrafts",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 150000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "ADV-01",
+      "narration": "UPI/26041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 32,
+      "correct_account": "Gujarat Retail",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 141600.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-006",
+      "narration": "Being goods sold to Gujarat Retail vide INV-006",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 32,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 120000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-006",
+      "narration": "Being goods sold to Gujarat Retail vide INV-006",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 33,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 100000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-013",
+      "narration": "UPI/26041301/AHMDELITE/PMT — Ahmedabad Elite",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 33,
+      "correct_account": "Ahmedabad Elite",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 100000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-013",
+      "narration": "UPI/26041301/AHMDELITE/PMT — Ahmedabad Elite",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 34,
+      "correct_account": "Bengaluru Local Store",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 64900.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-017",
+      "narration": "Being goods sold to Bengaluru Local Store vide INV-017",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 34,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 55000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-017",
+      "narration": "Being goods sold to Bengaluru Local Store vide INV-017",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 35,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 60000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "TT-234",
+      "narration": "Being trading goods from Trichy Textiles vide bill TT-234",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 35,
+      "correct_account": "Trichy Textiles",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 70800.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "TT-234",
+      "narration": "Being trading goods from Trichy Textiles vide bill TT-234",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 36,
+      "correct_account": "Delhi Bazaar",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 177000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003",
+      "narration": "Being goods sold to Delhi Bazaar vide INV-003",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 36,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 150000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003",
+      "narration": "Being goods sold to Delhi Bazaar vide INV-003",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 37,
+      "correct_account": "Purchases",
+      "account_aliases": [
+        "Trading goods",
+        "Purchase of Goods"
+      ],
+      "dr_cr": "Dr",
+      "amount": 65000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "VV-042",
+      "narration": "Being trading goods from Vizag Vendors vide bill VV-042",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 37,
+      "correct_account": "Vizag Vendors",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 76700.0,
+      "voucher_type": "Purchase",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "VV-042",
+      "narration": "Being trading goods from Vizag Vendors vide bill VV-042",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 38,
+      "correct_account": "Deccan Traders",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 94400.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-115",
+      "narration": "NEFT/N26041501/DECCAN/APRIL-PMT — Deccan Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 38,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 94400.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DT-115",
+      "narration": "NEFT/N26041501/DECCAN/APRIL-PMT — Deccan Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 39,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 84960.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-015",
+      "narration": "UPI/26041502/VIZAGFURN/PMT — Vizag Furnishings",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 39,
+      "correct_account": "Vizag Furnishings",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 84960.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-015",
+      "narration": "UPI/26041502/VIZAGFURN/PMT — Vizag Furnishings",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 40,
+      "correct_account": "Mysore Decor",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 49560.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-018",
+      "narration": "Being goods sold to Mysore Decor vide INV-018",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 40,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 42000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-018",
+      "narration": "Being goods sold to Mysore Decor vide INV-018",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 41,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 450000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B1, MS-B2, MS-B3 (part)",
+      "narration": "NEFT/N26041601/MUMBAISUP/PMT — Mumbai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 41,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 450000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "MS-B1, MS-B2, MS-B3 (part)",
+      "narration": "NEFT/N26041601/MUMBAISUP/PMT — Mumbai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 42,
+      "correct_account": "Trichy Textiles",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 70800.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "TT-234",
+      "narration": "NEFT/N26041602/TRICHYTX/PMT — Trichy Textiles",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 42,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 70800.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "TT-234",
+      "narration": "NEFT/N26041602/TRICHYTX/PMT — Trichy Textiles",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 43,
+      "correct_account": "Sales Returns",
+      "account_aliases": [
+        "Sales Return",
+        "Sales",
+        "Credit Sales A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 15000.0,
+      "voucher_type": "Credit Note",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "Being sales return from Karnataka Emporium against INV-001",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 43,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 17700.0,
+      "voucher_type": "Credit Note",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "Being sales return from Karnataka Emporium against INV-001",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 44,
+      "correct_account": "Legal & Professional Charges",
+      "account_aliases": [
+        "Legal services",
+        "Professional services",
+        "Legal Fees",
+        "Professional Fees"
+      ],
+      "dr_cr": "Dr",
+      "amount": 30000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SL-018",
+      "narration": "Being legal services from Sharma Legal vide bill SL-018",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 44,
+      "correct_account": "Sharma Legal",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 35400.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SL-018",
+      "narration": "Being legal services from Sharma Legal vide bill SL-018",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 45,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 64900.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-017",
+      "narration": "UPI/26041701/BNGLOCAL/PMT — Bengaluru Local Store",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 45,
+      "correct_account": "Bengaluru Local Store",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 64900.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-017",
+      "narration": "UPI/26041701/BNGLOCAL/PMT — Bengaluru Local Store",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 46,
+      "correct_account": "Bank Charges",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 350.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BANK CHRG SMS+MAINT",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 46,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 350.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BANK CHRG SMS+MAINT",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 47,
+      "correct_account": "Legal & Professional Charges",
+      "account_aliases": [
+        "Legal services",
+        "Professional services",
+        "Legal Fees",
+        "Professional Fees"
+      ],
+      "dr_cr": "Dr",
+      "amount": 75000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194J",
+      "tds_rate": 10.0,
+      "tds_base": 75000,
+      "bill_reference": "CA26-101",
+      "narration": "Being professional services from Mehta & Associates vide bill CA26-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 47,
+      "correct_account": "Mehta & Associates",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 81000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194J",
+      "tds_rate": 10.0,
+      "tds_base": 75000,
+      "bill_reference": "CA26-101",
+      "narration": "Being professional services from Mehta & Associates vide bill CA26-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 48,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 150000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "UPI/26041801/KAREMP/PMT — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 48,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 150000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001",
+      "narration": "UPI/26041801/KAREMP/PMT — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 49,
+      "correct_account": "Kolkata Traders",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 141600.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "KT-055",
+      "narration": "NEFT/N26041802/KOLKATRD/PMT — Kolkata Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 49,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 141600.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "KT-055",
+      "narration": "NEFT/N26041802/KOLKATRD/PMT — Kolkata Traders",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 50,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 53100.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-007",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-007",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 50,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 45000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-007",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-007",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 51,
+      "correct_account": "Mumbai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 29500.0,
+      "voucher_type": "Debit Note",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DN-M1",
+      "narration": "Being goods returned to Mumbai Suppliers vide DN-M1",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 51,
+      "correct_account": "Purchase Returns",
+      "account_aliases": [
+        "Purchase Return",
+        "Purchases",
+        "Trading goods"
+      ],
+      "dr_cr": "Cr",
+      "amount": 25000.0,
+      "voucher_type": "Debit Note",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DN-M1",
+      "narration": "Being goods returned to Mumbai Suppliers vide DN-M1",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 52,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 103840.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-014",
+      "narration": "UPI/26041901/KOCHIMOD/PMT — Kochi Modern",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 52,
+      "correct_account": "Kochi Modern",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 103840.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-014",
+      "narration": "UPI/26041901/KOCHIMOD/PMT — Kochi Modern",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 53,
+      "correct_account": "Kerala Handicrafts",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 165200.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-019",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-019",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 53,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 140000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-019",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-019",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 54,
+      "correct_account": "Repairs & Maintenance",
+      "account_aliases": [
+        "Interior work",
+        "Repairs"
+      ],
+      "dr_cr": "Dr",
+      "amount": 150000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194C",
+      "tds_rate": 2.0,
+      "tds_base": 150000,
+      "bill_reference": "BI-047",
+      "narration": "Being interior work from Balaji Interiors vide bill BI-047",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 54,
+      "correct_account": "Balaji Interiors",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 174000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194C",
+      "tds_rate": 2.0,
+      "tds_base": 150000,
+      "bill_reference": "BI-047",
+      "narration": "Being interior work from Balaji Interiors vide bill BI-047",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 55,
+      "correct_account": "Mehta & Associates",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 81000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CA26-101",
+      "narration": "NEFT/N26042001/MEHTA/PMT — Mehta & Associates",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 55,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 81000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CA26-101",
+      "narration": "NEFT/N26042001/MEHTA/PMT — Mehta & Associates",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 56,
+      "correct_account": "Chennai Suppliers",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 53100.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-093",
+      "narration": "NEFT/N26042002/CHENSUP2/PMT — Chennai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 56,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 53100.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "CS-093",
+      "narration": "NEFT/N26042002/CHENSUP2/PMT — Chennai Suppliers",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 57,
+      "correct_account": "Nagpur Retail",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 92040.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-020",
+      "narration": "Being goods sold to Nagpur Retail vide INV-020",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 57,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 78000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-020",
+      "narration": "Being goods sold to Nagpur Retail vide INV-020",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 58,
+      "correct_account": "Office Maintenance",
+      "account_aliases": [
+        "Housekeeping",
+        "Cleaning Charges"
+      ],
+      "dr_cr": "Dr",
+      "amount": 25000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BC-078",
+      "narration": "Being housekeeping from Bangalore Cleaning vide bill BC-078",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 58,
+      "correct_account": "Bangalore Cleaning",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 29500.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BC-078",
+      "narration": "Being housekeeping from Bangalore Cleaning vide bill BC-078",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 59,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 141600.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-006",
+      "narration": "UPI/26042101/GUJRETAIL/PMT — Gujarat Retail",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 59,
+      "correct_account": "Gujarat Retail",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 141600.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-006",
+      "narration": "UPI/26042101/GUJRETAIL/PMT — Gujarat Retail",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 60,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 49560.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-018",
+      "narration": "UPI/26042102/MYSDECOR/PMT — Mysore Decor",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 60,
+      "correct_account": "Mysore Decor",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 49560.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-018",
+      "narration": "UPI/26042102/MYSDECOR/PMT — Mysore Decor",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 61,
+      "correct_account": "Chennai Home Store",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 106200.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-004",
+      "narration": "Being goods sold to Chennai Home Store vide INV-004",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 61,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 90000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-004",
+      "narration": "Being goods sold to Chennai Home Store vide INV-004",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 62,
+      "correct_account": "Balaji Interiors",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 174000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BI-047",
+      "narration": "NEFT/N26042201/BALAJI/PMT — Balaji Interiors",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 62,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 174000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BI-047",
+      "narration": "NEFT/N26042201/BALAJI/PMT — Balaji Interiors",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 63,
+      "correct_account": "Bangalore Cleaning",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 29500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BC-078",
+      "narration": "NEFT/N26042202/BNGCLEAN/PMT — Bangalore Cleaning",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 63,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 29500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "BC-078",
+      "narration": "NEFT/N26042202/BNGCLEAN/PMT — Bangalore Cleaning",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 64,
+      "correct_account": "Kolkata Emporium",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 147500.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-021",
+      "narration": "Being goods sold to Kolkata Emporium vide INV-021",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 64,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 125000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-021",
+      "narration": "Being goods sold to Kolkata Emporium vide INV-021",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 65,
+      "correct_account": "Advertisement & Marketing",
+      "account_aliases": [
+        "Marketing collaterals",
+        "Advertising",
+        "Marketing Expenses"
+      ],
+      "dr_cr": "Dr",
+      "amount": 60000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194C",
+      "tds_rate": 2.0,
+      "tds_base": 60000,
+      "bill_reference": "SA-101",
+      "narration": "Being marketing collaterals from Signage Advertising vide bill SA-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 65,
+      "correct_account": "Signage Advertising",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 69600.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194C",
+      "tds_rate": 2.0,
+      "tds_base": 60000,
+      "bill_reference": "SA-101",
+      "narration": "Being marketing collaterals from Signage Advertising vide bill SA-101",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 66,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 100000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003",
+      "narration": "UPI/26042301/DBAZAAR/PMT — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 66,
+      "correct_account": "Delhi Bazaar",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 100000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003",
+      "narration": "UPI/26042301/DBAZAAR/PMT — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 67,
+      "correct_account": "Sharma Legal",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 35400.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SL-018",
+      "narration": "NEFT/N26042301/SLEGAL/PMT — Sharma Legal",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 67,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 35400.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SL-018",
+      "narration": "NEFT/N26042301/SLEGAL/PMT — Sharma Legal",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 68,
+      "correct_account": "Bharat Machinery",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 50000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "ADV-02",
+      "narration": "NEFT/N26042401/BHARATMAC/ADV — Bharat Machinery",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 68,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 50000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "ADV-02",
+      "narration": "NEFT/N26042401/BHARATMAC/ADV — Bharat Machinery",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 69,
+      "correct_account": "Vizag Vendors",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 76700.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "VV-042",
+      "narration": "NEFT/N26042402/VIZAGV/PMT — Vizag Vendors",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 69,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 76700.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "VV-042",
+      "narration": "NEFT/N26042402/VIZAGV/PMT — Vizag Vendors",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 70,
+      "correct_account": "Hyderabad Interiors",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 100300.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-008",
+      "narration": "Being goods sold to Hyderabad Interiors vide INV-008",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 70,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 85000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-008",
+      "narration": "Being goods sold to Hyderabad Interiors vide INV-008",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 71,
+      "correct_account": "Freight & Delivery Charges",
+      "account_aliases": [
+        "Logistics — April",
+        "Logistics",
+        "Delivery Charges",
+        "Freight"
+      ],
+      "dr_cr": "Dr",
+      "amount": 40000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DD-455",
+      "narration": "Being logistics — april from Delivery Direct vide bill DD-455",
+      "concept_tags": [
+        "purchase_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 71,
+      "correct_account": "Delivery Direct",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 47200.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DD-455",
+      "narration": "Being logistics — april from Delivery Direct vide bill DD-455",
+      "concept_tags": [
+        "purchase_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 72,
+      "correct_account": "Electricity Charges",
+      "account_aliases": [
+        "Electricity Expenses",
+        "Power Charges",
+        "BESCOM"
+      ],
+      "dr_cr": "Dr",
+      "amount": 4500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BILLPAY BESCOM ELEC APRIL",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 72,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 4500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BILLPAY BESCOM ELEC APRIL",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 73,
+      "correct_account": "Signage Advertising",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 69384.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SA-101",
+      "narration": "NEFT/N26042501/SIGNADV/PMT — Signage Advertising",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 73,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 69384.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SA-101",
+      "narration": "NEFT/N26042501/SIGNADV/PMT — Signage Advertising",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 74,
+      "correct_account": "Delhi Bazaar",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 112100.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-022",
+      "narration": "Being goods sold to Delhi Bazaar vide INV-022",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 74,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 95000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-022",
+      "narration": "Being goods sold to Delhi Bazaar vide INV-022",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 75,
+      "correct_account": "Rent",
+      "account_aliases": [
+        "Warehouse rent April",
+        "Warehouse Rent",
+        "Rent Expense",
+        "April Rent",
+        "Office Rent"
+      ],
+      "dr_cr": "Dr",
+      "amount": 40000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194I",
+      "tds_rate": 10.0,
+      "tds_base": 40000,
+      "bill_reference": "HR-118",
+      "narration": "Being warehouse rent april from Hero Rentals vide bill HR-118",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 75,
+      "correct_account": "Hero Rentals",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 43200.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": "194I",
+      "tds_rate": 10.0,
+      "tds_base": 40000,
+      "bill_reference": "HR-118",
+      "narration": "Being warehouse rent april from Hero Rentals vide bill HR-118",
+      "concept_tags": [
+        "purchase_voucher_basics",
+        "tds_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 76,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 92040.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-020",
+      "narration": "UPI/26042601/NAGPURRT/PMT — Nagpur Retail",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 76,
+      "correct_account": "Nagpur Retail",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 92040.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-020",
+      "narration": "UPI/26042601/NAGPURRT/PMT — Nagpur Retail",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 77,
+      "correct_account": "Hero Rentals",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 43200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "HR-118",
+      "narration": "NEFT/N26042602/HERORENT/PMT — Hero Rentals",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 77,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 43200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "HR-118",
+      "narration": "NEFT/N26042602/HERORENT/PMT — Hero Rentals",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 78,
+      "correct_account": "Bank Charges",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 720.34,
+      "voucher_type": "Payment",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BANK CHRG MAINT+IMPS+GST",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "gst_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 78,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 850.0,
+      "voucher_type": "Payment",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "BANK CHRG MAINT+IMPS+GST",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "gst_classification"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 79,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 70800.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-005",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-005",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 79,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 60000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-005",
+      "narration": "Being goods sold to Karnataka Emporium vide INV-005",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 80,
+      "correct_account": "Software Subscription",
+      "account_aliases": [
+        "SaaS subscription",
+        "Software Expenses",
+        "Subscription Charges",
+        "Software Services",
+        "CARESW"
+      ],
+      "dr_cr": "Dr",
+      "amount": 25000.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SC-909",
+      "narration": "Being saas subscription from Software Cloud LLC vide bill SC-909",
+      "concept_tags": [
+        "purchase_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 80,
+      "correct_account": "Software Cloud LLC",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 29500.0,
+      "voucher_type": "Purchase",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SC-909",
+      "narration": "Being saas subscription from Software Cloud LLC vide bill SC-909",
+      "concept_tags": [
+        "purchase_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 81,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 106200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-004",
+      "narration": "UPI/26042701/CHENHS/PMT — Chennai Home Store",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 81,
+      "correct_account": "Chennai Home Store",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 106200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-004",
+      "narration": "UPI/26042701/CHENHS/PMT — Chennai Home Store",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 82,
+      "correct_account": "Delivery Direct",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 47200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DD-455",
+      "narration": "NEFT/N26042702/DELDIR/PMT — Delivery Direct",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 82,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 47200.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "DD-455",
+      "narration": "NEFT/N26042702/DELDIR/PMT — Delivery Direct",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 83,
+      "correct_account": "Chennai Home Store",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 80240.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-023",
+      "narration": "Being goods sold to Chennai Home Store vide INV-023",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 83,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 68000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-023",
+      "narration": "Being goods sold to Chennai Home Store vide INV-023",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 84,
+      "correct_account": "Salaries",
+      "account_aliases": [
+        "Salary",
+        "Salary A/c",
+        "Staff Salary"
+      ],
+      "dr_cr": "Dr",
+      "amount": 40000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "NEFT/N26042801/PRIYAS/SAL",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 84,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 40000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "NEFT/N26042801/PRIYAS/SAL",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 85,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 100300.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-008",
+      "narration": "UPI/26042803/HYDINTR/PMT — Hyderabad Interiors",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 85,
+      "correct_account": "Hyderabad Interiors",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 100300.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-008",
+      "narration": "UPI/26042803/HYDINTR/PMT — Hyderabad Interiors",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 86,
+      "correct_account": "Packing Materials",
+      "account_aliases": [
+        "Packaging material",
+        "Packing Expenses"
+      ],
+      "dr_cr": "Dr",
+      "amount": 2800.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being cash purchase of packaging material from Krishna Packers",
+      "concept_tags": [
+        "payment_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 86,
+      "correct_account": "Cash",
+      "account_aliases": [
+        "Cash-in-Hand",
+        "Cash A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 2800.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being cash purchase of packaging material from Krishna Packers",
+      "concept_tags": [
+        "payment_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 87,
+      "correct_account": "Kerala Handicrafts",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 212400.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-009",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-009",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 87,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 180000.0,
+      "voucher_type": "Sales",
+      "gst_head": "IGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-009",
+      "narration": "Being goods sold to Kerala Handicrafts vide INV-009",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 88,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 45000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001 (bal), INV-016 (part)",
+      "narration": "UPI/26042901/KAREMP/PMT — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 88,
+      "correct_account": "Karnataka Emporium",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 45000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-001 (bal), INV-016 (part)",
+      "narration": "UPI/26042901/KAREMP/PMT — Karnataka Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 89,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 147500.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-021",
+      "narration": "UPI/26042902/KOLKEMP/PMT — Kolkata Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 89,
+      "correct_account": "Kolkata Emporium",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 147500.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-021",
+      "narration": "UPI/26042902/KOLKEMP/PMT — Kolkata Emporium",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 90,
+      "correct_account": "Software Cloud LLC",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 29500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SC-909",
+      "narration": "NEFT/N26042903/SCLOUD/PMT — Software Cloud LLC",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 90,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 29500.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "SC-909",
+      "narration": "NEFT/N26042903/SCLOUD/PMT — Software Cloud LLC",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 91,
+      "correct_account": "Bengaluru Boutique",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 47200.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-024",
+      "narration": "Being goods sold to Bengaluru Boutique vide INV-024",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 91,
+      "correct_account": "Sales",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 40000.0,
+      "voucher_type": "Sales",
+      "gst_head": "CGST",
+      "gst_rate": 18,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-024",
+      "narration": "Being goods sold to Bengaluru Boutique vide INV-024",
+      "concept_tags": [
+        "sales_voucher_basics",
+        "gst_classification",
+        "bill_by_bill_referencing"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 92,
+      "correct_account": "Software Subscription",
+      "account_aliases": [
+        "SaaS subscription",
+        "Software Expenses",
+        "Subscription Charges",
+        "Software Services",
+        "CARESW"
+      ],
+      "dr_cr": "Dr",
+      "amount": 18000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "NEFT/N26043001/CARESW/PMT — 6-month software subscription Apr–Sep",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 92,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Cr",
+      "amount": 18000.0,
+      "voucher_type": "Payment",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "NEFT/N26043001/CARESW/PMT — 6-month software subscription Apr–Sep",
+      "concept_tags": [
+        "payment_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 93,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 1200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "INT CREDIT SAVINGS Q4",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 93,
+      "correct_account": "Interest Income",
+      "account_aliases": [
+        "Interest Received",
+        "Bank Interest",
+        "Interest",
+        "INT CREDIT"
+      ],
+      "dr_cr": "Cr",
+      "amount": 1200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "INT CREDIT SAVINGS Q4",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 94,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 5000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "UPI/26043002/UNKNOWN/REF",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 94,
+      "correct_account": "Suspense",
+      "account_aliases": [
+        "Suspense A/c",
+        "Suspense Account"
+      ],
+      "dr_cr": "Cr",
+      "amount": 5000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "UPI/26043002/UNKNOWN/REF",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 95,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 55000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003 (bal)",
+      "narration": "UPI/26043003/DBAZAAR2/PMT — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 95,
+      "correct_account": "Delhi Bazaar",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 55000.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-003 (bal)",
+      "narration": "UPI/26043003/DBAZAAR2/PMT — Delhi Bazaar",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 96,
+      "correct_account": "HDFC Bank — 1234",
+      "account_aliases": [
+        "HDFC Bank",
+        "Bank",
+        "HDFC Bank A/c"
+      ],
+      "dr_cr": "Dr",
+      "amount": 47200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-024",
+      "narration": "UPI/26043004/BNGBOUTQ/PMT — Bengaluru Boutique",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 96,
+      "correct_account": "Bengaluru Boutique",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 47200.0,
+      "voucher_type": "Receipt",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": "INV-024",
+      "narration": "UPI/26043004/BNGBOUTQ/PMT — Bengaluru Boutique",
+      "concept_tags": [
+        "receipt_voucher_basics",
+        "bill_by_bill_referencing",
+        "narration_discipline"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 97,
+      "correct_account": "Prepaid Software",
+      "account_aliases": [
+        "Prepaid Expenses",
+        "Prepaid Exp",
+        "Prepaid Services"
+      ],
+      "dr_cr": "Dr",
+      "amount": 15000.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being 5/6 of the CARESW software subscription (May-Sep) carried to Prepaid",
+      "concept_tags": [
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 97,
+      "correct_account": "Software Subscription",
+      "account_aliases": [
+        "SaaS subscription",
+        "Software Expenses",
+        "Subscription Charges",
+        "Software Services",
+        "CARESW"
+      ],
+      "dr_cr": "Cr",
+      "amount": 15000.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being 5/6 of the CARESW software subscription (May-Sep) carried to Prepaid",
+      "concept_tags": [
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 98,
+      "correct_account": "Rent",
+      "account_aliases": [
+        "Warehouse rent April",
+        "Warehouse Rent",
+        "Rent Expense",
+        "April Rent",
+        "Office Rent"
+      ],
+      "dr_cr": "Dr",
+      "amount": 35000.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being April office rent provided as outstanding — unpaid at month-end",
+      "concept_tags": [
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 98,
+      "correct_account": "Outstanding Expenses",
+      "account_aliases": [
+        "Rent Payable",
+        "Outstanding Rent",
+        "Expenses Payable"
+      ],
+      "dr_cr": "Cr",
+      "amount": 35000.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being April office rent provided as outstanding — unpaid at month-end",
+      "concept_tags": [
+        "journal_voucher_basics"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Output CGST",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 40680.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Output SGST",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 40680.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Output IGST",
+      "account_aliases": [],
+      "dr_cr": "Dr",
+      "amount": 352980.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Input CGST",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 52314.83,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Input SGST",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 52314.83,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "Input IGST",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 171000.0,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    },
+    {
+      "sequence": 99,
+      "correct_account": "GST Payable",
+      "account_aliases": [],
+      "dr_cr": "Cr",
+      "amount": 158710.34,
+      "voucher_type": "Journal",
+      "gst_head": null,
+      "gst_rate": null,
+      "tds_section": null,
+      "tds_rate": null,
+      "tds_base": null,
+      "bill_reference": null,
+      "narration": "Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
+      "concept_tags": [
+        "journal_voucher_basics",
+        "gst_classification",
+        "trial_balance_tie_out"
+      ],
+      "requires_source_document": false,
+      "source_document_type": null
+    }
+  ],
+  "opening_balances": [
+    {
+      "account": "HDFC Bank — 1234",
+      "dr_cr": "Dr",
+      "amount": 800000.0
+    },
+    {
+      "account": "Cash",
+      "dr_cr": "Dr",
+      "amount": 5000.0
+    },
+    {
+      "account": "Office Equipment",
+      "dr_cr": "Dr",
+      "amount": 120000.0
+    },
+    {
+      "account": "Karnataka Emporium",
+      "dr_cr": "Dr",
+      "amount": 75000.0
+    },
+    {
+      "account": "Delhi Bazaar",
+      "dr_cr": "Dr",
+      "amount": 90000.0
+    },
+    {
+      "account": "Input CGST c/f",
+      "dr_cr": "Dr",
+      "amount": 5000.0
+    },
+    {
+      "account": "Input SGST c/f",
+      "dr_cr": "Dr",
+      "amount": 5000.0
+    },
+    {
+      "account": "Deccan Traders",
+      "dr_cr": "Cr",
+      "amount": 50000.0
+    },
+    {
+      "account": "Mumbai Suppliers",
+      "dr_cr": "Cr",
+      "amount": 120000.0
+    },
+    {
+      "account": "TDS Payable — u/s 194J",
+      "dr_cr": "Cr",
+      "amount": 5000.0
+    },
+    {
+      "account": "Capital — Anita Rao",
+      "dr_cr": "Cr",
+      "amount": 925000.0
+    }
+  ]
+}

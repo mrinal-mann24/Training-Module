@@ -1,0 +1,39 @@
+@config "../tailwind.config.ts";
+@import "tailwindcss";
+
+:root {
+  --bg-canvas: #ffffff;
+  --bg-surface: #f7f7f8;
+  --bg-surface-raised: #ffffff;
+  --bg-user-bubble: #eef1fc;
+  --border-default: #dedee2;
+  --border-subtle: #ececee;
+  --text-primary: #232326;
+  --text-secondary: #5c5c64;
+  --text-muted: #9a9aa2;
+  --accent: #314dd0;
+  --accent-hover: #2a41b8;
+  --accent-subtle: #eef1fc;
+  --ai-thinking: rgb(49 77 208 / 60%);
+}
+
+.dark {
+  --bg-canvas: #141416;
+  --bg-surface: #1c1c1f;
+  --bg-surface-raised: #232326;
+  --bg-user-bubble: #22284a;
+  --border-default: #2e2e33;
+  --border-subtle: #242427;
+  --text-primary: #f2f2f3;
+  --text-secondary: #a6a6ad;
+  --text-muted: #6e6e76;
+  --accent: #5d74e0;
+  --accent-hover: #7086e6;
+  --accent-subtle: #1d2440;
+  --ai-thinking: rgb(93 116 224 / 60%);
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+}

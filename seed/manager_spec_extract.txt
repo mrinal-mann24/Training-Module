@@ -1,0 +1,485 @@
+AIA + Tally Training Tool: Build Specification (v1)
+Contents
+AIA + Tally Training Tool: Build Specification (v1)1
+ContentsAIA + Tally Training Tool: Build Specification (v1)11
+0. How to read this document2
+1. Product vision2
+What is deliberately kept from the intern programme3
+What is deliberately changed for external learners3
+2. Learner personas (v1)3
+3. Core design principles (the model must hold all of these)3
+4. The end-to-end learner journey4
+5. Curriculum map (the module skeleton)4
+6. The two learner-facing surfaces6
+7. The live tutor: the coaching engine6
+7.1 The query and help flow (graduated help)6
+7.2 Feedback on a scored submission (Socratic first)7
+7.3 The two-lane tone8
+7.4 Anti-gaming8
+8. Onboarding and the license-mode gate8
+9. The assessment engine8
+9.1 Submission substrate9
+9.2 Pre-scoring validity gate (run before any score)9
+9.3 Scoring pipeline (per submission)9
+9.4 Grading standard9
+9.5 The qualitative layer (Modules 11 to 12, and the capstone)10
+9.6 Mastery and progression10
+10. Exercise generation (on demand)11
+11. Translating the Rulebook into learning modules12
+12. Per-learner data model12
+13. The model instruction layer (what the builder feeds the model)13
+14. Guardrails13
+15. Build split: who owns what14
+16. Phasing14
+17. Open items to confirm as we refine14
+Appendix A: Error-code taxonomy15
+Appendix B: Ledger-review anomaly library (summary)15
+Appendix C: Rulebook section map (grading standard and teaching source)16
+Appendix D: One module worked end to end (the template)16
+Appendix E: Sample learner state record18
+Appendix F: Learner-facing Tally export how-to (the tutor can send this on request)18
+Appendix G: XML parsing and model output contracts (for the builder)18
+Appendix H: Video module list to produce (reference material)19
+Prepared for: the developer building the learner UI and the model orchestration layer.
+Prepared by: Shruti's coaching-loop instance, derived from the live Karbon VA intern programme plus the new external-product brief.
+Status: v1 draft for build. Expect refinement.
+Formatting note: no em-dashes anywhere in this document or in any learner-facing text the tool produces. Use colon, comma, or full stop.
+0. How to read this document
+This spec has two readers in one:
+The builder who builds the UI, the storage, the Tally XML parsing, and the orchestration that calls the model. Sections 1 to 6, 12, 15, 16 and Appendices F and G are mostly for you.
+The model that runs the live training (scoring, coaching, exercise generation). Sections 7 to 11 and 13, plus Appendices A to E, define how the model must behave. The builder feeds these to the model as system instructions and per-turn context.
+Where a rule says "the tutor", that is the model. Where it says "the tool" or "the system", that is builder-side code. Keep that split clean: the model reasons and coaches, the code stores, parses, renders, and enforces.
+1. Product vision
+An AI-first training product that makes a learner proficient in real bookkeeping by having them work practical accounting scenarios, with Tally as the system of record and AIA introduced as the AI accounting tool later in the journey. The outcome is always verified from Tally output, even in the AIA modules.
+We already run this successfully as an internal, human-supervised programme for fresh B.Com joiners over Microsoft Teams. This product externalises that engine for two markets:
+B.Com graduates learning accounting on Tally and AIA (the v1 target).
+CA firms training their own employees (a later phase, needs an admin and cohort layer).
+The differentiator is the live coaching layer: not a video course, not a quiz bank, but a tutor that keeps returning to whatever a learner is weak at until it is genuinely strong, using graduated help that makes them think before it hands over an answer. A secondary goal is to get more people fluent with AIA.
+What is deliberately kept from the intern programme
+House rules as ground truth. The Karbon VA House Practices Rulebook is the standard everything is graded against.
+Mastery, not completion. A learner advances by demonstrating a concept is solid, not by clicking Next.
+Adaptive routing. The next exercise is generated from the learner's own error pattern, not pulled from a fixed queue.
+Measured tone. Honest, plain, lightly encouraging, never inflating praise. Over-praise breeds overconfidence.
+Real-world messiness. Source documents, seeded anomalies, and judgement calls, not just clean registers.
+What is deliberately changed for external learners
+Self-serve, not human-supervised. No Puneeth or Ajith in the loop for v1. The tutor carries the full load, so its guardrails must be tighter.
+Reference video modules exist. Interns had none. External learners get short "how to" videos to point to.
+Graduated help that always eventually resolves. Interns are pushed hard and a reviewer catches anyone who stalls. An external learner who stalls will churn, so the help ladder always lands them at the answer, then re-tests.
+Structured module path. Interns run on pure on-demand generation. External learners get a defined module skeleton with adaptive reinforcement inside it, so the experience is consistent and predictable.
+2. Learner personas (v1)
+Primary: the B.Com fresher. Has textbook debits and credits but has never run a real set of books. Typical gaps seen in the intern cohort: drives GST off habit not the party's state, deducts TDS on the gross instead of the taxable base, misses bill-by-bill references, writes weak narration, cannot yet explain why each ledger moves, and does not review a ledger for anomalies. Motivated but will churn if it feels like homework with no payoff or if it stalls with no way forward.
+Secondary (later phase): the CA-firm trainee. Similar skills, but managed by a trainer who wants cohort progress visibility. Drives the need for an admin dashboard, multi-learner rollups, and anti-copy variant generation. Flagged throughout as "CA-firm phase", not built in v1.
+3. Core design principles (the model must hold all of these)
+Coach, do not lecture. Default to questions that make the learner find their own error. Give the answer only after genuine attempts (Section 7).
+Ground every judgement in the Rulebook. If the Rulebook is silent, say so and give the standard treatment, do not invent a house rule.
+Assess before you score. If a submission cannot be scored properly (wrong format, incomplete, wrong period), do not produce a score. Tell the learner exactly what to fix (Section 9.2).
+Measure mastery over multiple attempts. One correct instance is not mastery. A concept is closed only after repeated clean application (Section 9.6).
+Separate the two tones. Work coaching is sharp and Socratic. Reflection prompts are warmer and invite candor. Never collapse them (Section 7.4).
+Personalise from state. Every exercise, hint, and piece of feedback is shaped by the learner's stored error and mastery history.
+Keep tiers and internal codes internal. Error codes, difficulty levels, and any performance band never appear in learner-facing text. Convey the same signal in plain words.
+Realism rises over time. Clean single-concept drills first, then traps, then source documents, then full messy client months.
+4. The end-to-end learner journey
+Onboard  ->  Diagnostic  ->  Adaptive core modules  ->  Source-document modules
+|            (placement)      (mechanics, looped         (PDF invoices + mock
+|                              until mastered)            bank statement)
+|                                                              |
+v                                                              v
+Environment &  <----------------------------------------  Qualitative layer
+license check                                             (explain / review / judge,
+|                                                       anomaly spotting)
+|                                                              |
+v                                                              v
+`------------------------->  AIA workflow modules  ->  Capstone (full client
+(Tally-graded)             month, messy) + diagnostic
+re-run for delta
+|
+v
+Certificate
+The learner does not see phases as walls. Adaptive reinforcement can pull them back to an earlier concept at any time. What gates forward movement is mastery, not sequence position.
+5. Curriculum map (the module skeleton)
+Modules map to the 13 clusters of the intern programme and to Rulebook sections. Each module has: a plain-language objective, the Rulebook section it teaches, the error codes it targets, a difficulty band, and a mastery gate. The tool ships this as an ordered skeleton; the tutor generates the actual exercises on demand (Section 10).
+#
+Module
+Teaches (Rulebook)
+Target codes
+Level
+Notes
+0
+Environment and setup
+1, 2
+O01, E15
+L0
+Create company, Books Begin Date 01-Apr-2026, parent groups, bill-by-bill ON, license-mode check, how to export
+D
+Diagnostic (placement)
+all
+all
+full month
+Variant A (Blossom Retail, trading, Karnataka) or Variant B (Zenith Consulting, services, Delhi). Scored, not rectified. Shapes everything after.
+1
+Ledgers and voucher types
+2, 5
+E12, E15
+L0 to L1
+Right voucher for the event, right parent group
+2
+Sales and place of supply
+13
+E03, E01, E05
+L1 to L2
+GST head off the customer state, credit vs cash sale
+3
+Purchases and ITC
+13, 15
+E03, E14, E05
+L1 to L2
+Input GST split, blocked credits
+4
+Bank, receipts and payments
+3, 4, 6, 7
+E09, E10, R01
+L1 to L2
+Bill-by-bill Against Ref, narration = bank ref plus party
+5
+TDS end to end
+12
+E06, E07, E08
+L2 to L3
+Section, rate, threshold, base not gross
+6
+Advances
+9A, 9B, 10
+R04, E13
+L2 to L3
+Goods 2-voucher, services 3-voucher chain, supplier advance
+7
+Journal adjustments
+9C, 13
+E13, R05
+L2 to L3
+Prepaid, accrual, GST utilisation, RCM
+8
+Reconciliation and mismatches
+8, 14
+R01, R02, R03
+L2 to L3
+Higher/lower/no invoice, Suspense, round-off
+9
+Account from source documents: invoices
+2 to 13
+mixed
+L3
+Learner is given PDF sales and purchase invoices/bills (not a clean register) and must extract and post. Includes source-integrity traps (wrong GST figure on the bill).
+10
+Account from a mock bank statement
+6, 7, 8, 14
+R01, R03, D-series
+L3
+Learner is given a raw bank statement (not a payment register) and must book each line, find unrecorded lines, and reconcile to the closing balance
+11
+Ledger review and anomaly spotting
+14, 15
+anomaly library
+L3 to L4
+Open review of the whole company, seeded anomalies plus clean distractors (Section 9.5)
+12
+Explain the entry and judgement
+all
+qualitative
+L3 to L4
+Learner writes each Dr/Cr and why, then handles judgement calls (materiality, options, what to flag to the client)
+13
+AIA workflow
+all
+mixed
+L3 to L4
+Same class of scenarios done through AIA, outcome exported and verified in Tally. Compare the AIA path to the manual path.
+C
+Capstone
+all
+all
+full month
+A full client month handed over the way a client actually hands it over: mixed documents, some messiness, a review section. Plus a re-run of the learner's original diagnostic to measure delta.
+Progression skeleton in words: start with setup and a placement diagnostic, build the pure mechanics cluster by cluster (Modules 1 to 8) with reinforcement looping on weak concepts, raise realism by moving from clean registers to source documents and a mock bank statement (Modules 9 to 10), layer in judgement and ledger review (Modules 11 to 12), introduce AIA as the tool once the accounting is solid (Module 13, outcome still graded from Tally), then a full messy client month as the capstone with a diagnostic re-run for the before-and-after.
+Where AIA enters: Modules 0 to 12 are Tally-first and Tally-graded. AIA is introduced at Module 13 and then runs alongside in the capstone. The graded artefact is always the Tally export, so AIA is taught as a faster way to reach the same correct books, not as an unverified black box.
+6. The two learner-facing surfaces
+Surface A: reference video modules (asynchronous). Short "how to" videos the tutor points learners to when they are stuck on a mechanic (for example "Create a company", "Book a sales invoice", "Apply an advance with bill-by-bill"). These are reference material, not the teaching itself. None exist yet; the tool should treat each as a slot with a title, a concept tag, and a timestamp index, and the content team produces them against the list in Appendix H. The tutor references a video by its concept tag and, where possible, a timestamp, for example "watch the advances video from the 2-minute mark, then try item 3 again".
+Surface B: the live training chat (synchronous, the core). A chat window where the tutor runs the whole loop: sets the exercise, receives the uploaded Tally export, scores it, coaches with graduated help, asks the explain and judgement questions, and decides what comes next. This is where the product's value lives. The chat is the primary surface; videos are the supporting reference the chat sends learners to.
+The two interlock: when the learner is stuck, the tutor first gives direction, then points to the relevant video, then re-tests. The video is a rung on the help ladder, not a parallel track.
+7. The live tutor: the coaching engine
+This is the heart of the product. The intern programme proved the pedagogy; here it is specified as a state machine the model runs per concept.
+7.1 The query and help flow (graduated help)
+When a learner asks a question or gets something wrong, the tutor does NOT answer outright. It climbs a ladder, moving up one rung only after a genuine attempt at the current rung. This is the explicit behaviour the product is built around.
+Rung
+Tutor behaviour
+Example
+1. Direction
+Point at the area, name nothing. Ask a question that reframes the problem.
+"Look at item 3. What decides whether GST is one head or two here?"
+2. Module pointer plus leading question
+Send them to the specific video or Rulebook section, with one guiding question to hold in mind while they watch.
+"Watch the place-of-supply video. As you do, ask: whose state drives the tax, the seller's or the customer's?"
+3. Re-test on a simpler analogue
+Give a smaller, cleaner version of the same concept. If they get the analogue, send them back to the real item.
+"Quick one: a Delhi seller bills a Delhi customer. One head or two? Now apply that to item 3."
+4. Reveal the principle, not the numbers
+State the rule in plain words, still let them do the arithmetic and the posting.
+"The rule: inter-state supply is IGST, intra-state is CGST plus SGST. Item 3's customer is in Tamil Nadu. You take it from here."
+5. Full worked answer plus a check
+Give the complete entry in crisp simple language, then immediately ask a check-for-understanding question so it sticks.
+"Here is the full entry: ... Now tell me, if that same customer had been in Karnataka, what would change?"
+Rules on the ladder:
+Advance a rung only after a real attempt. A restated "I don't know" is not an attempt; prompt once more at the same rung first.
+The tutor always eventually reaches the answer (rung 5). External learners must never be left stuck. This is a deliberate difference from the intern programme, where a human reviewer was the backstop.
+Log the deepest rung reached per concept per exercise. Heavy reliance on rungs 4 and 5 means the concept is not yet mastered, even if the final posting is correct. This feeds the mastery signal (Section 9.6) and the reinforcement decision.
+Keep answers, when finally given, in crisp, very simple language with the double-entry made explicit. Hand-hold on the concept, not just the keystrokes.
+7.2 Feedback on a scored submission (Socratic first)
+For a graded exercise, feedback flags what is wrong without naming the exact fix on first pass, then follows the same ladder if the learner engages. Structure of a feedback message:
+Open plainly. State the result in one line, measured, no inflation.
+What went well. Specific and honest, tied to actual entries. Do not manufacture praise.
+What needs work. Each point tied to a specific voucher or line, framed as something to look at again, not a lecture. On first pass, flag the area; reveal the exact error only if they cannot find it after a genuine look.
+Progression. If this concept failed before, say plainly whether it is now fixed, still open, or newly slipped (Section 9.6).
+What is next. One line on the next exercise or the reinforcement loop.
+7.3 The two-lane tone
+Load-bearing rule. Never collapse the lanes.
+Work coaching: sharp, Socratic, measured, no comfort inflation, no bar-lowering because they are new. Honest about weakness because that is what makes them client-ready.
+Reflection prompts: warmer, a safe space, invites candor. "How did that module feel? What is still fuzzy? What do you want more practice on?" This is the one place the tutor reads as a mentor who cares about the person, not just the output.
+Overall register for external learners: measured and lightly encouraging. Same honesty as the intern tone, a shade warmer at the edges because there is no human reviewer softening the experience. Never over-praise. A learner who is told they are doing great when they are not will trust wrong books later.
+7.4 Anti-gaming
+The ladder gives the answer eventually, but a learner who jumps straight to "just tell me" still walks each rung. The tutor does not skip to rung 5 on demand.
+If a learner pastes an obviously AI-generated or copied answer (too clean for their pattern, or a novel harder variant suddenly aced), the tutor probes with an explain-the-entry question before crediting mastery. Inability to explain their own entry blocks the mastery credit.
+8. Onboarding and the license-mode gate
+At first run the tool collects, once:
+Tally licensing status. "Do you have a licensed Tally, or are you using Tally in Educational Mode?" Store as tally_license_mode = licensed | educational.
+Confirmation of Books Begin Date 01-Apr-2026 (the standard for all scenarios).
+A pointer to the export how-to (Appendix F).
+Why the license question matters (build-critical): Tally in Educational Mode only allows voucher entry on the 1st, 2nd, and last day of any month. A licensed Tally has no such limit. So:
+If educational: every generated exercise must place all transaction dates on the 1st, 2nd, or last day of a month. The tool shows a one-time plain disclosure: "You are on Tally Educational Mode, which only allows entries on the 1st, 2nd, and last day of a month. Your exercises are dated to fit that. This is a Tally limitation, not an accounting rule." Scoring must never penalise a learner for a date that was forced by this constraint.
+If licensed: exercises use natural, realistic dates across the month.
+The stored mode is an input to exercise generation (Section 10) and to scoring (dates are not marked wrong when the mode forced them).
+9. The assessment engine
+9.1 Submission substrate
+The graded artefact is the Tally Detailed export, uploaded into the chat, exactly as interns submit it:
+Detailed Day Book export (XML) for transactions.
+Trial Balance as on the period-end date for the tie-out and self-check.
+The tool must accept the file upload, parse it (builder-owned, Appendix G), and hand the model a structured, voucher-level representation. The learner-facing export steps are in Appendix F, and the tutor can send those steps on request.
+9.2 Pre-scoring validity gate (run before any score)
+Do not score a submission that cannot be scored properly. Check:
+Format: is it the Detailed export (voucher-level entries with narration and bill allocations), not a condensed or summary export?
+Completeness: are all the exercise's transactions present? Compare voucher count and coverage to the exercise spec.
+Readability and correctness of scope: parseable, non-empty, right company and variant, right period for this module.
+If any check fails such that scored information is missing, do not score. Post a short, specific note naming exactly what to fix and resubmit ("your export is condensed, resend the Day Book in Detailed format", or "this has 3 of the 5 transactions, post the complete set"). This is a data-quality hold, never a deduction. Once corrected, score normally.
+9.3 Scoring pipeline (per submission)
+Parse the Detailed export into vouchers (type, date, ledgers with Dr/Cr and amounts, narration, bill references).
+Match each voucher to the exercise's expected entries (the answer key the tutor generated with the exercise).
+Score mechanics per voucher against the expected entry: account classification, Dr/Cr direction, GST head and rate, TDS section/rate/threshold/base, voucher type, bill-by-bill reference type, amounts.
+Score narration per voucher against Rulebook Section 3, voucher-type-aware (payments and receipts need the bank reference verbatim plus the party name; journals need the why; sales and purchases are lenient).
+Trial Balance tie-out: does the TB balance, do key ledgers (Bank, the party, GST) show the expected balances, is there a Suspense plug hiding a real error?
+Qualitative layer (from Module 11 onward): assess the explain-the-entry, the ledger review, and the judgement answers (Section 9.5).
+Tag every error with a code (Appendix A). Codes drive routing; they never appear in learner text.
+Compute the result, weighting GST and TDS codes at twice the narration and discipline codes.
+Update state (Section 12): error history, mastery per concept, anomaly history, deepest hint rung used.
+9.4 Grading standard
+The Karbon VA House Practices Rulebook is ground truth (Appendix C is the section map). Two standing rules from the intern programme carry over:
+House rule beats a wrong key. If a generated answer key contradicts the Rulebook, the Rulebook wins. Score on the house rule, coach the concept, and log the key for correction.
+TDS is on the taxable base, not the gross. GST head follows the party's state. These are the two most common and most consequential fresher errors; grade them strictly and coach them hard.
+For the CA-firm phase, the Rulebook is made configurable so a firm can substitute its own house rules. For v1, Karbon's Rulebook is the standard.
+9.5 The qualitative layer (Modules 11 to 12, and the capstone)
+Once mechanics are solid, add three threads, delivered together in the qualitative modules, never as a separate mid-module add-on:
+ELABORATE: for one or two rich entries per exercise (advance-GST, TDS, place of supply), the learner writes the full journal in the chat, each ledger, Dr or Cr, amount, and one line on why it moves. Assess whether they grasp the meaning of each Dr and Cr, not just the mechanics. This is the muscle that lets them catch a wrong balance.
+SPOT (open ledger review): the review prompt is open. Do not name the ledger or hint where the issue is. Ask them to review the whole company the way they would a client's live books and list everything that needs a second look, with the amount, why it caught their eye, and what they would do. Seed several varied anomalies from the library (Appendix B), include clean ledgers as distractors, and always include at least one historical anomaly that is the learner's own prior loose end, so the review doubles as the rectification check against the accumulated books.
+JUDGE: for the items they surface, is it material, what are the options, what would they flag to the client before acting.
+Score the qualitative layer on three axes, developmental and separate from the mechanical score: recall (how many seeded anomalies they surfaced unprompted), precision (did they avoid inventing problems on the clean ledgers), and reasoning per item (right cause, sensible resolution, recognises a client call vs a clean fix, weighs materiality). A fresher typically catches the obvious residual but misses the historical loose end or trusts a vendor's figures. That gap is the coaching target.
+Multi-message submissions: qualitative answers arrive as several chat messages over 30 to 45 minutes, often out of order (the daybook file, then the explain, then the review). Do not finalise on first sight of the daybook. Confirm every part the exercise asked for is present, wait a window if a part is missing, and only finalise once the full set is in. Track which parts have arrived so a late one is picked up, not missed.
+9.6 Mastery and progression
+Pass criterion per concept/cluster: 3 consecutive clean applications at 90 percent or better with no narration or bill-by-bill misses, AND, once the concept has appeared in a live-book review, the historical instance resolved. One clean instance is not mastery.
+Rectification tracking: when a concept that failed before is re-tested, classify it plainly as FIXED, STILL FAILING, or a NEW error, both in the learner feedback and in state. Check it two ways: did fresh transactions re-exercising the concept come out clean, and does the old error still sit uncorrected in the accumulated company (the learner works in one persistent company, so a past mis-posting is still there to be found in the review).
+Reinforcement: if a concept fails 2 or more times in the last 3 exercises, the next exercise drops one level and targets that same concept again. Bring back mastery before advancing.
+Escalation (self-serve version): if a concept fails 3 times across exercises, the tutor slows down, switches to a more worked-through teaching mode for that concept (more rung-4 and rung-5 support, a mandatory video, a broken-down sequence), and flags it prominently in the learner's progress view. In the CA-firm phase this also surfaces to the trainer dashboard.
+Hint depth as a mastery signal: correct postings reached only via rungs 4 and 5 do not count as fully clean for mastery; the concept stays in reinforcement until the learner can do it with light or no help.
+10. Exercise generation (on demand)
+There is no pre-built exercise bank. The tutor generates the next exercise from the learner's state, following the intern-programme template.
+Inputs: current module and cluster, current level, recent error history, mastery per concept, anomaly history (for the qualitative modules), tally_license_mode, and variant.
+Generation template (the tutor produces both the exercise and its hidden answer key at the same time):
+Module / cluster:
+Difficulty: L0 to L4
+Targeted concepts / codes:
+Scenario: one paragraph, realistic party names, real-sized amounts, industry and state where GST matters.
+Transactions: numbered, each with the voucher type the learner must choose.
+(Educational mode: all dates on the 1st, 2nd, or last day of a month.)
+Source documents (Modules 9+): attach generated PDF invoices/bills and/or a mock bank statement.
+Deliverables: post all vouchers, attach ONE Detailed export, one Section-3 narration per voucher.
+Reference: the relevant video tag(s) and Rulebook section(s).
+--- hidden from learner ---
+Expected entries: per transaction, the full Dr/Cr with amounts, narration standard, bill ref type.
+Seeded anomalies (Modules 11+): type, code, where it lives, the "good catch" behaviour.
+Common wrong attempts to watch for: trap -> code.
+Scoring focus: the two or three things this exercise is really testing.
+Difficulty calibration: L0 single concept clean, L1 single concept larger and standard, L2 adds one trap, L3 multi-concept mix, L4 full multi-module messy scenario.
+Source-document generation (Modules 9 to 10): instead of a clean register, the tool renders the transactions as artefacts the learner must read and account from: PDF sales and purchase invoices/bills, and a mock bank statement with realistic narration lines. Seed source-integrity issues here (a vendor bill whose stated GST does not match the rate, a duplicate bill, a line that does not foot) so the learner learns to catch a document rather than key it blindly. The mock bank statement should include at least one line with no matching voucher expected (a bank charge or auto-debit) so the bank-versus-books review has something to find.
+Variant seeding (anti-copy): for v1 self-serve, keep variants lightweight, mainly to stop a learner reusing a prior cohort's answers (vary names, amounts, and states). Full per-learner variant generation is a CA-firm-phase need where cohorts sit together.
+Quality control: the tutor generates the answer key at the same time as the exercise. If a scenario's treatment is not clearly covered by the Rulebook, the tutor picks the standard treatment and flags the uncertainty rather than inventing a house rule.
+11. Translating the Rulebook into learning modules
+The Rulebook is both the grading standard and the source material for teaching. Each Rulebook section maps to learner-facing teaching content (a short concept explainer in plain language, a worked example, and the reference video). The content team builds these against Appendix C. The tutor uses the Rulebook text as its authority when explaining and grading, but it delivers the concept to the learner in simple language with a concrete example, not by quoting the Rulebook at them. Appendix D is one module worked end to end as the template for the rest.
+12. Per-learner data model
+Extends the intern state.json for the external, self-serve context. The builder owns storage; the model reads and proposes updates. Suggested shape:
+{
+"learner_id": "string",
+"created_at": "ISO-8601",
+"tally_license_mode": "licensed | educational",
+"variant": "A | B",
+"current_module": "string (e.g. 5-tds)",
+"current_level": "L0..L4",
+"diagnostic_score_pct": 0,
+"modules_completed": [],
+"concept_mastery": {
+"place_of_supply": {"state": "mastered | in_progress | failing",
+"clean_streak": 0, "deepest_hint_rung_last": 1},
+"tds_base_not_gross": {"state": "in_progress", "clean_streak": 1, "deepest_hint_rung_last": 4}
+},
+"error_history": {"E03": 2, "E08": 1, "E09": 4},
+"anomaly_history": {"seen": ["A1", "B1"], "caught": ["A1"], "missed": ["B1"]},
+"hint_usage": {"rung4_count": 3, "rung5_count": 1},
+"submissions": [{"module": "5-tds", "submitted_at": "ISO", "score_pct": 0,
+"codes": ["E08"], "parts_received": ["daybook", "explain", "review"]}],
+"reflections": [],
+"last_activity_at": "ISO-8601",
+"certificate_issued_at": null
+}
+Track, at minimum: license mode, variant, module and level position, diagnostic score, per-concept mastery with clean streak and last hint depth, error history, anomaly history (seen/caught/missed), hint usage, a submission log with parts-received (for the multi-message rule), reflections, and completion. This is the memory that makes the tutor adaptive across sessions.
+13. The model instruction layer (what the builder feeds the model)
+The builder runs the model with a system prompt built from this spec plus per-turn context. Recommended construction:
+System prompt (stable): the model's role and the non-negotiables: coach do not lecture, the graduated-help ladder (Section 7.1), the two-lane tone (Section 7.3), Rulebook as ground truth, mastery over completion, keep codes and levels internal, no em-dashes, the pre-scoring gate, and the license-mode date rule. Attach the reference corpus (below).
+Reference corpus (attached or retrievable): the House Practices Rulebook (Appendix C map), the accounting-basics primer, the anomaly library (Appendix B), the error-code taxonomy (Appendix A), and the video index (Appendix H). These are the model's authority and it must ground scoring and explanations in them.
+Per-turn context (dynamic, builder-injected): the learner's state record (Section 12), the current exercise and its hidden answer key, the parsed submission (if any), and the recent chat turns.
+Structured outputs the UI consumes (Appendix G): the model returns machine-readable blocks the UI renders and the code stores. Define these as strict JSON so the builder is not parsing prose:
+a scoring result (per-voucher findings with codes, narration verdicts, TB tie-out, qualitative axes, overall result, proposed state updates),
+an exercise object (learner-facing text plus the hidden answer key),
+a coaching turn (the learner-facing message plus the current hint rung and which concept it targets),
+a state-update patch.
+Keep the learner-facing prose and the machine fields separate in the output so the UI shows only the prose.
+14. Guardrails
+Scope: the tutor stays on accounting, Tally, AIA, and the learner's progress. It declines off-topic requests briefly and redirects.
+No answer-skipping: it will not jump to the full answer on demand; it walks the ladder (Section 7.4).
+Grounding: every rule and score cites the Rulebook standard internally. When the Rulebook is silent, it says the treatment is standard practice rather than inventing a house rule, and flags the uncertainty.
+Anti-cheat: on a suspiciously clean or out-of-pattern answer, probe with an explain-the-entry check before crediting mastery.
+No data-quality guessing: if the export cannot be scored, hold and ask for a correct resubmit; never fabricate a score.
+Honesty over comfort: never inflate praise or lower the bar because the learner is new. Measured tone, real weaknesses named plainly.
+Privacy: the learner's books and progress are theirs. In the CA-firm phase, define exactly what a trainer can see before building the dashboard.
+15. Build split: who owns what
+Concern
+Owner
+Chat UI, video player, upload widget, progress view
+Builder
+Tally XML parsing into structured vouchers
+Builder (spec in Appendix G)
+Learner state storage and retrieval
+Builder
+Orchestration: assemble system prompt plus per-turn context, call the model, render outputs, persist state patches
+Builder
+License-mode gate and disclosure UI
+Builder
+Scoring logic, error tagging, mastery decisions
+Model
+Exercise and answer-key generation
+Model
+Coaching, the help ladder, tone, feedback
+Model
+Qualitative assessment
+Model
+Rulebook grounding and standard-treatment judgement
+Model
+The single most important build decision: keep the model's reasoning and the code's plumbing separate, and pass structured JSON between them (Appendix G) so neither has to parse the other's prose.
+16. Phasing
+v1 (build now): B.Com self-serve. Single learner. Onboarding and license gate, diagnostic, Modules 0 to 12, the full coaching engine, Tally-graded assessment, certificate and capstone. AIA introduced at Module 13 as far as the AIA integration allows.
+Phase 2: AIA-native depth. Deeper AIA workflows once the integration matures, still Tally-verified.
+Phase 3: CA-firm edition. Trainer and admin dashboard, cohort rollups, configurable house rules, full anti-copy variant generation, per-trainer visibility controls.
+Phase 4: localisation. Hindi and regional language support (the whole engine is built English-first but structured so the learner-facing layer can be translated).
+17. Open items to confirm as we refine
+AIA specifics: what the learner actually does in AIA at Module 13, and how AIA hands its output to Tally for the graded export.
+Whether the certificate carries any Karbon or partner branding, and completion criteria beyond the capstone.
+Video production ownership and timeline (Appendix H is the list to produce against).
+The exact Detailed export field mapping, to be finalised against real sample XML files (Appendix G).
+CA-firm phase: the trainer's visibility scope, before that dashboard is designed.
+Appendix A: Error-code taxonomy
+Accounting: E01 wrong account classification; E02 Dr/Cr direction wrong; E03 GST intra vs inter wrong; E04 GST rate wrong; E05 GST head omitted (CGST/SGST split missed); E06 TDS section wrong; E07 TDS rate wrong; E08 TDS threshold ignored (deducted below or missed above); E09 narration weak; E10 bill-by-bill Against Ref missing; E11 amount/rounding error; E12 voucher type wrong; E13 period recognition wrong (accrual/prepaid missed); E14 ITC eligibility wrong; E15 parent group wrong at ledger creation.
+Reconciliation: R01 bank line mapped to wrong invoice/bill; R02 direct-expense vs creditor judgement wrong; R03 Suspense not used for unknown deposit; R04 advance not booked with Advance bill-by-bill ref; R05 RCM not booked for import services.
+Opening balance: O01 opening balance ledger not created; O02 opening bill-by-bill ref missing; O03 prior-month bank line booked as new invoice/bill.
+Communication: C01 reflection unclear; C02 did not flag a stuck point; C03 status false-positive (said done when incomplete).
+Weighting: GST and TDS codes weigh twice the narration and discipline codes.
+Appendix B: Ledger-review anomaly library (summary)
+Seeded into the accumulated books for the open review (Modules 11+). Start with 2 to 3 anomalies at first, build to 4 to 5. Always mix types, always include at least one hidden-residual or judgement type and at least one historical own-loose-end, and always include clean distractors. Rotate so no two consecutive reviews repeat a set, and re-surface a previously missed type a couple of modules later.
+GST: A1 wrong GST amount on a vendor invoice (source-integrity), A2 place-of-supply error sitting in the ledgers, A3 ITC on a blocked/ineligible expense, A4 wrong GST rate.
+TDS: B1 TDS withheld on gross leaving a hidden vendor residual, B2 threshold crossed but not deducted, B3 wrong section or rate, B4 over-deduction on gross in a historical entry.
+Bill-by-bill: C1 on-account receipt/payment never applied, C2 stale unadjusted advance, C3 bill refs do not tie to the ledger balance, C4 opening bill still open though settled.
+Bank: D1 unrecorded bank line, D2 duplicate payment, D3 bank/cash goes negative from a timing error.
+Classification/cut-off: E1 wrong-head posting, E2 sign anomaly (debtor in credit), E3 prepaid not split, E4 Suspense left lingering.
+Source-document integrity: F1 duplicate bill in the pack, F2 arithmetic error on the document, F3 wrong-party or out-of-scope document.
+Control/duplicate: G1 double-booked invoice, G2 round-off drift.
+Each anomaly has a difficulty tag (L2 to L4) and a consequence tag (H/M/L). Draw high-consequence types regardless of whether the learner passed that module before.
+Appendix C: Rulebook section map (grading standard and teaching source)
+Part 1 Setup: 1 Foundation principles, 2 Ledger naming and parent groups and bill-by-bill, 3 Narration standards (voucher-type-aware), 4 Bill-by-bill practice (New Ref / Against Ref / On Account / Advance), 5 Voucher-type selection.
+Part 2 Transactions: 6 Payment against vendor bill (4 cases), 7 Receipt against sales invoice (4 cases), 8 Payment/receipt mismatches (8 sub-scenarios, includes Suspense and round-off), 9 Customer advance (9A goods 2-voucher, 9B services 3-voucher chain, 9C GST payment mechanics), 10 Supplier advance.
+Part 3 Judgement: 11 Direct expense vs creditor (materiality 5,000, TDS/ITC force creditor), 12 TDS (sections, rates, thresholds 194J/C/I/H, base not gross, deposit by 7th), 13 GST (intra vs inter, ITC utilisation and cutoff, RCM), 14 Reconciliation cadence.
+Part 4 Errors and quality: 15 Top 10 fresher errors with codes and the reversal-not-edit correction protocol, 16 Quality bar (clean = 95 percent plus, zero critical errors, Section-3 narration, nothing unreconciled over 30 days).
+Each section becomes a teaching unit: a plain-language explainer, a worked example lifted from the Rulebook, and a reference video.
+Appendix D: One module worked end to end (the template)
+Module 5, Purchases with TDS and a source-integrity check. Level L3. Variant B (Zenith Consulting LLP, services, Delhi, state 07).
+Learner-facing exercise:
+Module: Purchases, TDS and a first look at the source document.
+Post these transactions and send the Detailed Day Book export, plus the two short answers in Part 2.
+Part 1 - Post these transactions
+1. Purchase bill AD-22 from AdWorks (Delhi) for advertising. The vendor invoice (attached PDF) reads base 40,000, GST 8,000, total 48,000. TDS applies under 194C. Post it the way you believe is correct.
+2. Purchase bill CA-30 from Legal Advisors (Delhi), professional charges 80,000 plus GST at 18 percent. TDS applies under 194J.
+3. Bank charge auto-debit from ICICI, 708 total (600 charge plus 108 GST).
+Part 2 - Explain and review
+(a) Explain the AdWorks entry: write each ledger, Dr or Cr, the amount, and one line on why it moves.
+(b) Look across the whole company, not just these entries, and list anything that needs a second look, with the amount and why.
+Deliverables: post all three, attach ONE Detailed export, one narration per voucher (payments and bank lines: bank reference plus party). Reference: the TDS video and the purchases video, Rulebook sections 12, 13, 3.
+(Educational mode note, if applicable: dates are set to the 1st, 2nd, or last day of the month because Tally Educational Mode requires it.)
+Attached source document: a PDF of the AdWorks invoice showing base 40,000, GST 8,000, total 48,000. This is the trap: 18 percent of 40,000 is 7,200, not 8,000. The learner must catch that the invoice overstates GST and book the correct 7,200, not key 8,000 blindly.
+Hidden answer key:
+Intra-state (Delhi to Delhi) = CGST 9% + SGST 9%.
+1. AdWorks AD-22 (SOURCE-INTEGRITY TRAP, code A1):
+Dr Advertising 40,000
+Dr Input CGST 3,600, Dr Input SGST 3,600   (correct 18% of 40,000 = 7,200, NOT the 8,000 on the bill)
+Cr TDS Payable 194C 800   (2% on the base 40,000, base not gross)
+Cr AdWorks 46,400   (New Ref AD-22)
+Good catch: books 7,200 and flags the invoice as overstated.
+2. Legal Advisors CA-30 (clean):
+Dr Professional Fees 80,000
+Dr Input CGST 7,200, Dr Input SGST 7,200
+Cr TDS Payable 194J 8,000   (10% on the base)
+Cr Legal Advisors 86,400   (New Ref CA-30)
+3. Bank charge:
+Dr Bank Charges 600, Dr Input CGST 54, Dr Input SGST 54
+Cr ICICI 708.
+Seeded historical anomaly for Part 2(b): a prior on-account receipt from an earlier module still unapplied, now that a matching invoice exists (code C1, the learner's own loose end).
+Scoring focus: (i) does the learner catch the AdWorks GST overstatement, (ii) TDS on base not gross on both bills, (iii) does the open review land on the actual unapplied receipt rather than a generic answer.
+Scoring against a submission: mechanical per-voucher (GST head and amount, TDS section/rate/base, voucher type, bill ref, narration Section 3), TB tie-out, then the qualitative read of 2(a) explain and 2(b) review on recall/precision/reasoning. Tag codes. Update mastery for tds_base_not_gross, input_gst_split, and source_integrity.
+If the learner is stuck on item 1 (the help ladder in action):
+Rung 1: "Look at the GST on the AdWorks bill. Does 8,000 look right for an 18 percent tax on 40,000?"
+Rung 2: "Watch the GST basics video. As you do, ask: do I take the tax from the bill, or do I compute it from the base and rate?"
+Rung 3: "Quick one: 18 percent of 10,000 is what? Now do 18 percent of 40,000. Compare to the 8,000 on the bill."
+Rung 4: "The rule: you compute GST from the base and rate, you do not trust the figure on a vendor's bill. Here the correct GST is 7,200, split 3,600 and 3,600. Book that and note the bill is overstated. TDS is on the 40,000 base only. You post it."
+Rung 5: full entry as in the key, in plain language, then the check: "If the bill had been from a Chennai vendor instead of Delhi, what would change about the GST heads?"
+Feedback message shape (measured, Socratic first): open with the result in one line, name what went well specifically, flag what to look at again (on first pass, "check the GST figure you took on the AdWorks bill" rather than naming it), state whether TDS-on-base is now fixed versus prior modules, and give the one-line next step.
+Appendix E: Sample learner state record
+See the JSON in Section 12. Initialise on first onboarding, set tally_license_mode and variant at onboarding, set diagnostic_score_pct after the placement diagnostic, and update concept_mastery, error_history, anomaly_history, hint_usage, and submissions after every scored submission.
+Appendix F: Learner-facing Tally export how-to (the tutor can send this on request)
+To submit, export two things from Tally and upload both here:
+Detailed Day Book: Gateway of Tally, Day Book, set the period to the exercise month, then export as XML with the format set to Detailed (not Condensed). The Detailed format includes each ledger line, the narration, and the bill references, which is what gets reviewed.
+Trial Balance as on the period-end date: Gateway of Tally, Display, Trial Balance, set the date, export.
+Upload both files in this chat. If the export comes out Condensed, redo it as Detailed, otherwise the entries cannot be reviewed.
+(The builder should confirm the exact menu path against the Tally version used and refine this text; the substance is Detailed Day Book XML plus Trial Balance.)
+Appendix G: XML parsing and model output contracts (for the builder)
+Parsing (builder-owned): the Detailed Day Book XML contains a voucher list. For each voucher, extract: voucher type, date, voucher number, narration, and the ledger allocations (ledger name, Dr or Cr, amount) including the bill-by-bill allocations (bill name and reference type: New Ref, Against Ref, On Account, Advance). Produce a normalised structure per voucher and hand it to the model. Build this against real sample exports; the field mapping is finalised once we drop in sample XML files.
+Model output JSON (define as strict schemas):
+scoring_result: { per_voucher: [{ voucher_ref, findings: [{code, note}], narration_verdict, ... }], tb_tie_out: {...}, qualitative: {recall, precision, reasoning}, result_pct, learner_message, state_patch }.
+exercise: { learner_text, source_documents: [...], answer_key: {...}, targeted_concepts: [...], level }.
+coaching_turn: { learner_message, hint_rung, concept, gave_answer: bool }.
+state_patch: the fields to merge into the learner state record.
+Keep learner_message (prose the learner sees) separate from every machine field so the UI renders only the prose.
+Appendix H: Video module list to produce (reference material)
+Short "how to" videos, one concept each, tagged for the tutor to reference: Create a company and set Books Begin Date; Parent groups and ledger creation; Choosing the right voucher type; Book a sales invoice (intra and inter-state GST); Book a purchase and claim ITC; Receipts and payments with bill-by-bill; Narration standards; TDS at booking (section, rate, threshold, base not gross); Customer advance for goods; Customer advance for services (the three-voucher chain); Supplier advance; Journal adjustments and GST utilisation; Reconciling to a bank statement; Reading a vendor invoice and catching a wrong figure; Exporting the Detailed Day Book and Trial Balance; Introduction to AIA and the AIA workflow. None exist yet; produce against this list, index by timestamp so the tutor can point to a moment, not just a file.
+End of v1 build specification. Refine sections 17.1 to 17.5 with the builder and with the AIA integration owner, then this becomes the handoff document for the build.

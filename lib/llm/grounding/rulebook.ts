@@ -1,0 +1,714 @@
+// Karbon VA House Practices Rulebook v0.2 — extracted from the source
+// .docx (Reference Material folder of the training pack) by
+// scripts/derive-blossom-answer-key.py's companion extraction step.
+// This is THE grounding text for coaching, hints, and Q&A — the real
+// Rulebook, replacing the placeholder that stood in for it until
+// 2026-08-19. Regenerate by re-running the extraction against a new
+// Rulebook version; do not hand-edit the string.
+export const RULEBOOK_TEXT = `Karbon VA — House Practices Rulebook
+v0.2 — full rebuild
+Standard practices for Virtual Accountant team members. All new joiners are expected to follow these unless explicitly overridden by the reviewer. This document is the seed for the coaching-loop rulebook — Claude coaches interns against these rules during bootcamp and beyond.
+Contents
+Bifurcated into four parts for navigation: Setup (1-5), Transactions (6-10), Judgement rules (11-14), Errors and quality (15-16).
+Part 1 — Setup and standards
+#
+Section
+Sub-sections / notes
+1
+Foundation principles
+Accrual, source-doc, no historical edits, flag-to-reviewer posture
+2
+Ledger naming and creation
+Naming conventions, parent groups, bill-by-bill setting
+3
+Narration standards
+Voucher-type-aware rule
+4
+Bill-by-bill practice
+4 reference types — New Ref / Against Ref / On Account / Advance
+5
+Voucher-type selection
+F4/F5/F6/F7/F8/F9 mapping, rule of thumb
+Part 2 — Transactional entries
+#
+Section
+Sub-sections / notes
+6
+Payment against vendor bill
+4 cases — normal / with TDS / partial / multi-bill
+7
+Receipt against sales invoice
+4 cases — normal / with TDS deducted / partial / multi-invoice
+8
+Payment / receipt mismatches
+8 sub-scenarios covering higher / lower / no invoice / wrong party / split / FX / gateway / duplicate
+9
+Customer Advance
+9A goods (2-voucher) | 9B services (three-voucher chain) | 9C GST payment mechanics
+10
+Supplier Advance
+Standard 2-voucher flow, TDS on advance, refunds
+Part 3 — Judgement rules
+#
+Section
+Sub-sections / notes
+11
+Direct expense vs Creditor
+Decision framework, 11-row real-example matrix
+12
+TDS treatment
+At booking, at payment, on advance, thresholds (194J/C/I/H), filing
+13
+GST house practice
+Intra vs inter, ITC utilisation, ITC cutoff, RCM, interest/late fee
+14
+Reconciliation cadence
+Bank statement matching, party recon, GST recon, TDS recon
+Part 4 — Errors and quality bar
+#
+Section
+Sub-sections / notes
+15
+Common fresher errors
+Top 10 errors with codes, correction protocol
+16
+Quality bar
+Definition of clean; consequences above/below the bar
+1. Foundation principles
+Every entry must balance: total Dr = total Cr.
+We follow accrual basis — the P&L reflects the period the transaction economically belongs to, not when cash moves.
+When in doubt on treatment, flag to reviewer — do not guess. The cost of a wrong entry at scale far exceeds the cost of a 5-min question.
+No entry without a source document. No source, no entry. Reviewer approval required to make an entry without underlying paperwork.
+Never edit a posted historical entry. Corrections happen via reversal + fresh entry (Section 15).
+When a scenario doesn't cleanly match any rule in this doc, flag to reviewer rather than guess. This is the escalation posture, not a substitute for developing judgement.
+2. Ledger naming and creation
+Pick these formats consistently across all clients:
+Ledger type
+Format
+Example
+Sundry Debtor
+<Party name>
+ABC Ltd
+Sundry Creditor
+<Party name>
+Om Suppliers
+GST Output — regular
+Output CGST @9% | Output SGST @9% | Output IGST @18%
+separate ledger per rate
+GST Output — on Advance
+Output CGST on Advance @9% | Output SGST on Advance @9% | Output IGST on Advance @18%
+separate ledger per rate; used only for services advances (Section 9B)
+GST Input
+Input CGST @9% | Input SGST @9% | Input IGST @18%
+separate ledger per rate
+TDS Payable
+TDS Payable — u/s 194J, u/s 194C, u/s 194I etc.
+split by section
+TDS Receivable
+TDS Receivable — u/s <section>
+tracked separately
+Bank
+<Bank name> — <last 4 digits>
+HDFC Bank — 1234
+Petty cash
+Cash — Petty <location>
+Cash — Petty HO
+Parent group assignments (mandatory at ledger creation)
+Ledger
+Parent group
+Sundry Debtor
+Sundry Debtors
+Sundry Creditor
+Sundry Creditors
+Output GST regular / Output GST on Advance / Input GST / TDS Payable
+Duties & Taxes
+TDS Receivable
+Current Assets
+Bank / Petty cash
+Bank Accounts / Cash-in-Hand
+Sales / Purchase Returns
+Sales Accounts / Purchase Accounts (contra)
+Direct income / expense
+Sales Accounts / Purchase Accounts
+Indirect income / expense
+Indirect Incomes / Indirect Expenses
+Bill-by-bill setting — always ON for:
+All Sundry Debtors and Sundry Creditors
+Any ledger where amounts will accumulate over time and need per-invoice tracking
+3. Narration standards
+Narration must contain what's NOT already in Tally's structural fields. Don't repeat what the voucher form has captured. Discipline sharpens where it matters (bank vouchers + journals), doesn't nag where it doesn't (Sales/Purchase).
+Per-voucher-type standard
+Voucher type
+What narration must add
+Payment / Receipt / Contra
+Bank statement narration (paste verbatim) + party name. Example: NEFT/N26041501/DECCAN/PMT — Deccan Traders. For cash: Cash — <party>. Party is kept even when redundant with ledger — protects the direct-expense case where no Creditor holds party name.
+Journal (F7)
+The 'why' of the adjustment. If correction, cite original voucher #. Example: Salary payable for Jul-26 — not yet paid / Reversing JV-2607-0034 — wrong TDS section applied.
+Sales / Purchase / Credit Note / Debit Note
+Nature (if not in stock item) + PO ref / unusual commercial term. Skip entirely if standard entry.
+Narration must NOT be:
+Blank
+Single word ("payment", "receipt", "adjust")
+Reference-only ("as per bill")
+Auto-generated placeholder text from Tally
+4. Bill-by-bill practice
+Enabled for every Sundry Debtor and Sundry Creditor by default. Four reference types:
+Reference type
+When to use
+Rule
+New Ref
+New bill / invoice booked for the first time
+Name = actual invoice number from source. Never invent internal refs.
+Against Ref
+Payment / receipt / DN / CN settling an existing bill
+Must point to correct New Ref. Amount can be full or partial.
+On Account
+Allocation genuinely unknown, needs later resolution
+Clear within 2 working days.
+Advance
+Prepayments against a future invoice — customer advances (received) or supplier advances (paid)
+Advance sits in the party ledger with type = Advance. Cleared at invoice time via Against Ref (Sections 9-10). For services advances, paired with Reversal JV per Section 9B.
+5. Voucher-type selection
+Choose the right voucher type. Wrong voucher type is one of the most common fresher errors.
+Transaction
+Voucher
+Shortcut
+Cash sale, credit sale, sales return
+Sales / Credit Note
+F8 / Ctrl+F8
+Cash purchase, credit purchase, purchase return
+Purchase / Debit Note
+F9 / Ctrl+F9
+Money between own Cash and Bank
+Contra
+F4
+Payment from Bank/Cash to a party or expense
+Payment
+F5
+Receipt into Bank/Cash from a party
+Receipt
+F6
+Adjustments — accrual, depreciation, provision, GST utilisation, TDS booking, advance-GST Reversal JV, correction reversals
+Journal
+F7
+Rule of thumb: If Cash or Bank is moving, it's Payment / Receipt / Contra. If it's a non-cash adjustment or booking with no cash movement, it's Journal. Minimum JV until necessary — prefer natural vouchers where possible.
+6. Payment against vendor bill
+Four cases. All use standard Payment (F5) voucher with bill-by-bill Against Ref.
+6.1 Case 1 — Normal payment, full amount, no TDS
+Account
+Dr
+Cr
+Om Suppliers A/c (Against Ref: OS/26/450)
+35,000
+HDFC Bank — 1234 A/c
+35,000
+Narration: NEFT/N26070298765/OMSUPP — Om Suppliers
+6.2 Case 2 — Normal payment, WITH TDS (booked at Purchase entry earlier)
+Vendor ledger holds net amount already. Pay net.
+Account
+Dr
+Cr
+CA Rakesh & Co A/c (Against Ref: CA/26/045)
+81,000
+HDFC Bank A/c
+81,000
+Narration: NEFT/N26070345678/CARAKESH — CA Rakesh & Co
+6.3 Case 3 — Partial payment
+Account
+Dr
+Cr
+Om Suppliers A/c (Against Ref: OS/26/450)
+25,000
+HDFC Bank A/c
+25,000
+Narration: NEFT/N26070312345/OMSUPP — Om Suppliers — part payment
+6.4 Case 4 — Multiple bills, single payment
+Account
+Dr
+Cr
+Om Suppliers A/c (Against Ref: OS/26/440)
+30,000
+Om Suppliers A/c (Against Ref: OS/26/450)
+40,000
+Om Suppliers A/c (Against Ref: OS/26/455)
+30,000
+HDFC Bank A/c
+1,00,000
+Narration: NEFT/N26070312345/OMSUPP — Om Suppliers — 3 bills
+House rule: even in a single payment across bills, each allocation must reference its own bill. Do not merge into a single 'on account' credit.
+7. Receipt against sales invoice
+Mirror of payments. Same discipline.
+7.1 Normal receipt, full amount, no TDS
+Account
+Dr
+Cr
+HDFC Bank A/c
+11,800
+ABC Ltd A/c (Against Ref: INV-2607/001)
+11,800
+Narration: UPI/26070312345/ABCLTD — ABC Ltd
+7.2 Receipt WITH TDS deducted by customer
+Account
+Dr
+Cr
+HDFC Bank A/c
+54,000
+TDS Receivable u/s 194J A/c
+6,000
+Client X A/c (Against Ref: INV-2607/003)
+60,000
+Narration: UPI/26070312345/CLIENTX — Client X — net of TDS 194J ₹6,000
+House rule: reconcile TDS Receivable with Form 26AS quarterly. Claim in ITR.
+7.3 Partial receipt
+Same pattern as partial payment (Section 6.3). Remaining balance stays open in Debtor bill-by-bill.
+7.4 Multiple invoices, single receipt
+Same pattern as multiple bills single payment (Section 6.4). Each allocation must reference its own invoice.
+8. Payment / receipt mismatches
+When amount received or paid does not equal the outstanding bill, identify reason before booking.
+8.1 Amount is HIGHER than outstanding
+Cause
+Resolution
+Bank round-off
+Book difference to Round-off A/c
+Customer overpaid by mistake
+Excess → treat as advance with Advance bill-by-bill ref (Section 9)
+Pending Credit Note not passed
+Pass CN first, then receipt
+Interest / late fee
+Book difference to Interest Received / Interest Expense A/c
+8.2 Amount is LOWER than outstanding
+Cause
+Resolution
+Cash discount availed / allowed
+Discount Received / Discount Allowed
+Customer deducted TDS on our payment
+TDS Receivable Dr for the difference (Section 7.2)
+Quality-dispute short payment
+Leave remainder open pending DN/CN
+Round-off differential
+Book to Round-off A/c
+8.3 Money received / paid but NO matching invoice / bill
+Cause
+Resolution
+Customer paid before invoice raised
+Book to Customer ledger with Advance bill-by-bill type + new Advance Ref (Section 9). Services: split GST portion to Output GST on Advance ledgers per Section 9B. Goods: no GST split (Section 9A).
+Advance to supplier before bill received
+Book to Supplier ledger with Advance bill-by-bill type + Advance Ref (Section 10). No Input GST split at receipt.
+Unknown deposit — sender unclear
+Book to Suspense — Bank Receipt A/c; clear within 2 working days.
+Bank charges — no formal invoice
+Direct expense to Bank Charges A/c (Section 11).
+8.4 Payment credited to WRONG party / bill
+Cause
+Resolution
+Wrong ledger selected
+Reversal entry — cite original voucher# in narration — then fresh entry to correct party
+Wrong invoice under correct party
+Reallocation via Journal — no cash-touching entry needed
+Wrong amount
+Full reversal + fresh entry
+8.5 Split payment across modes
+Part cheque + part bank transfer, or part cash + part bank. Book each mode as separate voucher with same Against Ref.
+8.6 Foreign currency payment / receipt
+Book original bill at invoice-date FX rate. Difference at payment date → Exchange Fluctuation Gain / Loss A/c.
+8.7 UPI / QR / gateway timing
+Book customer receipt on customer settlement date, not intermediary hold date. Reconcile intermediary statement separately.
+8.8 Duplicate payment
+Second payment becomes Creditor Dr balance. Recover from vendor via refund or adjust against next bill.
+9. Customer Advance (advance received)
+The mechanic depends on WHAT the future supply is: goods or services. GST law treats the two differently — goods are exempt from advance-GST since 15-Nov-2017 (Notification 66/2017-CT), while services attract GST at time of advance receipt.
+9A. Advance for goods — simple 2-voucher flow
+GST is NOT payable on advance for goods. Advance sits against the party ledger via the 'Advance' bill-by-bill reference type. When invoice is raised, standard Sales voucher with Against Ref clears the advance.
+Step 1 — Receipt voucher (F6)
+Kerala Handicrafts (trading customer) advances ₹1,50,000 for a future goods order.
+Account
+Dr
+Cr
+HDFC Bank A/c
+1,50,000
+Kerala Handicrafts A/c (Advance ref ADV-01)
+1,50,000
+Narration: UPI/26041201/KHANDICRFT — Kerala Handicrafts — advance against future order
+Step 2 — Sales voucher when invoice is raised (F8)
+Invoice INV-2604/009 for ₹2,12,400 (base 1,80,000 + IGST 32,400):
+Account
+Dr
+Cr
+Kerala Handicrafts A/c (Against Ref ADV-01 ₹1,50,000 + New Ref INV-2604/009 ₹62,400)
+2,12,400
+Sales A/c
+1,80,000
+Output IGST @18% A/c
+32,400
+Net effect: Advance cleared. Kerala Handicrafts outstanding = ₹62,400. Sales revenue recognized ₹1,80,000. Output IGST liability ₹32,400. No JV required.
+Refund of goods advance
+Account
+Dr
+Cr
+Kerala Handicrafts A/c (Against Ref ADV-01)
+1,50,000
+HDFC Bank A/c
+1,50,000
+9B. Advance for services — three-voucher chain
+GST IS payable on advance for services. Three-voucher chain applies identically regardless of same-period vs cross-period:
+Step 1 — Receipt voucher with GST split (base to party via Advance bill-by-bill, GST portion to Output GST on Advance ledgers)
+Step 2 — Standard Sales voucher when invoice is raised
+Step 3 — Reversal JV immediately after Sales voucher, mandatory pairing
+Step 1 — Receipt voucher (F6)
+Kohli Retail (Delhi) advances ₹1,18,000 for consulting services. Advance treated as inclusive of GST — base ₹1,00,000 + CGST ₹9,000 + SGST ₹9,000.
+Account
+Dr
+Cr
+ICICI Bank A/c
+1,18,000
+Kohli Retail A/c (Advance ref ADV-01, ₹1,00,000)
+1,00,000
+Output CGST on Advance @9% A/c
+9,000
+Output SGST on Advance @9% A/c
+9,000
+Narration: NEFT/26041501/KOHLIRT — Kohli Retail — advance ₹1,18,000 inclusive of GST @18% intra-state
+Step 2 — Sales voucher when invoice is raised (F8, standard structure)
+Invoice INV-2604/007 for ₹1,18,000. Bill-by-bill split needed since Advance ref holds only ₹1,00,000:
+Account
+Dr
+Cr
+Kohli Retail A/c (Against Ref ADV-01 ₹1,00,000 + New Ref INV-2604/007 ₹18,000)
+1,18,000
+Consulting Income A/c
+1,00,000
+Output CGST @9% A/c (regular)
+9,000
+Output SGST @9% A/c (regular)
+9,000
+After Step 2: Kohli Retail Dr 18,000 residual; both Output GST on Advance and regular Output GST at Cr 9,000 each (GST double-recognized until Step 3).
+Step 3 — Reversal JV (F7, immediately after Sales voucher, mandatory pairing)
+Account
+Dr
+Cr
+Output CGST on Advance @9% A/c
+9,000
+Output SGST on Advance @9% A/c
+9,000
+Kohli Retail A/c (Against Ref INV-2604/007 for advance-GST portion of ADV-01)
+18,000
+Narration: Reversing advance-GST recognition on ADV-01 upon invoicing INV-2604/007
+End-state after all three vouchers:
+Kohli Retail = 0
+Output CGST on Advance / Output SGST on Advance = 0 (reversed)
+Regular Output CGST / Output SGST = 9,000 each (real GST liability)
+Consulting Income = 1,00,000 (revenue)
+Bank = +1,18,000
+Partial advance (invoice > advance)
+Advance ₹59,000 inclusive, invoice ₹1,18,000:
+Step 1: Bank Dr 59,000 / Kohli Cr 50,000 (Advance ADV-01) / Output CGST on Advance Cr 4,500 / Output SGST on Advance Cr 4,500
+Step 2: Kohli Dr 1,18,000 (Against ADV-01 ₹50,000 + New Ref INV-007 ₹68,000) / Sales Cr 1,00,000 / Output CGST Cr 9,000 / Output SGST Cr 9,000
+Step 3: Output CGST on Advance Dr 4,500 / Output SGST on Advance Dr 4,500 / Kohli Cr 9,000 (Against INV-007 for advance-GST portion)
+End: Kohli Dr 59,000 (real receivable). Advance-GST reversed proportionally. Real GST liability ₹18,000 in regular Output GST.
+Excess advance (invoice < advance)
+Advance ₹1,18,000, invoice only ₹59,000:
+Step 1: full advance receipt as main example
+Step 2: Kohli Dr 59,000 (Against ADV-01 ₹59,000, partial) / Sales Cr 50,000 / Output CGST Cr 4,500 / Output SGST Cr 4,500
+Step 3 (proportional reversal): Output CGST on Advance Dr 4,500 / Output SGST on Advance Dr 4,500 / Kohli Cr 9,000
+End: Kohli Cr 50,000 remaining advance base (ADV-01 still open ₹50,000 for future invoice). Output GST on Advance Cr 9,000 residual. Regular Output GST Cr 9,000.
+Refund of services advance
+Account
+Dr
+Cr
+Kohli Retail A/c (Against Ref ADV-01)
+1,00,000
+Output CGST on Advance @9% A/c
+9,000
+Output SGST on Advance @9% A/c
+9,000
+ICICI Bank A/c
+1,18,000
+If cross-period (advance-GST already deposited to govt) — reviewer-handled via GSTR amendment.
+9C. GST payment mechanics — unified rule
+At every GSTR-3B filing, two JVs — same shape regardless of period:
+JV 1 — ITC Utilisation
+Debit Output GST ledgers (regular AND on-Advance, whichever have Cr balances). Credit Input GST ledgers up to the Input balance. Follows GST set-off order: IGST first, then CGST/SGST.
+JV 2 — Payment to government
+Debit all remaining Output GST ledgers with Cr balances (regular and on-Advance). Credit Bank for actual cash outflow. If any Output GST on Advance ledger has a Dr balance (from a prior Reversal JV), CREDIT that ledger to bring it to zero — the Dr balance is a prepaid-tax asset that reduces cash outflow.
+Worked example — May GSTR-3B, cross-period case with Kohli's advance-GST already paid in April, invoice raised in May:
+Account
+Dr
+Cr
+Output CGST @9% (regular) — residual after utilisation
+22,000
+Output SGST @9% (regular) — residual
+22,000
+Output CGST on Advance @9% — netting prepaid asset
+9,000
+Output SGST on Advance @9% — netting prepaid asset
+9,000
+HDFC Bank
+26,000
+All Output GST ledgers → 0. Bank → -26,000 (real cash outflow; the 18,000 for Kohli was already paid via April advance-GST). One rule; the GST ledger balances at return-filing time tell the fresher what shape the JV takes.
+10. Supplier Advance (advance paid)
+Simpler than customer advance. Input GST on advance paid is NOT claimable under GST rules (Input GST is claimable only against a valid tax invoice, not against advance). No Input-GST-on-Advance ledger needed.
+10.1 Standard flow — 2 vouchers
+Step 1 — Payment voucher (F5)
+Advance ₹1,00,000 to Bharat Machinery Ltd for a future equipment purchase.
+Account
+Dr
+Cr
+Bharat Machinery A/c (Advance ref ADV-01)
+1,00,000
+HDFC Bank A/c
+1,00,000
+Narration: NEFT/26042401/BHARATMAC — Bharat Machinery Ltd — advance for equipment order
+Step 2 — Purchase voucher when bill is received (F9)
+Bill BM/26/012 for ₹5,90,000 (Machinery ₹5,00,000 + Input CGST ₹45,000 + Input SGST ₹45,000):
+Account
+Dr
+Cr
+Machinery A/c
+5,00,000
+Input CGST @9% A/c
+45,000
+Input SGST @9% A/c
+45,000
+Bharat Machinery A/c (Against Ref ADV-01 ₹1,00,000 + New Ref BM/26/012 ₹4,90,000)
+5,90,000
+End position: Advance cleared. Creditor outstanding ₹4,90,000. Input GST claimed ₹90,000. Machinery capitalised. No JV.
+10.2 TDS on advance paid (for services with TDS applicable)
+TDS deducted at earlier of advance payment or invoice booking. Advance triggers TDS.
+Advance payment with TDS
+Account
+Dr
+Cr
+CA Rakesh & Co A/c (Advance ref ADV-01)
+30,000
+HDFC Bank A/c
+27,000
+TDS Payable u/s 194J A/c
+3,000
+When bill is received (base ₹60,000 + GST ₹10,800)
+Account
+Dr
+Cr
+Professional Fees A/c
+60,000
+Input CGST @9% A/c
+5,400
+Input SGST @9% A/c
+5,400
+CA Rakesh & Co A/c (Against Ref ADV-01 ₹30,000 + New Ref CA-101 ₹37,800)
+67,800
+TDS Payable u/s 194J A/c (on balance ₹30,000)
+3,000
+Total TDS Payable ₹6,000. CA outstanding ₹37,800.
+10.3 Refund of supplier advance
+Account
+Dr
+Cr
+HDFC Bank A/c
+1,00,000
+Bharat Machinery A/c (Against Ref ADV-01)
+1,00,000
+If TDS was deducted and now advance is refunded — reviewer-handled (TDS reversal + adjustment in TDS return).
+11. Direct expense vs Creditor route
+11.1 Book as DIRECT EXPENSE when ALL are true
+One-off transaction, no formal invoice cycle
+Payment same day as consumption
+No follow-up expected (returns, reconciliation)
+Amount below materiality threshold (Karbon rule: below ₹5,000)
+Vendor won't be tracked over time
+No TDS involved
+No GST ITC to be claimed
+Account
+Dr
+Cr
+Staff Welfare A/c
+800
+HDFC Bank A/c
+800
+11.2 Book through CREDITOR when ANY is true
+Formal invoice raised by vendor
+Payment terms delayed (net 15 / net 30)
+Bill-by-bill tracking needed
+Amount above ₹5,000 materiality
+Recurring vendor
+Any TDS involved (mandatory)
+GST ITC to be claimed (mandatory)
+DN / return possibility
+11.3 Decision matrix — examples
+Scenario
+Route
+Why
+Team meal ₹1,500 restaurant
+Direct expense
+Small, one-off
+Office rent ₹50,000 landlord (194I)
+Creditor
+TDS mandatory
+Petrol ₹500 company car
+Direct expense
+Small
+Stationery ₹800 local shop
+Direct expense
+Walk-in
+Consultant fee ₹80,000 (194J)
+Creditor
+TDS mandatory
+Utility bill ₹12,000/mo
+Creditor
+Recurring + GST ITC
+SaaS ₹6,000/mo
+Creditor
+Recurring + ITC
+Marketing agency ₹1,50,000/mo (194J)
+Creditor
+TDS + ITC
+Bank charges ₹150
+Direct expense
+System-generated
+One-off repair ₹4,500
+Direct expense
+Below threshold
+One-off repair ₹15,000
+Creditor
+Above threshold, invoice cycle
+When in doubt, route through Creditor. Reversibility, ITC, TDS trail all cleaner.
+12. TDS treatment
+12.1 TDS at BOOKING (preferred for Creditor route)
+Account
+Dr
+Cr
+Professional Fees A/c
+60,000
+Input CGST @9%
+5,400
+Input SGST @9%
+5,400
+Vendor A/c (net)
+64,800
+TDS Payable u/s 194J A/c
+6,000
+12.2 TDS deposit (by 7th of next month)
+Account
+Dr
+Cr
+TDS Payable u/s 194J A/c
+6,000
+HDFC Bank A/c
+6,000
+12.3 TDS on advance paid
+See Section 10.2.
+12.4 TDS threshold check — MANDATORY before deducting
+Section
+Threshold
+Rate
+194J — Professional
+₹50,000 aggregate per FY
+10%
+194J(a) — Technical / royalty / call-centre
+₹50,000 aggregate per FY
+2%
+194C — Contractor, single payment
+₹30,000 single
+1% indiv/HUF, 2% others
+194C — Contractor, aggregate
+₹1,00,000 aggregate per FY
+Same rates
+194I — Rent
+₹2,40,000 per FY
+10% land/bldg, 2% plant/mach
+194H — Commission
+₹15,000 per FY
+5%
+House rule: check running FY total for each payee. Do not deduct below threshold. Do not miss deduction above threshold — 30% disallowance risk.
+12.5 TDS filing
+Deposit by 7th of next month (30-Apr for March)
+Return quarterly (24Q salary, 26Q non-salary residents, 27Q non-residents)
+Form 16A quarterly
+12.6 TDS Receivable
+See Section 7.2. Reconcile with Form 26AS quarterly.
+13. GST house practice
+Intra-state → CGST + SGST. Inter-state → IGST.
+Input GST utilised at month-end via Journal per set-off rules — IGST first, then CGST/SGST.
+Advance-GST applies to services only (goods exempt post Nov-2017 Notification 66/2017-CT). See Section 9B for mechanic.
+File GSTR-1 by 11th, GSTR-3B by 20th of following month.
+Reconcile Input GST with GSTR-2B before filing GSTR-3B. Any mismatch → flag reviewer.
+§16(4) ITC cutoff: 30 November of following FY OR annual return filing, whichever earlier.
+ITC on capital goods: full claim in month of purchase.
+RCM entries: separate Input GST — RCM and Output GST — RCM ledgers.
+Interest / late fee on GST delay hits P&L as Indirect Expense.
+14. Reconciliation cadence
+Reconciliation
+Cadence
+Deadline / method
+Bank statement matching
+Monthly
+By 5th of following month. Book any bank charges + interest + auto-debits + failed-transaction reversals not yet in books. Not a heavy BRS ritual — cheques are rare in current practice, so most bank lines settle same-day. Cross-check Tally bank ledger balance against bank statement closing balance; investigate any gap.
+Debtor reconciliation
+Monthly
+By 7th of following month; confirm balances with major customers quarterly
+Creditor reconciliation
+Monthly
+By 7th of following month
+GST reconciliation (Input)
+Monthly
+GSTR-2B vs books before GSTR-3B (20th)
+GST reconciliation (Output)
+Monthly
+Sales register vs GSTR-1 (11th)
+TDS reconciliation
+Quarterly
+Form 26AS vs TDS Receivable
+Petty cash
+Weekly
+Physical count vs book
+Advance ledgers (party ledgers with Advance ref + Output GST on Advance)
+Monthly
+Verify each unadjusted advance has a business reason; each open Advance Ref should map to a pending future invoice
+Any unreconciled item older than 30 days → escalate.
+15. Common fresher errors + correction protocol
+15.1 Top 10 errors
+#
+Error
+Code
+1
+Blank or single-word narration
+E09
+2
+Cash A/c debited on a credit sale
+E01
+3
+IGST used on intra-state transaction
+E03
+4
+Bill-by-bill Against Ref missed on payment / receipt
+E10
+5
+Direct expense route used when TDS applies
+E01
+6
+Advance received/paid booked to party ledger without Advance bill-by-bill Ref — sits as naked Cr/Dr balance, invisible in bill-by-bill report, cannot be adjusted cleanly against invoice
+E01 / R04
+7
+TDS deducted below FY threshold (or missed above)
+E08
+8
+Wrong parent group at ledger creation
+E15
+9
+Duplicate entry
+E11
+10
+Narration 'as per bill' instead of party + ref
+E09
+15.2 Correction protocol
+Never edit a posted historical entry. Always:
+Post a reversal entry — same accounts, opposite Dr/Cr direction, cite original voucher# in narration
+Post a fresh entry with correct treatment, narration cites the correction linkage
+If correction spans a closed period → escalate to reviewer. Do not post backdated corrections without approval.
+16. Quality bar for fresher work
+A fresher's monthly output is 'clean' when ALL:
+Accuracy ≥95% at reviewer stage
+Zero critical errors — wrong TDS, wrong GST treatment, wrong voucher type, missing bill-by-bill
+All narrations meet Section 3 standard
+Zero unreconciled items >30 days
+All escalations to reviewer are proactive
+Below the bar → additional practice + reviewer 1:1. Above the bar consistently for 3 months → portfolio increment / senior track eligible.`;
