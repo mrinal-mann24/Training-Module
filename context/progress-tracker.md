@@ -19,6 +19,19 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-08-27 (later 7): PRODUCTION DEPLOYMENT — LIVE, confirmed working end to end at https://ai-tutor.187-127-173-25.sslip.io
+
+Continuation of the deployment session below: the user actually ran the deploy on the VPS, hit two real infrastructure mismatches versus the first-pass assumptions, both diagnosed live via `docker inspect`/`docker logs` on the VPS and fixed:
+
+1. **`traefik-proxy` network didn't exist** — `docker network ls` on the VPS showed no shared external network at all; every app (`aia-flagged-automation`, `gm-opportunity`, etc.) sits on its own isolated `_default` bridge network. `docker inspect traefik-traefik-1` revealed why: Traefik runs with **`network_mode: host`**, not on any bridge network, and discovers containers purely via Docker labels (socket mounted read-only, `exposedbydefault=false`). It reaches apps through a **fixed `loadbalancer.server.url=http://127.0.0.1:<port>`**, confirmed from `aia-flagged-automation`'s own labels (`http://127.0.0.1:8000`) — not by joining a shared network and using `.server.port`.
+2. **Rewired `docker-compose.yml` to match**: dropped the nonexistent `networks: traefik-proxy` block entirely; app now publishes `127.0.0.1:${APP_PORT:-3005}:3000` (loopback-only, matches `karbon-mis`'s identical 3000-container-port pattern) and the label points `loadbalancer.server.url` at that same loopback port. Committed as `64fd9fd`.
+3. **New cert needed one Traefik restart** — the domain landed in `acme.json` (ACME request succeeded) immediately on first `docker compose up -d --build`, but the live TLS handshake kept serving a self-signed fallback until `docker restart traefik-traefik-1`. One-time per new domain; safe (other apps' cached certs aren't re-requested). Documented as an expected step, not a bug to route around.
+4. Confirmed live: `docker compose ps` → healthy; `curl -Iv https://ai-tutor.187-127-173-25.sslip.io` → `HTTP/2 200`, valid Let's Encrypt cert, no warnings.
+5. **`.env` on the VPS already correct** — user had already removed `INNGEST_DEV` and set real prod `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` before this session's checklist even flagged it (verified via `grep INNGEST .env`).
+6. Docs corrected to match confirmed reality (not the earlier generic-Hostinger-docs assumption): `DEPLOYMENT.md` rewritten with the actual Traefik host-network + fixed-URL wiring, the live URL, the one-time restart step, known-taken ports on this VPS (8000-8003) so a future app picks a free one; `architecture.md` §6 updated; `.github/workflows/deploy.yml` path fixed from the wrong `/opt/apps/ai-tutor` guess to the real `/opt/Training-Module`.
+
+**Still outstanding (user, not yet confirmed this session):** Inngest Cloud app sync at `https://ai-tutor.187-127-173-25.sslip.io/api/inngest`; Supabase Auth Site/Redirect URL update to the same domain; one full live learner submission to confirm scoring actually completes end to end in production (the one thing curl can't verify — needs the Inngest job to fire for real).
+
 ## Session log — 2026-08-27 (later 6): PRODUCTION DEPLOYMENT SETUP — Docker + compose + runbook for the Hostinger VPS (code-complete; NOT yet deployed)
 
 User has a Hostinger VPS (`srv1701205.hstgr.cloud` / 187.127.173.25, KVM 8, Docker Manager with existing containers incl. Traefik and Uptime Kuma) and asked for a proper production deployment. Built the full containerization + runbook; **no server-side steps executed yet — deployment itself is the user's next action.**

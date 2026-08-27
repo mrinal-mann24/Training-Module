@@ -122,12 +122,13 @@ All jobs are durable — if the process restarts mid-window, the job resumes fro
 
 ## 6. Deployment
 
-- **Target:** self-hosted Hostinger VPS (`srv1701205.hstgr.cloud`), one Docker container (`ai-tutor`) alongside the VPS's existing containers, managed by Docker Compose. Supabase, OpenRouter, Inngest, and Langfuse remain external SaaS — the container is stateless and disposable; all learner data lives in Supabase.
-- **Routing:** served via the Traefik project template already on the VPS (external `traefik-proxy` network, `websecure` entrypoint, `letsencrypt` certresolver). `APP_DOMAIN` in `.env` (required, no default) is the VPS's Traefik-assigned domain — typically a sslip.io address read off the Traefik container's `TRAEFIK_HOST` env var — giving HTTPS with no domain purchase needed; swap in a real domain later without a rebuild.
+- **Target:** self-hosted Hostinger VPS (`srv1701205.hstgr.cloud`), one Docker container (`ai-tutor`, at `/opt/Training-Module`) alongside the VPS's existing containers, managed by Docker Compose. Supabase, OpenRouter, Inngest, and Langfuse remain external SaaS — the container is stateless and disposable; all learner data lives in Supabase.
+- **Live URL:** `https://ai-tutor.187-127-173-25.sslip.io` (confirmed working 2026-08-27).
+- **Routing:** Traefik (`traefik-traefik-1`) already on the VPS, running `network_mode: host` with Docker-label discovery — no shared external network exists on this VPS. The app publishes to `127.0.0.1:$APP_PORT` (loopback only) and Traefik routes to a fixed `loadbalancer.server.url`, the same pattern every other app container on this VPS uses. Domain is a sslip.io address (`<label>.187-127-173-25.sslip.io`) — no DNS setup, HTTPS via Traefik's `letsencrypt` certresolver. `APP_DOMAIN`/`APP_PORT` in `.env` (both required, no defaults). Full wiring detail and the one-time post-deploy Traefik restart note: `DEPLOYMENT.md`.
 - **Image:** multi-stage Dockerfile → Next.js `output: 'standalone'`, non-root user, runtime env injected via `env_file` (secrets never baked into layers; `.dockerignore` excludes `.env*`). `NEXT_PUBLIC_*` values are build args (inlined into the browser bundle).
 - **Health:** `/api/health` liveness route, wired to the compose healthcheck (and available for uptime monitoring).
 - **Deploys:** `git pull && docker compose up -d --build` on the VPS, or the manual-dispatch GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs the same over SSH. Full runbook: `DEPLOYMENT.md`.
-- **Production requirements:** `INNGEST_DEV` unset + real Inngest keys + the app synced in Inngest Cloud at `<public-url>/api/inngest` (jobs silently queue forever otherwise); Supabase Auth Site/Redirect URLs pointed at the public URL.
+- **Production requirements:** `INNGEST_DEV` unset + real Inngest keys (done) + the app synced in Inngest Cloud at `<public-url>/api/inngest` (jobs silently queue forever otherwise); Supabase Auth Site/Redirect URLs pointed at the public URL.
 
 ## 7. Invariants
 
