@@ -11,10 +11,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      # Host port is configurable so it never clashes with the other apps
-      # on this VPS (n8n, uptime, taipy, ...). Override with APP_PORT in .env.
-      - "${APP_PORT:-3005}:3000"
+    # No `ports:` mapping — Traefik reaches the container over the internal
+    # Docker network below, so this app's port 3000 never touches the host
+    # and can't collide with any other container already using host port 3000.
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -27,21 +28,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # --- Optional: serve via the Traefik already running on this VPS ---
-    # Uncomment and adjust to your Traefik setup (network name, certresolver,
-    # entrypoint names must match your existing traefik config), then you can
-    # remove the `ports:` mapping above.
-    #
-    # networks:
-    #   - traefik
-    # labels:
-    #   - "traefik.enable=true"
-    #   - "traefik.http.routers.ai-tutor.rule=Host(`tutor.yourdomain.com`)"
-    #   - "traefik.http.routers.ai-tutor.entrypoints=websecure"
-    #   - "traefik.http.routers.ai-tutor.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.ai-tutor.loadbalancer.server.port=3000"
+    # Served via the Traefik project template already running on this VPS
+    # (Hostinger Docker Manager's default Traefik: external "traefik-proxy"
+    # network, "websecure" entrypoint, "letsencrypt" certresolver).
+    # APP_DOMAIN defaults to a sslip.io address (wildcard DNS that resolves
+    # to your VPS IP automatically, no DNS setup needed) — set the exact
+    # value from your Traefik container's TRAEFIK_HOST env var in .env.
+    # Swap in a real domain later by changing APP_DOMAIN and redeploying —
+    # no rebuild needed, it's routing only.
+    networks:
+      - traefik-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-tutor.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.ai-tutor.entrypoints=websecure"
+      - "traefik.http.routers.ai-tutor.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ai-tutor.loadbalancer.server.port=3000"
 
-# networks:
-#   traefik:
-#     external: true
-#     name: traefik   # `docker network ls` on the VPS to find the real name
+    # --- Fallback: expose directly on a host port instead of Traefik ---
+    # Only needed if this VPS's Traefik network isn't actually named
+    # "traefik-proxy" (check with `docker network ls`) or you'd rather skip
+    # the reverse proxy for now. Comment out the `networks:`/`labels:` block
+    # above (and the top-level `networks:` section below), then uncomment:
+    #
+    # ports:
+    #   - "${APP_PORT:-3005}:3000"
+
+networks:
+  traefik-proxy:
+    external: true
