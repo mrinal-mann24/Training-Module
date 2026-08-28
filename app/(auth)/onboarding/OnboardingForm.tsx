@@ -3,13 +3,14 @@
 import { useActionState, useState } from 'react';
 import { cn } from '@/lib/cn';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
+import { Button } from '@/app/components/ui/button';
 import { submitOnboarding } from './actions';
 import { initialOnboardingFormState } from './onboarding-form-state';
 
 const DEFAULT_BOOKS_BEGIN_DATE = '2026-04-01';
 
 const INPUT_CLASSES =
-  'w-full rounded-2xl border border-white/80 bg-white/75 px-5 py-3.5 font-sans text-base text-wandor-text shadow-[0_0_2px_0_rgba(0,0,0,0.05)] backdrop-blur-[14px] transition-colors placeholder:text-wandor-muted focus:border-wandor-dark focus:outline-none';
+  'w-full rounded-lg border border-border bg-background px-4 py-2.5 font-body text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring';
 
 export function OnboardingForm() {
   const [state, formAction, isPending] = useActionState(
@@ -22,12 +23,10 @@ export function OnboardingForm() {
   const canContinue = licenseMode !== null && booksBeginDate !== '';
 
   return (
-    <form action={formAction} className="flex flex-col gap-7">
-      <fieldset className="flex flex-col gap-3">
-        <legend className="font-sans text-[13px] font-semibold uppercase tracking-[0.08em] text-wandor-text">
-          Your name
-        </legend>
-        <p className="text-sm leading-relaxed text-wandor-muted">
+    <form action={formAction} className="flex flex-col gap-6 font-body">
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium text-foreground">Your name</legend>
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Your tutor will address you by this name.
         </p>
         <input
@@ -40,20 +39,18 @@ export function OnboardingForm() {
         />
       </fieldset>
 
-      <fieldset className="flex flex-col gap-3">
-        <legend className="font-sans text-[13px] font-semibold uppercase tracking-[0.08em] text-wandor-text">
-          Tally license mode
-        </legend>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium text-foreground">Tally license mode</legend>
 
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => setLicenseMode('licensed')}
             className={cn(
-              'cursor-pointer rounded-2xl border px-5 py-3.5 text-left font-sans text-base font-medium backdrop-blur-[14px] transition-all',
+              'cursor-pointer rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors',
               licenseMode === 'licensed'
-                ? 'border-wandor-dark bg-white text-wandor-text'
-                : 'border-white/80 bg-white/60 text-wandor-muted hover:bg-white/80',
+                ? 'border-accent bg-accent/5 text-foreground ring-1 ring-ring'
+                : 'border-border bg-background text-muted-foreground hover:bg-secondary',
             )}
           >
             Licensed Tally
@@ -62,10 +59,10 @@ export function OnboardingForm() {
             type="button"
             onClick={() => setLicenseMode('educational')}
             className={cn(
-              'cursor-pointer rounded-2xl border px-5 py-3.5 text-left font-sans text-base font-medium backdrop-blur-[14px] transition-all',
+              'cursor-pointer rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors',
               licenseMode === 'educational'
-                ? 'border-wandor-dark bg-white text-wandor-text'
-                : 'border-white/80 bg-white/60 text-wandor-muted hover:bg-white/80',
+                ? 'border-accent bg-accent/5 text-foreground ring-1 ring-ring'
+                : 'border-border bg-background text-muted-foreground hover:bg-secondary',
             )}
           >
             Educational Mode
@@ -73,7 +70,7 @@ export function OnboardingForm() {
         </div>
 
         {licenseMode === 'educational' && (
-          <p className="text-sm leading-relaxed text-wandor-prompt">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             In Educational Mode, Tally restricts voucher entry to the 1st, 2nd, and last day of
             any month.
           </p>
@@ -82,10 +79,8 @@ export function OnboardingForm() {
         <input type="hidden" name="license_mode" value={licenseMode ?? ''} />
       </fieldset>
 
-      <fieldset className="flex flex-col gap-3">
-        <legend className="font-sans text-[13px] font-semibold uppercase tracking-[0.08em] text-wandor-text">
-          Books Begin Date
-        </legend>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium text-foreground">Books Begin Date</legend>
 
         <label htmlFor="books_begin_date" className="sr-only">
           Books Begin Date
@@ -103,13 +98,9 @@ export function OnboardingForm() {
 
       {state.error && <p className="text-sm text-status-error">{state.error}</p>}
 
-      <button
-        type="submit"
-        disabled={!canContinue || isPending}
-        className="w-full cursor-pointer rounded-full bg-wandor-dark px-5 py-3.5 font-sans text-[15px] font-medium uppercase tracking-[0.04em] text-[#fafafa] transition-all hover:bg-[#333] active:scale-95 disabled:opacity-60 disabled:active:scale-100"
-      >
+      <Button type="submit" disabled={!canContinue || isPending} className="w-full">
         {isPending ? 'Continuing…' : 'Continue'}
-      </button>
+      </Button>
     </form>
   );
 }

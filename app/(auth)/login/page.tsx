@@ -2,11 +2,18 @@ import { AuthForm } from './AuthForm';
 
 export default function LoginPage() {
   return (
-    <div className="w-full max-w-110 rounded-[44px] border-[3px] border-white bg-white/[0.55] p-10 shadow-[0_0_4px_0_rgba(0,0,0,0.15)] backdrop-blur-[20px] max-md:p-7">
-      <h1 className="text-center font-sans text-[28px] font-medium leading-tight tracking-[-0.02em] text-wandor-text">
-        Welcome back
+    <div
+      className="w-full max-w-md rounded-2xl p-8 backdrop-blur-xl max-md:p-6"
+      style={{
+        background: 'rgba(255, 255, 255, 0.7)',
+        border: '1px solid rgba(255, 255, 255, 0.5)',
+        boxShadow: 'var(--shadow-dashboard)',
+      }}
+    >
+      <h1 className="text-center font-display text-4xl leading-tight tracking-tight text-foreground">
+        Welcome <em className="italic">back</em>
       </h1>
-      <p className="mb-8 mt-2 text-center text-sm font-medium leading-relaxed text-wandor-muted">
+      <p className="mb-8 mt-2 text-center font-body text-sm leading-relaxed text-muted-foreground">
         Log in or create your account to continue your training.
       </p>
 

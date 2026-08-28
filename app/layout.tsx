@@ -2,28 +2,29 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AIA Academy — Ready to run real books?",
+  title: "AIA Academy — The Future of Smarter Bookkeeping",
   description:
     "Chat-based training that turns Tally exports into mastery, one exercise at a time.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full font-sans antialiased">
+    // suppressHydrationWarning on html/body: browser extensions (Grammarly,
+    // password managers, dark-mode extensions) inject attributes before React
+    // hydrates, which otherwise triggers spurious hydration mismatch errors.
+    <html lang="en" className="h-full font-sans antialiased" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font -- app-router root layout: this loads for every page */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Geist:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

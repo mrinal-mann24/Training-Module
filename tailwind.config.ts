@@ -9,12 +9,28 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        wandor: {
-          dark: "#0a0a0a",
-          text: "#1a1a1a",
-          muted: "#767676",
-          prompt: "#905831",
+        // shadcn-style semantic tokens — hsl triplets defined in globals.css
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        border: "hsl(var(--border))",
+        ring: "hsl(var(--ring))",
+
         neutral: {
           0: "#FFFFFF",
           50: "#F7F7F8",
@@ -26,6 +42,8 @@ const config: Config = {
           900: "#141416",
           950: "#0B0B0C",
         },
+        // Legacy app tokens (chat/progress surfaces) — values repointed to the
+        // current theme in globals.css so those components restyle themselves.
         "bg-canvas": "var(--bg-canvas)",
         "bg-surface": "var(--bg-surface)",
         "bg-surface-raised": "var(--bg-surface-raised)",
@@ -35,14 +53,13 @@ const config: Config = {
         "text-primary": "var(--text-primary)",
         "text-secondary": "var(--text-secondary)",
         "text-muted": "var(--text-muted)",
-        accent: "var(--accent)",
         "accent-hover": "var(--accent-hover)",
         "accent-subtle": "var(--accent-subtle)",
         "ai-thinking": "var(--ai-thinking)",
         "status-success": "#1F9254",
         "status-warning": "#B7791F",
         "status-error": "#D0342C",
-        "status-info": "#905831",
+        "status-info": "#6366F1",
       },
       borderRadius: {
         sm: "6px",
@@ -52,8 +69,9 @@ const config: Config = {
         full: "9999px",
       },
       fontFamily: {
-        sans: ["Geist", "sans-serif"],
-        display: ['"Special Elite"', "serif"],
+        sans: ["Inter", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+        display: ['"Instrument Serif"', "serif"],
         mono: [
           "ui-monospace",
           '"SF Mono"',
@@ -68,6 +86,9 @@ const config: Config = {
         lg: ["18px", "26px"],
         xl: ["22px", "28px"],
         "2xl": ["28px", "34px"],
+      },
+      boxShadow: {
+        dashboard: "var(--shadow-dashboard)",
       },
     },
   },

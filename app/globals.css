@@ -2,29 +2,48 @@
 @import "tailwindcss";
 
 /*
- * Single light theme (2026-08-27 direction): white canvas, near-black ink,
- * warm terracotta accent (#905831) inherited from the landing page design.
+ * Single light theme (2026-08-28 direction): white canvas, dark charcoal ink,
+ * indigo accent, Instrument Serif display headings + Inter body.
  * Dark mode removed on purpose — do not reintroduce a .dark block.
  */
 :root {
+  /* shadcn-style tokens (hsl triplets, consumed as hsl(var(--token))) */
+  --background: 0 0% 100%;
+  --foreground: 210 14% 17%;
+  --primary: 210 14% 17%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 184 5% 55%;
+  --accent: 239 84% 67%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 90%;
+  --ring: 239 84% 67%;
+  --radius: 0.5rem;
+  --font-display: "Instrument Serif", serif;
+  --font-body: "Inter", sans-serif;
+  --shadow-dashboard: 0 25px 80px -12px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.06);
+
+  /* Legacy app tokens (chat/progress) repointed to the same theme */
   --bg-canvas: #ffffff;
-  --bg-surface: #f7f7f6;
+  --bg-surface: #f5f5f5;
   --bg-surface-raised: #ffffff;
-  --bg-user-bubble: #f4efe9;
-  --border-default: #e4e2df;
-  --border-subtle: #efedeb;
-  --text-primary: #1a1a1a;
-  --text-secondary: #6b6b6b;
-  --text-muted: #9a9a97;
-  --accent: #0a0a0a;
-  --accent-hover: #333333;
-  --accent-subtle: #f4efe9;
-  --ai-thinking: rgb(144 88 49 / 60%);
+  --bg-user-bubble: #eef2ff;
+  --border-default: #e5e5e5;
+  --border-subtle: #f0f0f0;
+  --text-primary: #252b31;
+  --text-secondary: #5a6470;
+  --text-muted: #879192;
+  --accent-hover: #4f46e5;
+  --accent-subtle: #eef2ff;
+  --ai-thinking: rgb(99 102 241 / 60%);
 }
 
 body {
-  font-family: "Geist", sans-serif;
+  font-family: "Inter", sans-serif;
   overflow-x: hidden;
-  background-color: var(--bg-canvas);
-  color: var(--text-primary);
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
