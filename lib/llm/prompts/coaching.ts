@@ -1,17 +1,17 @@
-import type { ChatMessage } from '@/lib/llm/client';
-import type { ScoredField } from '@/lib/schemas/scoring';
-import { RULEBOOK_TEXT } from '@/lib/llm/grounding/rulebook';
+import type { ChatMessage } from "@/lib/llm/client";
+import type { ScoredField } from "@/lib/schemas/scoring";
+import { RULEBOOK_TEXT } from "@/lib/llm/grounding/rulebook";
 
 const COACHING_JSON_SCHEMA = {
-  type: 'object',
+  type: "object",
   additionalProperties: false,
   properties: {
-    opening_line: { type: 'string' },
-    went_well: { type: 'array', items: { type: 'string' } },
-    needs_work: { type: 'array', items: { type: 'string' } },
-    next_note: { type: 'string' },
+    opening_line: { type: "string" },
+    went_well: { type: "array", items: { type: "string" } },
+    needs_work: { type: "array", items: { type: "string" } },
+    next_note: { type: "string" },
   },
-  required: ['opening_line', 'went_well', 'needs_work', 'next_note'],
+  required: ["opening_line", "went_well", "needs_work", "next_note"],
 } as const;
 
 // The REAL Karbon VA House Practices Rulebook v0.2, extracted from the
@@ -21,7 +21,7 @@ const COACHING_JSON_SCHEMA = {
 const RULEBOOK_GROUNDING_PLACEHOLDER = `Grounding reference — Karbon VA House Practices Rulebook v0.2:
 ${RULEBOOK_TEXT}`;
 
-const SYSTEM_PROMPT = `You are the AI Tutor coaching a B.Com fresher on a Tally bookkeeping exercise
+const SYSTEM_PROMPT = `You are the AIA Academy coaching a B.Com fresher on a Tally bookkeeping exercise
 they just submitted. You do not compute correctness — that has already been done
 deterministically in code and is given to you as a scoring result. Your only job is
 turning that already-computed signal into well-written, Socratic-toned feedback prose.
@@ -115,7 +115,7 @@ export type QualitativeCoachingSignal = {
 };
 
 export type CoachingSignal = {
-  overallResult: 'pass' | 'partial' | 'fail';
+  overallResult: "pass" | "partial" | "fail";
   tbTieOut: boolean | null;
   weightedScorePercent: number | null;
   // Concept-level descriptions only — never the internal error code or the
@@ -142,32 +142,32 @@ function buildUserMessage(signal: CoachingSignal): string {
     `Overall result: ${signal.overallResult}`,
     signal.tbTieOut === null
       ? null
-      : `Trial Balance tie-out: ${signal.tbTieOut ? 'matched' : 'did not match'}`,
+      : `Trial Balance tie-out: ${signal.tbTieOut ? "matched" : "did not match"}`,
     signal.weightedScorePercent === null
       ? null
       : `Weighted score: ${signal.weightedScorePercent} percent. This number IS learner-visible: open the opening_line with it.`,
     signal.correctConceptDescriptions.length > 0
-      ? `Correctly handled: ${signal.correctConceptDescriptions.join('; ')}`
-      : 'Correctly handled: nothing notable',
+      ? `Correctly handled: ${signal.correctConceptDescriptions.join("; ")}`
+      : "Correctly handled: nothing notable",
     // Already grouped by field and capped in generate-coaching.ts — each entry
     // is one area, with its affected transactions named inside it. The model
     // must not re-expand these back into per-transaction bullets.
     signal.incorrectConceptDescriptions.length > 0
-      ? `Concepts to flag (${signal.incorrectConceptDescriptions.length} area(s), concept-level only, do not state the fix). Produce exactly one flagged_areas entry per area listed here, no more: ${signal.incorrectConceptDescriptions.join('; ')}`
-      : 'Concepts to flag: none — this was a clean pass',
+      ? `Concepts to flag (${signal.incorrectConceptDescriptions.length} area(s), concept-level only, do not state the fix). Produce exactly one flagged_areas entry per area listed here, no more: ${signal.incorrectConceptDescriptions.join("; ")}`
+      : "Concepts to flag: none — this was a clean pass",
     signal.qualitative
       ? `Free-text answer quality — recall: ${signal.qualitative.recallDescription}; precision: ${signal.qualitative.precisionDescription}; reasoning: ${signal.qualitative.reasoningDescription}. Weave this into flagged_areas/praise in plain language — never state these as numbers or scores.`
       : null,
     // Stated explicitly in both directions: leaving the complete case silent
     // invites the model to invent a missing part that never existed.
     signal.missingPartDescriptions.length > 0
-      ? `Parts that never arrived before scoring: ${signal.missingPartDescriptions.join('; ')}. Mention this plainly in next_note.`
-      : 'Submission completeness: complete — every required part arrived. Do not suggest anything is missing or still to be sent.',
+      ? `Parts that never arrived before scoring: ${signal.missingPartDescriptions.join("; ")}. Mention this plainly in next_note.`
+      : "Submission completeness: complete — every required part arrived. Do not suggest anything is missing or still to be sent.",
     signal.rectificationDescriptions.length > 0
-      ? `Rectification notes (already classified in code — state each as a short, plain line, e.g. "Good news — the GST classification issue from before is fixed"): ${signal.rectificationDescriptions.join('; ')}`
+      ? `Rectification notes (already classified in code — state each as a short, plain line, e.g. "Good news — the GST classification issue from before is fixed"): ${signal.rectificationDescriptions.join("; ")}`
       : null,
   ].filter((line): line is string => line !== null);
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 export function buildCoachingPrompt(signal: CoachingSignal): {
@@ -176,11 +176,11 @@ export function buildCoachingPrompt(signal: CoachingSignal): {
 } {
   return {
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildUserMessage(signal) },
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: buildUserMessage(signal) },
     ],
     jsonSchema: {
-      name: 'coaching_feedback',
+      name: "coaching_feedback",
       schema: COACHING_JSON_SCHEMA,
     },
   };
@@ -189,14 +189,17 @@ export function buildCoachingPrompt(signal: CoachingSignal): {
 export function buildCoachingRetryPrompt(
   signal: CoachingSignal,
   validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
   const base = buildCoachingPrompt(signal);
   return {
     ...base,
     messages: [
       ...base.messages,
       {
-        role: 'user',
+        role: "user",
         content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
       },
     ],
@@ -206,12 +209,12 @@ export function buildCoachingRetryPrompt(
 // Field labels used to build the human-readable concept descriptions passed
 // into the coaching signal — kept here since it's prompt-adjacent vocabulary.
 export const FIELD_CONCEPT_LABELS: Record<ScoredField, string> = {
-  account: 'the ledger account classification',
-  dr_cr: 'the Debit/Credit direction',
-  amount: 'the amount posted',
-  voucher_type: 'the voucher type used',
-  gst: 'the GST treatment',
-  tds: 'the TDS treatment',
-  bill_reference: 'the bill-by-bill reference',
-  narration: 'the narration',
+  account: "the ledger account classification",
+  dr_cr: "the Debit/Credit direction",
+  amount: "the amount posted",
+  voucher_type: "the voucher type used",
+  gst: "the GST treatment",
+  tds: "the TDS treatment",
+  bill_reference: "the bill-by-bill reference",
+  narration: "the narration",
 };

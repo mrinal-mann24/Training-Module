@@ -6,11 +6,11 @@ Design direction (2026-08-27, user direction): **light-only, white, minimal, cla
 
 Fonts load via Google Fonts `<link>` tags in `app/layout.tsx` (preconnect + one stylesheet: Special Elite 400, Geist 400/500/600/700).
 
-| Role | Typeface | Tailwind | Notes |
-|---|---|---|---|
-| UI / body / headlines | Geist | `font-sans` | Weights 400/500/600/700. Headlines are Geist Medium with tight tracking (`tracking-[-0.04em]`), e.g. `text-[clamp(40px,6vw,68px)]` on the landing hero |
-| Wordmark only | Special Elite (typewriter serif) | `font-display` | Lowercase wordmark "ai tutor", 40px on the landing nav, 32px elsewhere. Never used for body text |
-| Numbers / ledger data / XML | `ui-monospace, "SF Mono", "JetBrains Mono", monospace` | `font-mono` | Unchanged |
+| Role                        | Typeface                                               | Tailwind       | Notes                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| UI / body / headlines       | Geist                                                  | `font-sans`    | Weights 400/500/600/700. Headlines are Geist Medium with tight tracking (`tracking-[-0.04em]`), e.g. `text-[clamp(40px,6vw,68px)]` on the landing hero |
+| Wordmark only               | Special Elite (typewriter serif)                       | `font-display` | Lowercase wordmark "AIA Academy", 40px on the landing nav, 32px elsewhere. Never used for body text                                                    |
+| Numbers / ledger data / XML | `ui-monospace, "SF Mono", "JetBrains Mono", monospace` | `font-mono`    | Unchanged                                                                                                                                              |
 
 Type scale tokens (`text-xs` … `text-2xl`) are unchanged from before; marketing surfaces additionally use arbitrary clamp sizes.
 
@@ -18,41 +18,41 @@ Type scale tokens (`text-xs` … `text-2xl`) are unchanged from before; marketin
 
 ### Wandor palette (Tailwind `wandor.*` keys)
 
-| Token | Hex | Use |
-|---|---|---|
-| `wandor-dark` | `#0a0a0a` | Primary/pill buttons, black CTA circles |
-| `wandor-text` | `#1a1a1a` | Headlines, body ink |
-| `wandor-muted` | `#767676` | Subtitles, secondary marketing text, muted labels |
+| Token           | Hex       | Use                                                                                                                      |
+| --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `wandor-dark`   | `#0a0a0a` | Primary/pill buttons, black CTA circles                                                                                  |
+| `wandor-text`   | `#1a1a1a` | Headlines, body ink                                                                                                      |
+| `wandor-muted`  | `#767676` | Subtitles, secondary marketing text, muted labels                                                                        |
 | `wandor-prompt` | `#905831` | Terracotta accent: prompt text in the glass card, links ("Sign up" toggle), the Task card eyebrow, Educational Mode note |
 
 Button hover is `#333` (`hover:bg-[#333]`); pill buttons use `active:scale-95`.
 
 ### Semantic CSS-variable tokens (single light theme, `app/globals.css`)
 
-| Token | Hex | Use |
-|---|---|---|
-| `--bg-canvas` | `#ffffff` | App background |
-| `--bg-surface` | `#f7f7f6` | Cards, tutor message bubble (warm near-white) |
-| `--bg-surface-raised` | `#ffffff` | Modals, dropdowns |
-| `--bg-user-bubble` | `#f4efe9` | Learner's chat messages (warm sand tint of the terracotta) |
-| `--border-default` | `#e4e2df` | Dividers, input borders, card edges |
-| `--border-subtle` | `#efedeb` | Low-emphasis separators |
-| `--text-primary` | `#1a1a1a` | Body text, headings |
-| `--text-secondary` | `#6b6b6b` | Timestamps, labels (kept a step darker than `wandor-muted` for AA at 14px) |
-| `--text-muted` | `#9a9a97` | Placeholder, disabled, empty states |
-| `--accent` | `#0a0a0a` | Primary buttons, links, active states (black, not blue) |
-| `--accent-hover` | `#333333` | Hover on accent elements |
-| `--accent-subtle` | `#f4efe9` | Selected row, badge background |
-| `--ai-thinking` | `rgb(144 88 49 / 60%)` | Typing/generating indicator (terracotta pulse) |
+| Token                 | Hex                    | Use                                                                        |
+| --------------------- | ---------------------- | -------------------------------------------------------------------------- |
+| `--bg-canvas`         | `#ffffff`              | App background                                                             |
+| `--bg-surface`        | `#f7f7f6`              | Cards, tutor message bubble (warm near-white)                              |
+| `--bg-surface-raised` | `#ffffff`              | Modals, dropdowns                                                          |
+| `--bg-user-bubble`    | `#f4efe9`              | Learner's chat messages (warm sand tint of the terracotta)                 |
+| `--border-default`    | `#e4e2df`              | Dividers, input borders, card edges                                        |
+| `--border-subtle`     | `#efedeb`              | Low-emphasis separators                                                    |
+| `--text-primary`      | `#1a1a1a`              | Body text, headings                                                        |
+| `--text-secondary`    | `#6b6b6b`              | Timestamps, labels (kept a step darker than `wandor-muted` for AA at 14px) |
+| `--text-muted`        | `#9a9a97`              | Placeholder, disabled, empty states                                        |
+| `--accent`            | `#0a0a0a`              | Primary buttons, links, active states (black, not blue)                    |
+| `--accent-hover`      | `#333333`              | Hover on accent elements                                                   |
+| `--accent-subtle`     | `#f4efe9`              | Selected row, badge background                                             |
+| `--ai-thinking`       | `rgb(144 88 49 / 60%)` | Typing/generating indicator (terracotta pulse)                             |
 
 ### Status colors (unchanged semantics)
 
-| Token | Hex | Use |
-|---|---|---|
-| `status-success` | `#1F9254` | Passed exercise, mastered concept |
-| `status-warning` | `#B7791F` | Partial score, "keep iterating" |
-| `status-error` | `#D0342C` | Failed check, TB mismatch, invalid submission |
-| `status-info` | `#905831` | Aligned to the terracotta accent (was the retired blue) |
+| Token            | Hex       | Use                                                     |
+| ---------------- | --------- | ------------------------------------------------------- |
+| `status-success` | `#1F9254` | Passed exercise, mastered concept                       |
+| `status-warning` | `#B7791F` | Partial score, "keep iterating"                         |
+| `status-error`   | `#D0342C` | Failed check, TB mismatch, invalid submission           |
+| `status-info`    | `#905831` | Aligned to the terracotta accent (was the retired blue) |
 
 ## Signature Components
 

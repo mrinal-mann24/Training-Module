@@ -1,8 +1,8 @@
-# AI Tutor — Project Overview
+# AIA Academy — Project Overview
 
 ## Overview
 
-AI Tutor is a self-serve, chat-based training product that makes B.Com fresh graduates proficient in real-world bookkeeping. Learners work practical accounting scenarios inside their own copy of Tally, submit their Tally exports (Detailed Day Book XML and Trial Balance XML) into a chat interface, and an AI tutor scores the submission against a hidden answer key, gives Socratic (non-answer-revealing) feedback, and generates the next exercise targeted at whatever the learner is weakest at. Early modules are pure Tally so learners build real accounting judgment by hand. Once the AI tutor judges a learner's mechanics solid, it runs an interactive Navattic product tour to onboard them onto AI Accountant (AIA), and later exercises are completed using AIA (bill/statement ingestion, categorization, sync to Tally) instead of manual entry — while grading continues to happen on the same Tally export as before, so the standard of correctness never changes. The system tracks per-concept mastery over multiple attempts (not one-off correctness), reinforces weak concepts by regenerating targeted exercises, and never leaves a learner permanently stuck: a graduated hint ladder always eventually reaches the full answer. The journey ends in a full messy-client-month capstone, a re-run of the original diagnostic to show measurable improvement, and a certificate.
+AIA Academy is a self-serve, chat-based training product that makes B.Com fresh graduates proficient in real-world bookkeeping. Learners work practical accounting scenarios inside their own copy of Tally, submit their Tally exports (Detailed Day Book XML and Trial Balance XML) into a chat interface, and an AIA Academy scores the submission against a hidden answer key, gives Socratic (non-answer-revealing) feedback, and generates the next exercise targeted at whatever the learner is weakest at. Early modules are pure Tally so learners build real accounting judgment by hand. Once the AIA Academy judges a learner's mechanics solid, it runs an interactive Navattic product tour to onboard them onto AI Accountant (AIA), and later exercises are completed using AIA (bill/statement ingestion, categorization, sync to Tally) instead of manual entry — while grading continues to happen on the same Tally export as before, so the standard of correctness never changes. The system tracks per-concept mastery over multiple attempts (not one-off correctness), reinforces weak concepts by regenerating targeted exercises, and never leaves a learner permanently stuck: a graduated hint ladder always eventually reaches the full answer. The journey ends in a full messy-client-month capstone, a re-run of the original diagnostic to show measurable improvement, and a certificate.
 
 ## Goals
 
@@ -21,7 +21,7 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 3. **Dashboard landing screen.** After onboarding, the learner lands on a screen with two boxes: **Modules** (a placeholder for now — 5–6 video slots, no functional content yet, added in a later phase) and **Task** (opens the chat shell — the real, functional path). Clicking Task is the only way forward at this stage.
 4. **In-chat guided walkthrough.** Inside the chat shell, before any exercise appears, the tutor delivers a short guided walkthrough (Educational Mode disclosure, how submission works, etc.) as a sequence of chat messages the learner steps through with Next → Next → "I understand." Only after confirming does the flow continue.
 5. **Diagnostic exercise.** Every learner gets the same starting exercise (one of two seeded variants), now appearing in the chat shell after the walkthrough is confirmed. The diagnostic is an **authored file pack**, not a generated scenario: a set of source files (Opening Trial Balance, Sales Register, Purchase Register, Bank Statement — e.g. `BlossomRetail_Variant_A`) presented as downloadable cards in the chat, with a hand-authored answer key stored server-side. The learner works the full pack in their own Tally instance and submits the usual Day Book + Trial Balance exports. This is scored but not taught — it sets their starting mastery map and level, and is later re-run at the capstone to measure improvement. (Decision 2026-08-19, from the live pilot training program this product is modeled on: fixed authored packs make trap-quality and review-specificity possible in a way generated diagnostics cannot; LLM generation remains the engine for the adaptive drills between batches.)
-6. **Exercise loop begins (Tally-only phase).** The AI tutor generates an exercise: a scenario, numbered transactions, and (for later modules) source documents like PDF invoices or a mock bank statement — plus a hidden answer key the tutor generates alongside it. The learner posts the transactions in Tally.
+6. **Exercise loop begins (Tally-only phase).** The AIA Academy generates an exercise: a scenario, numbered transactions, and (for later modules) source documents like PDF invoices or a mock bank statement — plus a hidden answer key the tutor generates alongside it. The learner posts the transactions in Tally.
 7. **Submission.** The learner uploads their Detailed Day Book XML and Trial Balance XML into the chat. For qualitative modules, they also send an "explain the entry" answer and an open ledger-review answer as separate chat messages, which may arrive out of order over 30–45 minutes.
 8. **Validity check.** Before any score is produced, the system checks the upload is the right format (Detailed, not Condensed), complete (all expected transactions present), and readable. If not, it is held and the learner is told exactly what to fix and resubmit — never scored on incomplete data.
 9. **Scoring.** Once valid, the parsed submission is scored voucher by voucher against the hidden answer key: account classification, Dr/Cr direction, GST head and rate, TDS section/rate/base, voucher type, bill-by-bill reference, and narration. Trial Balance tie-out is checked. Errors are tagged with internal codes. GST and TDS errors are weighted twice as heavily as narration/discipline errors.
@@ -36,17 +36,20 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 ## Features (by Category)
 
 ### Onboarding & Access
+
 - Account creation via Supabase Auth (Google OAuth, magic link)
 - One-time Tally license mode capture (`licensed` | `educational`) with plain-language disclosure for Educational Mode
 - Books Begin Date confirmation
 - Export how-to reference, sendable on request in-chat
 
 ### Dashboard
+
 - Landing screen shown after onboarding, two entry points: Modules and Task
 - Modules box: placeholder for v1 (5–6 video slots reserved, no functional content — real video library is a later phase)
 - Task box: the only functional path in v1, opens the chat shell
 
 ### The Live Tutor (Chat)
+
 - Chat interface as the primary learning surface
 - In-chat guided walkthrough before the first exercise (Educational Mode disclosure, submission instructions), stepped through via Next → Next → "I understand"
 - Exercise generation on demand for adaptive drills (scenario + hidden answer key generated together); diagnostic and capstone use authored packs with authored answer keys
@@ -56,6 +59,7 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 - Reference-video pointers by concept tag and timestamp
 
 ### Submission & Scoring
+
 - Detailed Day Book XML + Trial Balance XML upload
 - Multi-part, out-of-order submission tracking (daybook, explain, review arriving as separate messages)
 - Pre-scoring validity gate (format, completeness, readability) — holds and requests resubmission rather than guessing a score
@@ -65,6 +69,7 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 - Qualitative scoring (recall, precision, reasoning) for explain-the-entry and ledger-review answers
 
 ### Mastery & Progression
+
 - Per-concept mastery tracking (3 consecutive clean applications at 90%+, no narration/bill misses)
 - Rectification tracking (FIXED / STILL FAILING / NEW on re-tested concepts)
 - Reinforcement loop (2-of-3 failures drops a level and re-targets)
@@ -72,6 +77,7 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 - Hint-rung depth as a mastery signal (heavy reliance on rungs 4–5 blocks mastery credit even if the final answer was correct)
 
 ### Content Generation
+
 - Authored exercise packs for diagnostic (and capstone): source-file sets (xlsx registers, bank statement, opening TB) + hand-authored answer keys, seeded per variant (A/B). Real reference content now exists: `Karbon_VA_House_Practices_Rulebook_v0.2.docx` and 8 training-module docs (Sales, Purchase, Bank, TDS, GST, Fixed Assets, Payables, Receivables, Journal) — these replace the placeholder Rulebook grounding and the "video slot" placeholders as the tutor's reference material
 - Scenario and transaction generation for adaptive drills, calibrated by difficulty (L0–L4)
 - Source-document generation (PDF invoices/bills, mock bank statements) with seeded source-integrity traps
@@ -79,10 +85,12 @@ AI Tutor is a self-serve, chat-based training product that makes B.Com fresh gra
 - Variant seeding (name/amount/state variation) to reduce answer reuse
 
 ### AIA Integration
+
 - Navattic interactive tour: AIA connector download and Tally connection
 - AIA-assisted exercise variants (same scoring standard, different input method)
 
 ### Platform
+
 - Learner state persistence (mastery map, error history, hint usage, submission log, reflections)
 - Progress view showing module position and flagged escalation concepts
 - Certificate issuance

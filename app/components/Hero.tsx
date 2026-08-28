@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useRef } from 'react';
-import Link from 'next/link';
-import { Upload } from 'lucide-react';
-import { VideoBackdrop } from '@/app/components/VideoBackdrop';
+import { useRef } from "react";
+import Link from "next/link";
+import { Upload } from "lucide-react";
+import { VideoBackdrop } from "@/app/components/VideoBackdrop";
 
 function NavButton({ label }: { label: string }) {
   return (
@@ -26,7 +26,7 @@ export function Hero() {
       <div className="relative z-[2] mx-auto max-w-[1360px]">
         <nav className="relative flex items-center justify-between px-20 pt-6 pb-4 max-md:px-6 max-md:pt-5">
           <span className="select-none font-display text-[40px] leading-none text-black max-md:text-[32px]">
-            ai tutor
+            AIA Academy
           </span>
 
           <div className="absolute left-1/2 flex -translate-x-1/2 gap-8 max-md:hidden">
@@ -56,18 +56,23 @@ export function Hero() {
             Ready to run real books?
           </h1>
           <p className="mb-10 max-w-[500px] font-sans text-xl font-medium leading-relaxed text-wandor-muted">
-            Tell your AI tutor where you are in your training. It scores your
+            Tell your AIA Academy where you are in your training. It scores your
             Tally work and coaches you to mastery, one exercise at a time.
           </p>
 
           <div className="relative min-h-[208px] w-[701px] overflow-hidden rounded-[44px] border-[3px] border-white bg-white/[0.06] shadow-[0_0_4px_0_rgba(0,0,0,0.15)] backdrop-blur-[20px] max-md:w-[calc(100vw-48px)]">
             <p className="absolute left-[29px] top-[57px] w-[609px] -translate-y-1/2 break-words text-left font-sans text-xl font-medium leading-relaxed text-wandor-prompt max-md:w-[calc(100%-58px)] max-md:text-[17px]">
-              I&apos;ve posted April for Blossom Retail in Tally. Here are my Day
-              Book and Trial Balance exports. Score me and tell me what to work
-              on next....
+              I&apos;ve posted April for Blossom Retail in Tally. Here are my
+              Day Book and Trial Balance exports. Score me and tell me what to
+              work on next....
             </p>
 
-            <input ref={fileInputRef} type="file" accept=".xml" className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xml"
+              className="hidden"
+            />
             <button
               type="button"
               aria-label="Upload your Tally exports"

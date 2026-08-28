@@ -1,7 +1,11 @@
-import Link from 'next/link';
-import { VideoBackdrop } from '@/app/components/VideoBackdrop';
+import Link from "next/link";
+import { VideoBackdrop } from "@/app/components/VideoBackdrop";
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+export default function AuthLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <div className="relative flex min-h-svh w-full flex-col overflow-hidden">
       <VideoBackdrop />
@@ -11,7 +15,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           href="/"
           className="select-none font-display text-[32px] leading-none text-black transition-opacity hover:opacity-70"
         >
-          ai tutor
+          AIA Academy
         </Link>
       </nav>
 

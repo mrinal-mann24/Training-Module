@@ -1,19 +1,19 @@
-import type { ChatMessage } from '@/lib/llm/client';
-import { RULEBOOK_TEXT } from '@/lib/llm/grounding/rulebook';
-import { MODULE_DOCS } from '@/lib/llm/grounding/module-docs';
-import { VIDEO_MODULE_LIST_BLOCK } from '@/lib/llm/grounding/video-modules';
+import type { ChatMessage } from "@/lib/llm/client";
+import { RULEBOOK_TEXT } from "@/lib/llm/grounding/rulebook";
+import { MODULE_DOCS } from "@/lib/llm/grounding/module-docs";
+import { VIDEO_MODULE_LIST_BLOCK } from "@/lib/llm/grounding/video-modules";
 
 const MODULE_DOCS_BLOCK = Object.entries(MODULE_DOCS)
   .map(([name, text]) => `--- ${name} ---\n${text}`)
-  .join('\n\n');
+  .join("\n\n");
 
 const QA_JSON_SCHEMA = {
-  type: 'object',
+  type: "object",
   additionalProperties: false,
   properties: {
-    answer: { type: 'string' },
+    answer: { type: "string" },
   },
-  required: ['answer'],
+  required: ["answer"],
 } as const;
 
 // Unit 15R: free-form tutor Q&A, modeled on the pilot program's chat — a
@@ -28,7 +28,7 @@ const QA_JSON_SCHEMA = {
 // eventually gives the answer, but only through the flow's progression). General
 // concept/ledger/procedure questions are answered directly and completely,
 // exactly like the pilot's reviewers did.
-const SYSTEM_PROMPT = `You are the AI Tutor for a bookkeeping training programme, answering a learner's
+const SYSTEM_PROMPT = `You are the AIA Academy for a bookkeeping training programme, answering a learner's
 free-form question in chat. Learners are B.Com freshers working practical Tally
 exercises. Your reviewers' voice: direct, practical, specific — like a senior
 accountant answering a junior's question in a work chat. Answer the question
@@ -81,27 +81,33 @@ export function buildQaPrompt(context: QaContext): {
 } {
   const exerciseBlock = context.exerciseScenario
     ? `Their current exercise (for recognizing rule-2 questions — never solve its transactions):\n${context.exerciseScenario}\n\n`
-    : '';
+    : "";
   return {
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `${exerciseBlock}Learner's question: ${context.question}` },
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `${exerciseBlock}Learner's question: ${context.question}`,
+      },
     ],
-    jsonSchema: { name: 'qa_response', schema: QA_JSON_SCHEMA },
+    jsonSchema: { name: "qa_response", schema: QA_JSON_SCHEMA },
   };
 }
 
 export function buildQaRetryPrompt(
   context: QaContext,
   validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
   const base = buildQaPrompt(context);
   return {
     ...base,
     messages: [
       ...base.messages,
       {
-        role: 'user',
+        role: "user",
         content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
       },
     ],

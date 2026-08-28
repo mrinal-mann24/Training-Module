@@ -1,17 +1,17 @@
-import type { ChatMessage } from '@/lib/llm/client';
-import { VIDEO_MODULE_LIST_BLOCK } from '@/lib/llm/grounding/video-modules';
-import type { AnswerKey } from '@/lib/schemas/exercise';
-import type { HintStep } from '@/lib/schemas/hint';
+import type { ChatMessage } from "@/lib/llm/client";
+import { VIDEO_MODULE_LIST_BLOCK } from "@/lib/llm/grounding/video-modules";
+import type { AnswerKey } from "@/lib/schemas/exercise";
+import type { HintStep } from "@/lib/schemas/hint";
 
 const HINT_JSON_SCHEMA = {
-  type: 'object',
+  type: "object",
   additionalProperties: false,
   properties: {
-    rung: { type: 'integer', enum: [1, 2, 3] },
-    hint_text: { type: 'string' },
-    concept_tag: { type: 'string' },
+    rung: { type: "integer", enum: [1, 2, 3] },
+    hint_text: { type: "string" },
+    concept_tag: { type: "string" },
   },
-  required: ['rung', 'hint_text', 'concept_tag'],
+  required: ["rung", "hint_text", "concept_tag"],
 } as const;
 
 // Phase 3 (spec 15): the manager's 3-step query response. Each step
@@ -63,7 +63,8 @@ export function summarizePackAnswerKey(answerKey: AnswerKey): {
   for (const entry of answerKey.entries) {
     if (!seenSequences.has(entry.sequence)) {
       seenSequences.add(entry.sequence);
-      voucherTypes[entry.voucher_type] = (voucherTypes[entry.voucher_type] ?? 0) + 1;
+      voucherTypes[entry.voucher_type] =
+        (voucherTypes[entry.voucher_type] ?? 0) + 1;
     }
     for (const tag of entry.concept_tags) {
       concepts.add(tag);
@@ -90,7 +91,7 @@ entry in this set. Adjust the steps accordingly:
   type which specific entry is blocking them, so you can point them at the
   exact rule it needs.`;
 
-const SYSTEM_PROMPT_PREFIX = `You are the AI Tutor giving one step of a 3-step help flow to a B.Com fresher
+const SYSTEM_PROMPT_PREFIX = `You are the AIA Academy giving one step of a 3-step help flow to a B.Com fresher
 stuck on a Tally bookkeeping exercise. You are given the exercise scenario and
 its hidden answer key for grounding — the answer key itself must never appear
 in your output verbatim or be quoted as JSON; compose it into natural help
@@ -111,7 +112,7 @@ export type HintPromptContext = {
 };
 
 function buildSystemPrompt(rung: HintStep, packMode: boolean): string {
-  const packBlock = packMode ? `\n\n${PACK_MODE_INSTRUCTIONS}` : '';
+  const packBlock = packMode ? `\n\n${PACK_MODE_INSTRUCTIONS}` : "";
   return `${SYSTEM_PROMPT_PREFIX}\n\n${STEP_INSTRUCTIONS[rung]}${packBlock}`;
 }
 
@@ -119,7 +120,7 @@ function buildUserMessage(context: HintPromptContext): string {
   const registryBlock = `Video module registry (for step-1 pointers — always name a module by its exact title from this list, never invent one):\n${VIDEO_MODULE_LIST_BLOCK}`;
   const transactionLines = context.transactions
     .map((transaction) => `${transaction.sequence}. ${transaction.description}`)
-    .join('\n');
+    .join("\n");
   const groundingBlock = context.packMode
     ? `What this practice set covers (summary only; the answer key itself is withheld in pack mode):\n${JSON.stringify(summarizePackAnswerKey(context.answerKey), null, 2)}`
     : `Hidden answer key (grounding only, never repeat verbatim):\n${buildAnswerKeyContext(context.answerKey)}`;
@@ -133,11 +134,14 @@ export function buildHintPrompt(context: HintPromptContext): {
 } {
   return {
     messages: [
-      { role: 'system', content: buildSystemPrompt(context.rung, context.packMode) },
-      { role: 'user', content: buildUserMessage(context) },
+      {
+        role: "system",
+        content: buildSystemPrompt(context.rung, context.packMode),
+      },
+      { role: "user", content: buildUserMessage(context) },
     ],
     jsonSchema: {
-      name: 'hint',
+      name: "hint",
       schema: HINT_JSON_SCHEMA,
     },
   };
@@ -146,14 +150,17 @@ export function buildHintPrompt(context: HintPromptContext): {
 export function buildHintRetryPrompt(
   context: HintPromptContext,
   validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
   const base = buildHintPrompt(context);
   return {
     ...base,
     messages: [
       ...base.messages,
       {
-        role: 'user',
+        role: "user",
         content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
       },
     ],

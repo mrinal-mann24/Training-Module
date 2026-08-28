@@ -1,9 +1,9 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { ArrowUpRight } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { isLearnerOnboarded } from '@/lib/db/queries/learner-profile';
-import { logOut } from './actions';
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { ArrowUpRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { isLearnerOnboarded } from "@/lib/db/queries/learner-profile";
+import { logOut } from "./actions";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -12,11 +12,11 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/login');
+    redirect("/login");
   }
 
   if (!(await isLearnerOnboarded(supabase, user.id))) {
-    redirect('/onboarding');
+    redirect("/onboarding");
   }
 
   return (
@@ -27,7 +27,7 @@ export default async function DashboardPage() {
             href="/"
             className="select-none font-display text-[32px] leading-none text-black transition-opacity hover:opacity-70"
           >
-            ai tutor
+            AIA Academy
           </Link>
 
           <form action={logOut}>
