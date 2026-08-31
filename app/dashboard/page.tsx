@@ -44,7 +44,7 @@ export default async function DashboardPage() {
         <h1 className="font-display text-5xl leading-[1.05] tracking-tight text-foreground md:text-6xl">
           Welcome <em className="italic">back</em>
         </h1>
-        <p className="mt-4 max-w-[650px] text-base leading-relaxed text-muted-foreground md:text-lg">
+        <p className="mt-4 max-w-162.5 text-base leading-relaxed text-muted-foreground md:text-lg">
           Pick up your training right where you left off.
         </p>
 

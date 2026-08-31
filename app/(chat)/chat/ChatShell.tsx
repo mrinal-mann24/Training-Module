@@ -10,6 +10,7 @@ import { Composer } from './Composer';
 import { PendingSubmission } from './PendingSubmission';
 import { getWalkthroughSteps } from './walkthrough-config';
 import { askQuestion, confirmWalkthrough, requestHint, submitFiles, submitTextPart } from './actions';
+import { logOut } from '@/app/dashboard/actions';
 import type { ChatMessage } from './message';
 
 type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documentName: string; url: string };
@@ -371,6 +372,21 @@ export function ChatShell({
 
   return (
     <div className="flex h-screen flex-col bg-bg-canvas">
+      {/* Slim persistent header so the learner always has a visible,
+          unambiguous Log out — the chat screen previously had none, and the
+          only logout lived on the dashboard (2026-08-31). */}
+      <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5 font-body">
+        <span className="text-base font-semibold tracking-tight text-foreground">✦ AIA Academy</span>
+        <form action={logOut}>
+          <button
+            type="submit"
+            className="cursor-pointer rounded-lg border border-border bg-background px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+          >
+            Log out
+          </button>
+        </form>
+      </header>
+
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {/* Phase 4 (spec 16): widescreen — messages live in a centered
             ~1150px column instead of spanning the whole window. */}

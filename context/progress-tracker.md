@@ -21,6 +21,17 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-08-31 (later): AUTH FLOW SIMPLIFIED — no email confirmation, explicit signup→login cycle, chat Log out
+
+User disabled "Confirm email" in the Supabase dashboard (their step) and asked for a plain intern-friendly flow: sign up → land on login → log in; obvious Log out everywhere; logout fully ends the session. Code changes:
+
+- `app/(auth)/login/actions.ts` signUp: with confirmation off, Supabase returns a live session on signup — the action now signs that auto-session out immediately and returns `accountCreated: true` instead of redirecting to /dashboard, so the learner always logs in explicitly. The confirm-email path is kept as a defensive fallback if the dashboard toggle is ever re-enabled.
+- `auth-form-state.ts`: added `accountCreated` to the form state.
+- `AuthForm.tsx`: on `accountCreated`, flips to log-in mode (guarded render-time state adjustment) and shows "Account created. Log in below with the email and password you just chose." above the login form.
+- `ChatShell.tsx`: added a slim persistent header (✦ AIA Academy + Log out button calling the existing `logOut` server action) — the chat screen previously had NO logout; the only one lived on the dashboard. Logout semantics unchanged and confirmed: `logOut` signs out and redirects to /login, and proxy.ts bounces any signed-out visit to /dashboard//chat//progress//onboarding back to /login.
+
+Gates: tsc clean, eslint clean, 141/141 tests. NOTE: fixes are local — the VPS still runs the old build until redeployed.
+
 ## Session log — 2026-08-31: SCORING-FEEDBACK ACCURACY FIXES — audited against the first real intern submission
 
 The user ran a real intern (Garima) through the Blossom Variant A pack in production and asked whether the 82%/"needs work" feedback was accurate. A full manual audit of her DayBook/TrialBal XMLs (note: Tally exports are UTF-16LE and carry illegal `&#4;` XML entities — 1,006 of them — which must be stripped before any standards parser accepts the file) against the answer key found the grade broadly fair but three citation-accuracy defects in the deterministic signal (the coaching LLM was faithfully phrasing a faulty signal). All three fixed:

@@ -34,7 +34,7 @@ export function OnboardingForm() {
           name="full_name"
           required
           maxLength={120}
-          placeholder="e.g. Elina Shaji"
+          placeholder="e.g. Shruti Nair"
           className={INPUT_CLASSES}
         />
       </fieldset>

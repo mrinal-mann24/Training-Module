@@ -25,14 +25,14 @@ export async function logIn(
 ): Promise<AuthFormState> {
   const credentials = readCredentials(formData);
   if (!credentials) {
-    return { error: 'Enter your email and password.', confirmEmailSent: false };
+    return { error: 'Enter your email and password.', confirmEmailSent: false, accountCreated: false };
   }
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    return { error: error.message, confirmEmailSent: false };
+    return { error: error.message, confirmEmailSent: false, accountCreated: false };
   }
 
   redirect('/dashboard');
@@ -44,7 +44,7 @@ export async function signUp(
 ): Promise<AuthFormState> {
   const credentials = readCredentials(formData);
   if (!credentials) {
-    return { error: 'Enter your email and password.', confirmEmailSent: false };
+    return { error: 'Enter your email and password.', confirmEmailSent: false, accountCreated: false };
   }
 
   const supabase = await createClient();
@@ -58,13 +58,20 @@ export async function signUp(
   });
 
   if (error) {
-    return { error: error.message, confirmEmailSent: false };
+    return { error: error.message, confirmEmailSent: false, accountCreated: false };
   }
 
-  // If email confirmation is enabled, Supabase returns a user with no active session yet.
+  // Email confirmation is disabled in Supabase (2026-08-31), so signUp
+  // returns a live session. The product flow is signup -> log in explicitly
+  // (a clear, teachable login/logout cycle for interns), so end that
+  // auto-session immediately and send the learner to the login form.
   if (data.session) {
-    redirect('/dashboard');
+    await supabase.auth.signOut();
+    return { error: null, confirmEmailSent: false, accountCreated: true };
   }
 
-  return { error: null, confirmEmailSent: true };
+  // Defensive fallback: if email confirmation is ever re-enabled in the
+  // Supabase dashboard, signUp returns a user with no session and the
+  // learner must click the emailed link instead.
+  return { error: null, confirmEmailSent: true, accountCreated: false };
 }

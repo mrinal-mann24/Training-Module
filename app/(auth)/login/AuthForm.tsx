@@ -15,6 +15,13 @@ export function AuthForm() {
   const action = mode === 'log-in' ? logIn : signUp;
   const [state, formAction, isPending] = useActionState(action, initialAuthFormState);
 
+  // Sign-up succeeded: the account exists but the auto-session was ended
+  // server-side, so flip straight to the login form (guarded render-time
+  // state adjustment) and confirm what just happened above it.
+  if (state.accountCreated && mode !== 'log-in') {
+    setMode('log-in');
+  }
+
   if (state.confirmEmailSent) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background/80 px-6 py-8 text-center">
@@ -28,6 +35,12 @@ export function AuthForm() {
 
   return (
     <div className="flex flex-col gap-5">
+      {state.accountCreated && (
+        <p className="rounded-lg border border-border bg-accent/5 px-4 py-3 font-body text-sm leading-relaxed text-foreground">
+          Account created. Log in below with the email and password you just chose.
+        </p>
+      )}
+
       <form action={formAction} className="flex flex-col gap-3">
         <label htmlFor="email" className="sr-only">
           Email address
