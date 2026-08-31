@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { VoucherDiff } from '@/lib/schemas/scoring';
+import type { ScoringResult, VoucherDiff } from '@/lib/schemas/scoring';
 import type { CoachingSignal } from '@/lib/llm/prompts/coaching';
-import { buildSequenceLabels, checkOpeningLineFacts, composeFallbackOpeningLine, groupDescriptionsByField } from './generate-coaching';
+import { buildCoachingSignal, buildSequenceLabels, checkOpeningLineFacts, composeFallbackOpeningLine, groupDescriptionsByField } from './generate-coaching';
 
 function signalWith(overrides: Partial<CoachingSignal>): CoachingSignal {
   return {
@@ -137,5 +137,72 @@ describe('groupDescriptionsByField', () => {
 
   it('returns nothing for an empty diff list', () => {
     expect(groupDescriptionsByField([])).toEqual([]);
+  });
+});
+
+function scoringResultWith(diffs: VoucherDiff[]): ScoringResult {
+  return {
+    per_voucher_diffs: diffs,
+    tb_tie_out: true,
+    weighted_score: 0.8,
+    overall_result: 'partial',
+    concept_results: [],
+  };
+}
+
+describe('buildCoachingSignal flagged-area accuracy (pilot 2026-08-31)', () => {
+  it('excludes unassessed incorrect diffs (null error code) from the flagged areas', () => {
+    // When a leg's account never matched, dr_cr and amount are emitted
+    // incorrect with error_code null — they were never actually judged. The
+    // live pilot feedback told the learner to "reconsider the debit and
+    // credit direction" on INV-010, whose direction was textbook-correct.
+    const signal = buildCoachingSignal(
+      scoringResultWith([
+        { voucherRef: 10, field: 'account', expected_masked: true, is_correct: false, error_code: 'ACCOUNT_WRONG' },
+        { voucherRef: 10, field: 'dr_cr', expected_masked: true, is_correct: false, error_code: null },
+        { voucherRef: 10, field: 'amount', expected_masked: true, is_correct: false, error_code: null },
+      ]),
+    );
+
+    expect(signal.incorrectConceptDescriptions).toHaveLength(1);
+    expect(signal.incorrectConceptDescriptions[0]).toMatch(/ledger account classification/);
+    expect(signal.incorrectConceptDescriptions.join(' ')).not.toMatch(/direction|amount/i);
+  });
+
+  it('still flags a genuinely-assessed wrong direction', () => {
+    const signal = buildCoachingSignal(
+      scoringResultWith([
+        { voucherRef: 3, field: 'dr_cr', expected_masked: true, is_correct: false, error_code: 'DR_CR_REVERSED' },
+      ]),
+    );
+
+    expect(signal.incorrectConceptDescriptions).toEqual(['the Debit/Credit direction (transaction 3)']);
+  });
+
+  it('reports a missing voucher as its own not-recorded area, not an account-classification problem', () => {
+    // VOUCHER_MISSING lives on the account field; without the split, an
+    // entry the learner never posted read as "revisit the ledger account
+    // classification for AI-201" instead of saying it was never entered.
+    const key = {
+      entries: [
+        {
+          sequence: 21, correct_account: 'Ahmedabad Import', dr_cr: 'Cr' as const, amount: 106200,
+          voucher_type: 'Purchase', gst_head: 'IGST' as const, gst_rate: 18, tds_section: null,
+          tds_rate: null, tds_base: null, bill_reference: 'AI-201', narration: null,
+          concept_tags: ['gst_classification' as const], requires_source_document: false, source_document_type: null,
+        },
+      ],
+    };
+    const signal = buildCoachingSignal(
+      scoringResultWith([
+        { voucherRef: 21, field: 'account', expected_masked: true, is_correct: false, error_code: 'VOUCHER_MISSING' },
+      ]),
+      key,
+    );
+
+    expect(signal.incorrectConceptDescriptions).toHaveLength(1);
+    expect(signal.incorrectConceptDescriptions[0]).toMatch(/not to have been recorded/);
+    expect(signal.incorrectConceptDescriptions[0]).toContain('AI-201');
+    expect(signal.incorrectConceptDescriptions[0]).not.toMatch(/ledger account classification/);
   });
 });

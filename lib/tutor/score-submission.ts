@@ -97,21 +97,29 @@ const GST_HEAD_PATTERNS: { pattern: RegExp; head: 'IGST' | 'CGST' | 'SGST' }[] =
 
 const TDS_LEDGER_PATTERN = /\bTDS\b/i;
 
-function inferGstFromLedgerEntries(
-  entries: LedgerEntry[],
-): { head: 'IGST' | 'CGST' | 'SGST'; amount: number; side: 'input' | 'output' | null } | null {
+// Collects EVERY GST head posted on the voucher, not just the first: an
+// intra-state posting is a CGST+SGST pair, and first-match inference cannot
+// tell a correct pair from CGST posted twice with SGST missing (a real pilot
+// submission, HR-118, sailed through exactly that way — 2026-08-31).
+function collectGstFromLedgerEntries(entries: LedgerEntry[]): {
+  heads: Set<'IGST' | 'CGST' | 'SGST'>;
+  sides: Set<'input' | 'output'>;
+} {
+  const heads = new Set<'IGST' | 'CGST' | 'SGST'>();
+  const sides = new Set<'input' | 'output'>();
   for (const entry of entries) {
-    const match = GST_HEAD_PATTERNS.find((candidate) => candidate.pattern.test(entry.ledgerName));
-    if (match) {
-      const side = /\binput\b/i.test(entry.ledgerName)
-        ? ('input' as const)
-        : /\boutput\b/i.test(entry.ledgerName)
-          ? ('output' as const)
-          : null;
-      return { head: match.head, amount: entry.amount, side };
+    for (const candidate of GST_HEAD_PATTERNS) {
+      if (candidate.pattern.test(entry.ledgerName)) {
+        heads.add(candidate.head);
+        if (/\binput\b/i.test(entry.ledgerName)) {
+          sides.add('input');
+        } else if (/\boutput\b/i.test(entry.ledgerName)) {
+          sides.add('output');
+        }
+      }
     }
   }
-  return null;
+  return { heads, sides };
 }
 
 // Which GST side a voucher type should touch: sales-side vouchers (Sales,
@@ -251,7 +259,7 @@ function diffGst(
   expectedLegs: AnswerKeyEntry[],
   voucherRef: number,
 ): VoucherDiff {
-  const actualGst = inferGstFromLedgerEntries(
+  const actualGst = collectGstFromLedgerEntries(
     expected.gst_head === null ? entriesBeyondExpectedLegs(voucher, expectedLegs) : voucher.ledgerEntries,
   );
 
@@ -263,13 +271,13 @@ function diffGst(
       voucherRef,
       field: 'gst',
       expected_masked: true,
-      is_correct: actualGst === null,
-      vacuously_correct: actualGst === null,
-      error_code: actualGst === null ? null : 'GST_UNEXPECTED',
+      is_correct: actualGst.heads.size === 0,
+      vacuously_correct: actualGst.heads.size === 0,
+      error_code: actualGst.heads.size === 0 ? null : 'GST_UNEXPECTED',
     };
   }
 
-  if (actualGst === null) {
+  if (actualGst.heads.size === 0) {
     return {
       voucherRef,
       field: 'gst',
@@ -280,30 +288,36 @@ function diffGst(
   }
 
   // Intra-state GST is a CGST+SGST PAIR posted as two ledgers; the answer key
-  // carries one head ('CGST' by convention) and inference returns whichever
-  // GST ledger appears first on the voucher. Treating CGST and SGST as
-  // equivalent here prevents a false GST_HEAD_WRONG (at double weight) when
-  // the SGST leg happens to precede the CGST leg - the only real error is
-  // posting the wrong REGIME (IGST for intra-state, or CGST/SGST for
-  // inter-state).
-  const intraStateHeads = new Set(['CGST', 'SGST']);
-  const headCorrect =
-    actualGst.head === expected.gst_head ||
-    (intraStateHeads.has(actualGst.head) && intraStateHeads.has(expected.gst_head));
+  // carries one head ('CGST' by convention). Correct means the COMPLETE right
+  // regime: both CGST and SGST present (in either order) with no IGST for
+  // intra-state, or IGST alone for inter-state. A half-posted pair (CGST
+  // entered twice, SGST absent — a real pilot submission) is Appendix A E05
+  // "CGST/SGST split missed" and maps to GST_MISSING; the wrong regime
+  // entirely stays GST_HEAD_WRONG.
+  const expectedIntraState = expected.gst_head === 'CGST' || expected.gst_head === 'SGST';
+  const headCorrect = expectedIntraState
+    ? actualGst.heads.has('CGST') && actualGst.heads.has('SGST') && !actualGst.heads.has('IGST')
+    : actualGst.heads.has('IGST') && !actualGst.heads.has('CGST') && !actualGst.heads.has('SGST');
 
   // Side check (Input vs Output) only when the learner's ledger name states
   // a side AND the voucher type implies one — silent otherwise, so plain
-  // "IGST Payable"-style naming isn't penalized.
+  // "IGST Payable"-style naming isn't penalized. Any stated side that
+  // contradicts the required one (an Output GST leg on a purchase, an Input
+  // GST leg on a sale) fails the check.
   const requiredSide = expectedGstSide(expected.voucher_type);
-  const sideWrong = actualGst.side !== null && requiredSide !== null && actualGst.side !== requiredSide;
+  const sideWrong = requiredSide !== null && [...actualGst.sides].some((side) => side !== requiredSide);
 
   const gstCorrect = headCorrect && !sideWrong;
+  const splitMissed =
+    expectedIntraState &&
+    !actualGst.heads.has('IGST') &&
+    actualGst.heads.has('CGST') !== actualGst.heads.has('SGST');
   return {
     voucherRef,
     field: 'gst',
     expected_masked: true,
     is_correct: gstCorrect,
-    error_code: gstCorrect ? null : 'GST_HEAD_WRONG',
+    error_code: gstCorrect ? null : splitMissed && !sideWrong ? 'GST_MISSING' : 'GST_HEAD_WRONG',
   };
 }
 
@@ -681,9 +695,32 @@ function computeConceptResults(
 // order; each takes the highest-scoring unused voucher (account-name matches
 // are the strongest signal, then amount, then voucher type). Ties break on
 // daybook position, which preserves the old positional behavior exactly when
-// vouchers are indistinguishable. A transaction that matches nothing at all
-// falls back to its positional voucher if still unused, keeping
-// VOUCHER_MISSING semantics for short submissions.
+// vouchers are indistinguishable.
+//
+// Generic ledger legs (Sales, Purchase, Cash, a bank, a GST/TDS head) prove
+// nothing about WHICH transaction a voucher is — nearly every purchase
+// voucher matches a "Purchases Dr" leg. Only a distinctive party/expense leg
+// identifies a transaction, so generic matches score low and a pairing needs
+// MIN_MATCH_SCORE of accumulated evidence (a distinctive account match, or
+// amounts plus corroboration) to count at all. Without the bar, a
+// transaction the learner never posted greedily stole whichever unused
+// voucher shared a generic "Purchase" leg, and every field of that innocent
+// voucher was then flagged against the wrong key — the live 2026-08-31 pilot
+// evaluation told the learner to "re-check GST on AI-201" when the truth was
+// that the AI-201 purchase was never entered.
+//
+// A transaction with no qualifying match falls back to its positional
+// voucher only when the submission has at most as many vouchers as the key
+// has transactions (a short drill, where position is meaningful); on a pack
+// export with extra vouchers it reports VOUCHER_MISSING instead.
+const GENERIC_LEDGER_PATTERN = /^(sales|purchases?|cash|bank|hdfc|output|input|c?gst|sgst|igst|tds|suspense|sales returns?|purchase returns?)\b/i;
+
+const DISTINCTIVE_ACCOUNT_SCORE = 4;
+const GENERIC_ACCOUNT_SCORE = 1;
+const AMOUNT_SCORE = 1;
+const VOUCHER_TYPE_SCORE = 1;
+const MIN_MATCH_SCORE = 4;
+
 export function matchVouchersToTransactions(
   vouchers: Voucher[],
   transactionGroups: AnswerKeyEntry[][],
@@ -694,21 +731,25 @@ export function matchVouchersToTransactions(
     let score = 0;
     for (const leg of expectedLegs) {
       if (voucher.ledgerEntries.some((entry) => legMatchesEntry(entry, leg))) {
-        score += 4;
+        score += GENERIC_LEDGER_PATTERN.test(leg.correct_account)
+          ? GENERIC_ACCOUNT_SCORE
+          : DISTINCTIVE_ACCOUNT_SCORE;
       }
       if (voucher.ledgerEntries.some((entry) => amountsMatch(entry.amount, leg.amount))) {
-        score += 1;
+        score += AMOUNT_SCORE;
       }
     }
     if (voucher.voucherType.trim().toLowerCase() === expectedLegs[0].voucher_type.trim().toLowerCase()) {
-      score += 1;
+      score += VOUCHER_TYPE_SCORE;
     }
     return score;
   }
 
+  const positionalFallbackAllowed = vouchers.length <= transactionGroups.length;
+
   return transactionGroups.map((expectedLegs, index) => {
     let bestIndex = -1;
-    let bestScore = 0;
+    let bestScore = MIN_MATCH_SCORE - 1;
     for (let i = 0; i < vouchers.length; i++) {
       if (used.has(i)) {
         continue;
@@ -719,7 +760,7 @@ export function matchVouchersToTransactions(
         bestIndex = i;
       }
     }
-    if (bestIndex === -1 && index < vouchers.length && !used.has(index)) {
+    if (bestIndex === -1 && positionalFallbackAllowed && index < vouchers.length && !used.has(index)) {
       bestIndex = index; // positional fallback
     }
     if (bestIndex === -1) {

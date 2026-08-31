@@ -124,9 +124,27 @@ const FIELD_FLAG_PRIORITY: Record<ScoredField, number> = {
   narration: 7,
 };
 
-function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: AnswerKey | null): CoachingSignal {
+export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: AnswerKey | null): CoachingSignal {
   const sequenceLabels = answerKey ? buildSequenceLabels(answerKey) : undefined;
-  const incorrectDiffs = scoringResult.per_voucher_diffs.filter((diff) => !diff.is_correct);
+
+  // Only diffs carrying a real error code were actually ASSESSED as wrong.
+  // When a leg's account never matched, its dr_cr and amount diffs are
+  // emitted incorrect-with-null-code (they drag the score, but direction and
+  // amount were never judged — there was no entry to judge). Feeding those
+  // into the flagged areas told a live learner to "reconsider the debit and
+  // credit direction" on a voucher whose direction was textbook-correct
+  // (INV-010, pilot 2026-08-31) — the only real finding there was the
+  // account, which ACCOUNT_WRONG already covers.
+  const incorrectDiffs = scoringResult.per_voucher_diffs.filter(
+    (diff) => !diff.is_correct && diff.error_code !== null,
+  );
+
+  // A transaction the learner never posted is its own kind of finding, not a
+  // "ledger account classification" problem (VOUCHER_MISSING's host field).
+  // Split it out and name it plainly; the remaining field groups describe
+  // only vouchers that actually exist in the submission.
+  const missingDiffs = incorrectDiffs.filter((diff) => diff.error_code === 'VOUCHER_MISSING');
+  const assessedIncorrect = incorrectDiffs.filter((diff) => diff.error_code !== 'VOUCHER_MISSING');
 
   // Vacuously-correct fields (the exercise required no GST/TDS and the
   // learner posted none) still count toward the weighted score, but must not
@@ -137,14 +155,32 @@ function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: AnswerKey
     (diff) => diff.is_correct && !diff.vacuously_correct,
   );
 
-  const prioritizedIncorrect = [...incorrectDiffs].sort(
+  const prioritizedIncorrect = [...assessedIncorrect].sort(
     (a, b) => FIELD_FLAG_PRIORITY[a.field] - FIELD_FLAG_PRIORITY[b.field],
   );
 
-  const incorrectConceptDescriptions = groupDescriptionsByField(prioritizedIncorrect, sequenceLabels).slice(
-    0,
-    MAX_FLAGGED_AREAS,
-  );
+  const missingDescriptions: string[] = [];
+  if (missingDiffs.length > 0) {
+    const names = [
+      ...new Set(
+        missingDiffs.map((diff) =>
+          diff.voucherRef !== null
+            ? (sequenceLabels?.get(diff.voucherRef) ?? `transaction ${diff.voucherRef}`)
+            : 'a transaction',
+        ),
+      ),
+    ];
+    const suffix =
+      names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    missingDescriptions.push(
+      `entries that appear not to have been recorded in the Day Book at all (${suffix})`,
+    );
+  }
+
+  const incorrectConceptDescriptions = [
+    ...missingDescriptions,
+    ...groupDescriptionsByField(prioritizedIncorrect, sequenceLabels),
+  ].slice(0, MAX_FLAGGED_AREAS);
   const correctConceptDescriptions = groupDescriptionsByField(correctDiffs, sequenceLabels);
 
   return {

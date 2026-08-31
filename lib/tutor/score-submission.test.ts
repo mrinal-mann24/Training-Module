@@ -354,6 +354,95 @@ describe('scoreSubmission', () => {
     expect(gstDiff?.is_correct).toBe(true);
   });
 
+  it('flags a half-posted intra-state pair (same head twice, other head absent) as GST_MISSING', () => {
+    // Real pilot submission HR-118 (2026-08-31): CGST posted twice, SGST
+    // never posted. First-match head inference plus CGST~SGST equivalence
+    // passed it silently; the split-missed half is Appendix A E05.
+    const dayBook = {
+      vouchers: [
+        {
+          voucherType: 'Purchase',
+          date: '20260426',
+          narration: 'Warehouse rent April',
+          ledgerEntries: [
+            { ledgerName: 'Hero Rentals', amount: 47200, drOrCr: 'Cr' as const, billAllocations: [] },
+            { ledgerName: 'Purchase', amount: 40000, drOrCr: 'Dr' as const, billAllocations: [] },
+            { ledgerName: 'CGST', amount: 3600, drOrCr: 'Dr' as const, billAllocations: [] },
+            { ledgerName: 'CGST', amount: 3600, drOrCr: 'Dr' as const, billAllocations: [] },
+          ],
+        },
+      ],
+    };
+    const answerKey = {
+      entries: [
+        {
+          sequence: 1, correct_account: 'Hero Rentals', dr_cr: 'Cr' as const, amount: 47200,
+          voucher_type: 'Purchase', gst_head: 'CGST' as const, gst_rate: 18,
+          tds_section: null, tds_rate: null, tds_base: null, bill_reference: null,
+          narration: null, concept_tags: ['gst_classification' as const],
+          requires_source_document: false, source_document_type: null,
+        },
+      ],
+    };
+    const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
+    const gstDiff = result.per_voucher_diffs.find((d) => d.field === 'gst');
+    expect(gstDiff?.is_correct).toBe(false);
+    expect(gstDiff?.error_code).toBe('GST_MISSING');
+  });
+
+  it('does not let a missing transaction steal an unrelated voucher via a generic ledger leg', () => {
+    // Pilot 2026-08-31: the AI-201 purchase was never posted, but its answer
+    // key group matched an unrelated purchase voucher on the generic
+    // "Purchases" leg alone, then flagged that innocent voucher's GST/fields
+    // against the wrong key. Generic-leg-only similarity must not pair, and
+    // with more vouchers than key transactions there is no positional
+    // fallback — the transaction reports VOUCHER_MISSING.
+    const unrelatedPurchase = {
+      voucherType: 'Purchase',
+      date: '20260410',
+      narration: 'Some other purchase',
+      ledgerEntries: [
+        { ledgerName: 'Zeta Suppliers', amount: 59000, drOrCr: 'Cr' as const, billAllocations: [] },
+        { ledgerName: 'Purchase', amount: 50000, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'CGST', amount: 4500, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'SGST', amount: 4500, drOrCr: 'Dr' as const, billAllocations: [] },
+      ],
+    };
+    const paymentVoucher = {
+      voucherType: 'Payment',
+      date: '20260411',
+      narration: 'NEFT payment',
+      ledgerEntries: [
+        { ledgerName: 'Zeta Suppliers', amount: 59000, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'HDFC Bank', amount: 59000, drOrCr: 'Cr' as const, billAllocations: [] },
+      ],
+    };
+    const leg = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, gst: 'IGST' | null = null) => ({
+      sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: voucherType,
+      gst_head: gst, gst_rate: gst ? 18 : null, tds_section: null, tds_rate: null, tds_base: null,
+      bill_reference: null, narration: null, concept_tags: ['purchase_voucher_basics' as const],
+      requires_source_document: false, source_document_type: null,
+    });
+    // One key transaction the learner never posted: Purchases Dr / Ahmedabad
+    // Import Cr with IGST. Two submitted vouchers, neither of which is it.
+    const answerKey = {
+      entries: [
+        leg(1, 'Purchases', 'Dr', 90000, 'Purchase', 'IGST'),
+        leg(1, 'Ahmedabad Import', 'Cr', 106200, 'Purchase', 'IGST'),
+      ],
+    };
+    const result = scoreSubmission(
+      { vouchers: [unrelatedPurchase, paymentVoucher] },
+      { ledgers: [] },
+      answerKey,
+    );
+    const missingDiff = result.per_voucher_diffs.find((d) => d.voucherRef === 1);
+    expect(missingDiff?.error_code).toBe('VOUCHER_MISSING');
+    // Exactly one diff for the missing transaction — no GST/direction/amount
+    // flags fabricated against the stolen voucher.
+    expect(result.per_voucher_diffs).toHaveLength(1);
+  });
+
   it('matches out-of-order same-day vouchers to the right transactions', () => {
     // Two same-day vouchers posted in the OPPOSITE order from the key.
     const paymentVoucher = {

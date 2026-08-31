@@ -34,7 +34,7 @@ export function Hero() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="mt-4 max-w-[650px] text-center font-body text-base leading-relaxed text-muted-foreground md:text-lg"
+          className="mt-4 max-w-162.5 text-center font-body text-base leading-relaxed text-muted-foreground md:text-lg"
         >
           Train with an AI tutor that scores your real Tally work, adapts to
           your gaps, and coaches you until you are ready for real client books.
