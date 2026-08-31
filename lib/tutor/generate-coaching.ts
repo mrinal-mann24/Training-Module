@@ -48,7 +48,19 @@ export function buildSequenceLabels(answerKey: AnswerKey): Map<number, string> {
   for (const [sequence, legs] of bySequence) {
     const billRef = legs.find((leg) => leg.bill_reference)?.bill_reference;
     if (billRef) {
-      labels.set(sequence, billRef);
+      // Bill references come from the SOURCE PACK, not the learner's books —
+      // a learner who never entered the Against Ref cannot find "INV-M-101"
+      // anywhere in their Tally (reported verbatim by the first real intern,
+      // 2026-08-31). Pair the ref with the party/voucher-type so the label
+      // locates the entry even when the ref itself is absent from their
+      // books: "INV-M-101 (the Karnataka Emporium receipt)".
+      const partyLeg = legs.find((leg) => !GENERIC_ACCOUNT_PATTERN.test(leg.correct_account));
+      labels.set(
+        sequence,
+        partyLeg
+          ? `${billRef} (the ${partyLeg.correct_account} ${legs[0].voucher_type.toLowerCase()})`
+          : billRef,
+      );
       continue;
     }
     const namedLeg = legs.find((leg) => !GENERIC_ACCOUNT_PATTERN.test(leg.correct_account));

@@ -36,7 +36,10 @@ describe('sequence labels (pack-exercise specificity)', () => {
       ],
     };
     const labels = buildSequenceLabels(key);
-    expect(labels.get(13)).toBe('INV-012');
+    // A bill ref alone is unfindable for a learner who never entered the
+    // Against Ref (real intern report, 2026-08-31) — the party/voucher-type
+    // rider makes the label locate the entry in their own books.
+    expect(labels.get(13)).toBe('INV-012 (the Coimbatore Interiors sales)');
     expect(labels.get(65)).toBe('the Advertisement & Marketing purchase');
 
     const described = groupDescriptionsByField(
@@ -46,7 +49,9 @@ describe('sequence labels (pack-exercise specificity)', () => {
       ],
       labels,
     );
-    expect(described).toEqual(['the GST treatment (INV-012 and the Advertisement & Marketing purchase)']);
+    expect(described).toEqual([
+      'the GST treatment (INV-012 (the Coimbatore Interiors sales) and the Advertisement & Marketing purchase)',
+    ]);
   });
 });
 

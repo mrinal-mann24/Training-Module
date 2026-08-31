@@ -21,6 +21,10 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-08-31 (later 2): SELF-LOCATING FEEDBACK LABELS
+
+The real intern reported verbatim: "INV-M-101 doesn't exist in my Tally but it's asking me to fix it." The flag was genuine (her ₹75,000 Karnataka Emporium receipt was credited to an invented "KAREM MARCH" ledger with no Against Ref) but the label was unfindable: bill references come from the SOURCE PACK, and a learner who skipped the bill-by-bill step has no "INV-M-101" anywhere in their books. `buildSequenceLabels` (generate-coaching.ts) now pairs every bill-ref label with the transaction's party/voucher-type — "INV-M-101 (the Karnataka Emporium receipt)" — so the label locates the entry in the learner's own books even when the ref is absent from them. Verified on the live intern XMLs; tsc/lint/141 tests clean.
+
 ## Session log — 2026-08-31 (later): AUTH FLOW SIMPLIFIED — no email confirmation, explicit signup→login cycle, chat Log out
 
 User disabled "Confirm email" in the Supabase dashboard (their step) and asked for a plain intern-friendly flow: sign up → land on login → log in; obvious Log out everywhere; logout fully ends the session. Code changes:
