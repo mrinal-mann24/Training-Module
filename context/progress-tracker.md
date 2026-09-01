@@ -21,6 +21,10 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-01 (later 4): SCHEMA-IN-PROMPT — OpenRouter does NOT enforce json_schema for Claude
+
+Adaptive generation failed 3/3 attempts (~7 min wasted) with every transactions[].sequence/description and answer_key entries[].sequence/voucher_type undefined plus an invalid difficulty_level — systematic, not random. Root cause: OpenRouter only natively enforces response_format json_schema for some providers; with Claude the model NEVER SAW the schema (also the true root of the earlier fence issue), so it invented its own field names. Fix in client.ts: the JSON schema is now ALSO appended in-band as a final system message ("SINGLE JSON object... these exact key names... every required field: <stringified schema>"); response_format stays on for providers that do enforce it. Live smoke test against anthropic/claude-sonnet-5 via OpenRouter confirms: no fences, exact keys, valid enum, first attempt. Gates: tsc/lint clean, 171 tests. Failed production runs can be replayed with Inngest's Rerun (completed steps memoize; only generation re-executes).
+
 ## Session log — 2026-09-01 (later 3): PRODUCTION SLOWNESS — FENCED-JSON CRASH FIX + PARALLEL DOCS + FAST DOC MODEL + POLL WINDOW
 
 Production Inngest trace (run-scoring 9m20s) exposed the real bug behind the "slow" next-batch step: **Claude Sonnet 5 via OpenRouter returns JSON wrapped in a markdown code fence** ("```json ... ```") despite response_format json_schema; client.ts's raw JSON.parse threw `Unexpected token '\`'`, and Inngest retried the WHOLE generation step (attempts of 2m21s + 2m49s + 6m6s — batch + all PDFs regenerated each time). gpt-4o-mini never fenced, so this only surfaced after the model upgrade. Fixes:

@@ -35,6 +35,23 @@ export async function getStructuredCompletion(
     throw new Error('OPENROUTER_MODEL is not set.');
   }
 
+  // The schema is ALSO stated in-band as a final system message: OpenRouter
+  // only natively enforces response_format json_schema for some providers
+  // (OpenAI models complied; Claude Sonnet 5 demonstrably never saw the
+  // schema — observed live 2026-09-01 as three consecutive generations with
+  // invented field names, every transactions[].sequence/description missing
+  // and difficulty_level in the wrong format, burning ~7 minutes of retries).
+  // With the schema in the prompt, the exact key names reach the model
+  // regardless of provider-side enforcement; response_format stays on for
+  // providers that do enforce it.
+  const messagesWithSchema = [
+    ...params.messages,
+    {
+      role: 'system' as const,
+      content: `Your entire response must be a SINGLE JSON object — no markdown fences, no commentary — that validates against this JSON Schema exactly, using these exact key names and including every required field:\n${JSON.stringify(params.jsonSchema.schema)}`,
+    },
+  ];
+
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
@@ -43,7 +60,7 @@ export async function getStructuredCompletion(
     },
     body: JSON.stringify({
       model,
-      messages: params.messages,
+      messages: messagesWithSchema,
       response_format: {
         type: 'json_schema',
         json_schema: {
