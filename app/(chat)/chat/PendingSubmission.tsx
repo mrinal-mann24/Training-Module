@@ -113,7 +113,11 @@ export function PendingSubmission({
           // this component unmounting (it unmounts when the feedback message
           // renders) — onNextExercise appends to the still-mounted ChatShell.
           const NEXT_EXERCISE_POLL_MS = 5000;
-          const NEXT_EXERCISE_POLL_LIMIT = 60; // 5 minutes
+          // 12 minutes: batch generation on the larger model (plus its
+          // guardrail retries and per-document PDFs) can exceed the old
+          // 5-minute budget, after which the next exercise silently never
+          // auto-arrived (observed live 2026-09-01, a 9m+ production run).
+          const NEXT_EXERCISE_POLL_LIMIT = 144;
           function pollNextExercise(attempt: number) {
             getNextExercise(exerciseId).then((nextExerciseResult) => {
               if (nextExerciseResult.status === 'found') {

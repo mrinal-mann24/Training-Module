@@ -40,6 +40,10 @@ export async function generateSourceDocument(
       traceName: 'source-document-generation',
       learnerId,
       callType: 'source-document-generation',
+      // Documents are simple structured content — a faster model (set via
+      // OPENROUTER_DOCUMENT_MODEL) cuts the batch tail dramatically; falls
+      // back to the main OPENROUTER_MODEL when unset.
+      model: process.env.OPENROUTER_DOCUMENT_MODEL,
       extraMetadata: { docType, transactionSequence: entry.sequence },
     });
 
@@ -85,6 +89,10 @@ export async function generateBankStatementDocument(
       traceName: 'source-document-generation',
       learnerId,
       callType: 'source-document-generation',
+      // Documents are simple structured content — a faster model (set via
+      // OPENROUTER_DOCUMENT_MODEL) cuts the batch tail dramatically; falls
+      // back to the main OPENROUTER_MODEL when unset.
+      model: process.env.OPENROUTER_DOCUMENT_MODEL,
       extraMetadata: {
         docType: 'bank_statement',
         transactionSequences: lines.map((line) => line.entry.sequence).join(','),

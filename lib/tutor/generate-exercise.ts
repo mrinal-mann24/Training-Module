@@ -145,13 +145,12 @@ async function prepareSourceDocuments(
   // exercise id) so uploads can happen before the exercise row exists;
   // rotation stays deterministic per batch.
   const batchId = crypto.randomUUID();
-  const prepared: PreparedSourceDocument[] = [];
 
   async function renderAndUpload(
     generated: Awaited<ReturnType<typeof generateSourceDocument>>,
     docType: "vendor_invoice" | "bank_statement",
     formatSeed: string,
-  ): Promise<void> {
+  ): Promise<PreparedSourceDocument> {
     const pdfBuffer = await renderSourceDocumentPdf(generated, formatSeed);
 
     const docId = crypto.randomUUID();
@@ -165,31 +164,40 @@ async function prepareSourceDocuments(
       throw uploadError;
     }
 
-    prepared.push({ docType, storagePath, content: generated.content });
+    return { docType, storagePath, content: generated.content };
   }
 
-  for (const invoice of plan.invoices) {
-    const generated = await generateSourceDocument(
+  // All documents generate CONCURRENTLY — they are independent LLM calls, and
+  // running them one-by-one made the post-scoring tail take minutes (observed
+  // live 2026-09-01 on the production trace: 5 sequential document calls
+  // dominating the next-batch step). Promise.all keeps result order
+  // deterministic (invoices by plan order, statement last).
+  const invoicePromises = plan.invoices.map((invoice) =>
+    generateSourceDocument(
       learnerId,
       "vendor_invoice",
       invoice.entry,
       invoice.partyAccounts,
-    );
-    await renderAndUpload(
-      generated,
-      "vendor_invoice",
-      `${batchId}:${invoice.entry.sequence}`,
-    );
-  }
+    ).then((generated) =>
+      renderAndUpload(
+        generated,
+        "vendor_invoice",
+        `${batchId}:${invoice.entry.sequence}`,
+      ),
+    ),
+  );
 
-  if (plan.bankLines.length > 0) {
-    const generated = await generateBankStatementDocument(
-      learnerId,
-      plan.bankLines,
-      companyName,
-    );
-    await renderAndUpload(generated, "bank_statement", `${batchId}:bank-statement`);
-  }
+  const statementPromise =
+    plan.bankLines.length > 0
+      ? generateBankStatementDocument(learnerId, plan.bankLines, companyName).then(
+          (generated) =>
+            renderAndUpload(generated, "bank_statement", `${batchId}:bank-statement`),
+        )
+      : null;
+
+  const prepared = await Promise.all(
+    statementPromise ? [...invoicePromises, statementPromise] : invoicePromises,
+  );
 
   return prepared;
 }

@@ -57,6 +57,7 @@ export async function getTracedStructuredCompletion(
     const output = await getStructuredCompletion({
       messages: params.messages,
       jsonSchema: params.jsonSchema,
+      model: params.model,
     });
     generation.end({ output });
     return output;

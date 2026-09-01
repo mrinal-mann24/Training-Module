@@ -21,6 +21,17 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-01 (later 3): PRODUCTION SLOWNESS — FENCED-JSON CRASH FIX + PARALLEL DOCS + FAST DOC MODEL + POLL WINDOW
+
+Production Inngest trace (run-scoring 9m20s) exposed the real bug behind the "slow" next-batch step: **Claude Sonnet 5 via OpenRouter returns JSON wrapped in a markdown code fence** ("```json ... ```") despite response_format json_schema; client.ts's raw JSON.parse threw `Unexpected token '\`'`, and Inngest retried the WHOLE generation step (attempts of 2m21s + 2m49s + 6m6s — batch + all PDFs regenerated each time). gpt-4o-mini never fenced, so this only surfaced after the model upgrade. Fixes:
+
+1. **client.ts `extractJsonPayload`**: strips a single wrapping ```/```json fence before JSON.parse; anything else still fails loudly. THE critical fix — model-portability guardrail.
+2. **Per-call model override**: StructuredCompletionParams gains optional `model` (threaded through tracing.ts); both source-document call sites pass `process.env.OPENROUTER_DOCUMENT_MODEL` (set to anthropic/claude-haiku-4.5 in .env.local) — documents are simple structured content, Haiku is ~3-5x faster; falls back to OPENROUTER_MODEL when unset.
+3. **prepareSourceDocuments parallelized**: all invoice docs + the combined statement generate CONCURRENTLY via Promise.all (previously strictly sequential — 5 doc calls dominated the tail). Deterministic result order kept.
+4. **PendingSubmission NEXT_EXERCISE_POLL_LIMIT 60→144** (5→12 min): generation exceeding the old 5-min poll budget meant the next exercise silently never auto-arrived.
+
+NOTE for VPS deploy: add OPENROUTER_DOCUMENT_MODEL=anthropic/claude-haiku-4.5 to the VPS .env alongside OPENROUTER_MODEL. Gates: tsc/lint clean, 171 tests.
+
 ## Session log — 2026-09-01 (later 2): FEEDBACK GUARDRAILS + MODEL UPGRADE TO CLAUDE SONNET 5
 
 After verifying the intern's second attempt scored correctly (84, engine-reproduced exactly), three remaining feedback-prose polish issues were fixed with deterministic guardrails (user's directive: enterprise accuracy via verification, not model trust) plus a model upgrade:
