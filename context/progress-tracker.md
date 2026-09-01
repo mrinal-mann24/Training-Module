@@ -21,6 +21,17 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-01: ONE COMBINED BANK STATEMENT PER BATCH (fix #1 of the user's 5-point generated-batch review)
+
+Live Module-2 batch delivered THREE separate "Bank Statement — HDFC Bank.pdf" cards plus nonsense "Invoice — HDFC Bank.pdf"/"Invoice — TDS Payable.pdf" cards. Root cause: generateAndAttachSourceDocuments generated one PDF per flagged answer-key ENTRY (per leg, not even per transaction), and trusted the LLM's source_document_type. Fixed:
+
+- `planSourceDocuments` (generate-exercise.ts, new pure/exported): dedupes flagged entries by sequence (multi-leg transactions previously made duplicate PDFs), deterministically forces Contra/Receipt/Payment voucher types to bank_statement (a transfer/settlement never arrives as an invoice), and splits into per-bill vendor invoices vs. bankLines destined for ONE combined statement.
+- `generateBankStatementDocument` (generate-source-document.ts, new): single LLM call for the whole batch's statement via `buildBankStatementBatchPrompt` (source-document.ts, new) — one line per bank transaction, chronological, running balance, real-bank narrations, dates grounded in each transaction's own exercise description (answer-key entries carry no date field); retried when the line count doesn't equal the input transaction count. Schema unchanged (BankStatementContentSchema was always multi-line); renderer unchanged (content-driven).
+- Adaptive prompt hardened with the same only-bank_statement-for-Contra/Receipt/Payment rule (defense in depth; the code guard decides regardless).
+- 5 new planSourceDocuments tests (146 total). tsc/lint clean.
+
+REMAINING from the same 5-point review (understood, agreed with user, not yet implemented): #2 every batch must include sales+purchases (composition rule), #3 deterministic month-per-module progression (log stores no dates today), #4 doc-backed transactions should not restate figures in the text list, #5 pin "Blossom Retail Pvt Ltd, Karnataka" literally in the generation prompt.
+
 ## Session log — 2026-08-31 (later 2): SELF-LOCATING FEEDBACK LABELS
 
 The real intern reported verbatim: "INV-M-101 doesn't exist in my Tally but it's asking me to fix it." The flag was genuine (her ₹75,000 Karnataka Emporium receipt was credited to an invented "KAREM MARCH" ledger with no Against Ref) but the label was unfindable: bill references come from the SOURCE PACK, and a learner who skipped the bill-by-bill step has no "INV-M-101" anywhere in their books. `buildSequenceLabels` (generate-coaching.ts) now pairs every bill-ref label with the transaction's party/voucher-type — "INV-M-101 (the Karnataka Emporium receipt)" — so the label locates the entry in the learner's own books even when the ref is absent from them. Verified on the live intern XMLs; tsc/lint/141 tests clean.

@@ -87,3 +87,103 @@ describe('checkBatchComposition (Phase 2 live-fix)', () => {
     expect(checkBatchComposition(overlapping, plan, false)).toBe(null);
   });
 });
+
+// --- planSourceDocuments (one combined bank statement, 2026-09-01) ---
+
+import { planSourceDocuments } from './generate-exercise';
+import type { SourceDocumentType } from '@/lib/schemas/source-document';
+
+function docEntry(
+  sequence: number,
+  account: string,
+  voucherType: string,
+  docType: SourceDocumentType | null,
+): GeneratedExercise['answer_key']['entries'][number] {
+  return {
+    ...entry(sequence, ['contra_voucher_basics'] as ConceptTag[]),
+    correct_account: account,
+    voucher_type: voucherType,
+    requires_source_document: docType !== null,
+    source_document_type: docType,
+  };
+}
+
+function exerciseWith(entries: GeneratedExercise['answer_key']['entries']): GeneratedExercise {
+  const sequences = [...new Set(entries.map((e) => e.sequence))];
+  return {
+    scenario: 'Batch: same company, continuing.',
+    transactions: sequences.map((sequence) => ({
+      sequence,
+      description: `On 01-May-2026, transaction ${sequence}.`,
+    })),
+    difficulty_level: 'L1',
+    variant: 'A',
+    answer_key: { entries },
+  };
+}
+
+describe('planSourceDocuments', () => {
+  it('groups every bank-side transaction into ONE combined statement, invoices stay per bill', () => {
+    // The live 2026-09-01 failure: 3 bank_statement transactions produced 3
+    // separate "Bank Statement" PDFs. They must become 3 lines of one plan.
+    const generated = exerciseWith([
+      docEntry(1, 'HDFC Bank', 'Contra', 'bank_statement'),
+      docEntry(2, 'Karnataka Emporium', 'Receipt', 'bank_statement'),
+      docEntry(3, 'Sharma Legal', 'Payment', 'bank_statement'),
+      docEntry(4, 'Signage Advertising', 'Purchase', 'vendor_invoice'),
+      docEntry(5, 'Deccan Traders', 'Purchase', 'vendor_invoice'),
+    ]);
+
+    const plan = planSourceDocuments(generated);
+
+    expect(plan.bankLines).toHaveLength(3);
+    expect(plan.invoices).toHaveLength(2);
+    expect(plan.bankLines.map((line) => line.entry.sequence)).toEqual([1, 2, 3]);
+  });
+
+  it('forces a bank-side voucher wrongly marked vendor_invoice into the statement', () => {
+    // The live "Invoice — HDFC Bank.pdf" / "Invoice — TDS Payable.pdf" cards:
+    // a Contra/Payment can never arrive as an invoice.
+    const generated = exerciseWith([
+      docEntry(1, 'HDFC Bank', 'Contra', 'vendor_invoice'),
+      docEntry(2, 'TDS Payable', 'Payment', 'vendor_invoice'),
+    ]);
+
+    const plan = planSourceDocuments(generated);
+
+    expect(plan.invoices).toHaveLength(0);
+    expect(plan.bankLines).toHaveLength(2);
+  });
+
+  it('dedupes multi-leg transactions to one document per sequence', () => {
+    const generated = exerciseWith([
+      docEntry(1, 'Deccan Traders', 'Purchase', 'vendor_invoice'),
+      docEntry(1, 'Purchases', 'Purchase', 'vendor_invoice'),
+    ]);
+
+    const plan = planSourceDocuments(generated);
+
+    expect(plan.invoices).toHaveLength(1);
+    expect(plan.invoices[0].partyAccounts).toEqual(['Deccan Traders', 'Purchases']);
+  });
+
+  it('carries the transaction description into the statement line for date grounding', () => {
+    const generated = exerciseWith([docEntry(7, 'HDFC Bank', 'Receipt', 'bank_statement')]);
+
+    const plan = planSourceDocuments(generated);
+
+    expect(plan.bankLines[0].transactionDescription).toContain('transaction 7');
+  });
+
+  it('ignores unflagged transactions entirely', () => {
+    const generated = exerciseWith([
+      docEntry(1, 'HDFC Bank', 'Contra', null),
+      docEntry(2, 'Cash', 'Receipt', null),
+    ]);
+
+    const plan = planSourceDocuments(generated);
+
+    expect(plan.invoices).toHaveLength(0);
+    expect(plan.bankLines).toHaveLength(0);
+  });
+});

@@ -163,6 +163,97 @@ export function buildSourceDocumentPrompt(
   };
 }
 
+// One transaction to appear as a line on the combined bank statement:
+// the answer-key entry grounds the amount/direction, the exercise's own
+// transaction description grounds the DATE and business context (answer-key
+// entries carry no date field).
+export type BankStatementLineInput = {
+  entry: AnswerKeyEntry;
+  partyAccounts: string[];
+  transactionDescription: string;
+};
+
+// A real bank statement is ONE document listing every movement in the period,
+// not one PDF per transaction (live intern feedback, 2026-09-01: a batch
+// delivered three separate "Bank Statement" cards). This prompt generates a
+// single statement whose transactions array carries one line per flagged
+// bank transaction in the batch.
+function buildBankStatementBatchSystemPrompt(lines: BankStatementLineInput[]): string {
+  const transactionBlocks = lines
+    .map(
+      (line, index) => `Transaction ${index + 1} (exercise item ${line.entry.sequence}):
+- Exercise description: ${line.transactionDescription}
+- Parties/accounts involved: ${line.partyAccounts.join('; ') || '(none listed)'}
+- Amount: ${line.entry.amount}
+- Voucher type: ${line.entry.voucher_type}
+- Bill reference: ${line.entry.bill_reference ?? 'none'}`,
+    )
+    .join('\n\n');
+
+  return `You are generating structured source-document content for an accounting training
+exercise: ONE realistic bank statement excerpt for a small Indian trading
+business, covering ALL of the transactions listed below as separate statement
+lines.
+
+Hard requirements:
+- Exactly one statement line per transaction below — ${lines.length} line(s) total,
+  in chronological date order, dated per each transaction's own description.
+- Each line: the date, a terse real-bank-style narration (transfer mode plus a
+  reference number plus the counterparty, e.g. "NEFT/N26050101/SIGNAGE/PMT"),
+  either debit or credit set (the other null) matching the money direction from
+  the business's point of view, and a running balance that is arithmetically
+  consistent from line to line (start from a plausible opening balance).
+- The account holder is the business itself; the period covers the span of the
+  listed dates.
+- Line amounts must equal each transaction's stated amount exactly.
+
+${transactionBlocks}
+
+${CONTENT_BOUNDARY_INSTRUCTION}
+
+Never use an em dash anywhere in the text you produce; use a colon, comma, or full stop.
+
+Respond only with JSON matching the provided schema.`;
+}
+
+export function buildBankStatementBatchPrompt(lines: BankStatementLineInput[]): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
+  return {
+    messages: [
+      { role: 'system', content: buildBankStatementBatchSystemPrompt(lines) },
+      {
+        role: 'user',
+        content: `Generate the single combined bank statement covering exercise items ${lines
+          .map((line) => line.entry.sequence)
+          .join(', ')}.`,
+      },
+    ],
+    jsonSchema: {
+      name: 'bank_statement',
+      schema: BANK_STATEMENT_JSON_SCHEMA,
+    },
+  };
+}
+
+export function buildBankStatementBatchRetryPrompt(
+  lines: BankStatementLineInput[],
+  validationError: string,
+): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+  const base = buildBankStatementBatchPrompt(lines);
+  return {
+    ...base,
+    messages: [
+      ...base.messages,
+      {
+        role: 'user',
+        content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
+      },
+    ],
+  };
+}
+
 export function buildSourceDocumentRetryPrompt(
   docType: SourceDocumentType,
   entry: AnswerKeyEntry,

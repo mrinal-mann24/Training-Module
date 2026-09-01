@@ -1,5 +1,11 @@
 import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
-import { buildSourceDocumentPrompt, buildSourceDocumentRetryPrompt } from '@/lib/llm/prompts/source-document';
+import {
+  buildBankStatementBatchPrompt,
+  buildBankStatementBatchRetryPrompt,
+  buildSourceDocumentPrompt,
+  buildSourceDocumentRetryPrompt,
+  type BankStatementLineInput,
+} from '@/lib/llm/prompts/source-document';
 import { GeneratedSourceDocumentSchema, type GeneratedSourceDocument, type SourceDocumentType } from '@/lib/schemas/source-document';
 import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
 
@@ -48,5 +54,57 @@ export async function generateSourceDocument(
 
   throw new Error(
     `Source document generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
+  );
+}
+
+// Generates ONE combined bank statement for all of a batch's bank-side
+// transactions — a real statement is a single period document listing every
+// movement, never one PDF per transaction (live intern feedback,
+// 2026-09-01). Same bounded validate-and-retry pattern as above; the result
+// is additionally checked to carry exactly one line per input transaction so
+// a statement that silently drops or invents lines is retried, not rendered.
+export async function generateBankStatementDocument(
+  learnerId: string,
+  lines: BankStatementLineInput[],
+): Promise<GeneratedSourceDocument> {
+  let lastError: string | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { messages, jsonSchema } =
+      lastError === null
+        ? buildBankStatementBatchPrompt(lines)
+        : buildBankStatementBatchRetryPrompt(lines, lastError);
+
+    const raw = await getTracedStructuredCompletion({
+      messages,
+      jsonSchema,
+      traceName: 'source-document-generation',
+      learnerId,
+      callType: 'source-document-generation',
+      extraMetadata: {
+        docType: 'bank_statement',
+        transactionSequences: lines.map((line) => line.entry.sequence).join(','),
+      },
+    });
+
+    const parsed = GeneratedSourceDocumentSchema.safeParse(raw);
+
+    if (parsed.success) {
+      if (parsed.data.doc_type !== 'bank_statement') {
+        lastError = `Expected doc_type "bank_statement", got "${parsed.data.doc_type}".`;
+        continue;
+      }
+      if (parsed.data.content.transactions.length !== lines.length) {
+        lastError = `The statement has ${parsed.data.content.transactions.length} line(s) but ${lines.length} transaction(s) were provided — produce exactly one statement line per listed transaction.`;
+        continue;
+      }
+      return parsed.data;
+    }
+
+    lastError = parsed.error.message;
+  }
+
+  throw new Error(
+    `Bank statement generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
   );
 }

@@ -176,8 +176,12 @@ lean toward using one at this difficulty level when the transaction is genuinely
 kind of thing that would arrive as a real document (a vendor billing the business, or
 an entry the learner would see on a bank statement). Set requires_source_document to
 true and source_document_type to whichever of "vendor_invoice" or "bank_statement"
-actually fits the transaction (a vendor purchase/bill gets vendor_invoice; a
-bank-recorded receipt or payment gets bank_statement). Otherwise set
+actually fits the transaction. HARD RULE: a Contra, Receipt, or Payment
+transaction can ONLY ever be bank_statement (a bank transfer or settlement never
+arrives as an invoice); vendor_invoice is reserved for a vendor actually billing
+the business (a Purchase or expense bill). All bank_statement transactions in the
+batch are delivered to the learner as lines of ONE combined statement, so flag
+every genuinely bank-visible movement consistently. Otherwise set
 requires_source_document to false and source_document_type to null. Not every
 transaction needs one — use judgment, don't force it onto every entry.
 

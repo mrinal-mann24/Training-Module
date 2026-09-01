@@ -14,47 +14,103 @@ import {
 import { insertExercise } from '@/lib/db/queries/exercises';
 import { getCompanyLedgerRegistry, getRecentCompanyTransactionLog, registerCompanyLedgers, appendCompanyTransactionLog } from '@/lib/db/queries/company';
 import { insertSourceDocument } from '@/lib/db/queries/source-documents';
-import { generateSourceDocument } from '@/lib/documents/generate-source-document';
+import { generateSourceDocument, generateBankStatementDocument } from '@/lib/documents/generate-source-document';
 import { renderSourceDocumentPdf } from '@/lib/documents/render-source-document';
+import type { BankStatementLineInput } from '@/lib/llm/prompts/source-document';
 import type { WeakConceptTarget } from '@/lib/tutor/mastery';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 
 const MAX_ATTEMPTS = 3;
 
-// Generates, renders, and uploads a PDF for every answer-key entry flagged
-// requires_source_document: true, then persists the exercise_source_documents
-// row. Runs after the exercise itself is persisted (so its answer_key already
-// exists to ground each document's figures against), and is awaited by the
-// caller — a document generation/render/upload failure propagates and fails
-// the whole exercise-generation call, rather than silently delivering an
-// exercise whose promised source document never arrives. The LLM call
-// (generateSourceDocument) only produces validated structured content;
-// rendering to PDF and upload are fully deterministic from there, per this
-// unit's "code renders, LLM never touches the PDF" boundary.
+// Voucher types whose "document" in real life is a line on the bank
+// statement, never a vendor invoice — a contra transfer, a customer receipt,
+// or a payment cannot arrive as a bill. The LLM sometimes marks these
+// vendor_invoice anyway (observed live 2026-09-01 as "Invoice — HDFC
+// Bank.pdf" and "Invoice — TDS Payable.pdf" cards), so the doc type is
+// normalized deterministically here rather than trusted.
+const BANK_SIDE_VOUCHER_TYPES = new Set(['contra', 'receipt', 'payment']);
+
+export type SourceDocumentPlan = {
+  // One vendor invoice per transaction (each real bill IS its own document).
+  invoices: { entry: GeneratedExercise['answer_key']['entries'][number]; partyAccounts: string[] }[];
+  // ALL bank-side transactions of the batch, destined for ONE combined
+  // statement — a real statement lists every movement of the period.
+  bankLines: BankStatementLineInput[];
+};
+
+// Pure planner for which documents an exercise gets — exported for tests.
+// Dedupes by sequence (the answer key is one entry PER LEG, so a two-leg
+// transaction flagged on both legs previously produced two identical PDFs),
+// normalizes bank-side voucher types to bank_statement, and splits into
+// per-bill invoices vs. the single combined statement's lines.
+export function planSourceDocuments(generated: GeneratedExercise): SourceDocumentPlan {
+  const descriptionBySequence = new Map<number, string>();
+  for (const transaction of generated.transactions) {
+    descriptionBySequence.set(transaction.sequence, transaction.description);
+  }
+
+  const seenSequences = new Set<number>();
+  const plan: SourceDocumentPlan = { invoices: [], bankLines: [] };
+
+  for (const entry of generated.answer_key.entries) {
+    if (!entry.requires_source_document || entry.source_document_type === null) {
+      continue;
+    }
+    if (seenSequences.has(entry.sequence)) {
+      continue;
+    }
+    seenSequences.add(entry.sequence);
+
+    const partyAccounts = generated.answer_key.entries
+      .filter((sibling) => sibling.sequence === entry.sequence)
+      .map((sibling) => sibling.correct_account);
+
+    const bankSide = BANK_SIDE_VOUCHER_TYPES.has(entry.voucher_type.trim().toLowerCase());
+    const docType = bankSide ? 'bank_statement' : entry.source_document_type;
+
+    if (docType === 'bank_statement') {
+      plan.bankLines.push({
+        entry,
+        partyAccounts,
+        transactionDescription: descriptionBySequence.get(entry.sequence) ?? '(no description available)',
+      });
+    } else {
+      plan.invoices.push({ entry, partyAccounts });
+    }
+  }
+
+  return plan;
+}
+
+// Generates, renders, and uploads the exercise's source-document PDFs, then
+// persists the exercise_source_documents rows: one vendor invoice per billed
+// transaction, plus AT MOST ONE combined bank statement carrying every
+// bank-side transaction as a line. Runs after the exercise itself is
+// persisted (so its answer_key already exists to ground each document's
+// figures against), and is awaited by the caller — a document
+// generation/render/upload failure propagates and fails the whole
+// exercise-generation call, rather than silently delivering an exercise
+// whose promised source document never arrives. The LLM calls only produce
+// validated structured content; rendering to PDF and upload are fully
+// deterministic from there, per this unit's "code renders, LLM never
+// touches the PDF" boundary.
 async function generateAndAttachSourceDocuments(
   supabase: SupabaseClient,
   learnerId: string,
   exerciseId: string,
-  answerKey: GeneratedExercise['answer_key'],
+  generatedExercise: GeneratedExercise,
 ): Promise<void> {
-  const flaggedEntries = answerKey.entries.filter(
-    (entry) => entry.requires_source_document && entry.source_document_type !== null,
-  );
+  const plan = planSourceDocuments(generatedExercise);
 
-  for (const entry of flaggedEntries) {
-    const docType = entry.source_document_type;
-    if (!docType) {
-      continue;
-    }
-
-    const partyAccounts = answerKey.entries
-      .filter((sibling) => sibling.sequence === entry.sequence)
-      .map((sibling) => sibling.correct_account);
-    const generated = await generateSourceDocument(learnerId, docType, entry, partyAccounts);
+  async function renderAndPersist(
+    generated: Awaited<ReturnType<typeof generateSourceDocument>>,
+    docType: 'vendor_invoice' | 'bank_statement',
+    formatSeed: string,
+  ): Promise<void> {
     // Phase 4 (spec 16): format rotation seed — deterministic per
     // exercise + transaction, so a re-render picks the same format while
     // documents across a batch vary.
-    const pdfBuffer = await renderSourceDocumentPdf(generated, `${exerciseId}:${entry.sequence}`);
+    const pdfBuffer = await renderSourceDocumentPdf(generated, formatSeed);
 
     const docId = crypto.randomUUID();
     const storagePath = `${learnerId}/${exerciseId}/${docId}.pdf`;
@@ -68,6 +124,21 @@ async function generateAndAttachSourceDocuments(
     }
 
     await insertSourceDocument(supabase, exerciseId, docType, storagePath, generated.content);
+  }
+
+  for (const invoice of plan.invoices) {
+    const generated = await generateSourceDocument(
+      learnerId,
+      'vendor_invoice',
+      invoice.entry,
+      invoice.partyAccounts,
+    );
+    await renderAndPersist(generated, 'vendor_invoice', `${exerciseId}:${invoice.entry.sequence}`);
+  }
+
+  if (plan.bankLines.length > 0) {
+    const generated = await generateBankStatementDocument(learnerId, plan.bankLines);
+    await renderAndPersist(generated, 'bank_statement', `${exerciseId}:bank-statement`);
   }
 }
 
@@ -104,7 +175,7 @@ export async function generateDiagnosticExercise(
 
     if (parsed.success) {
       const { id } = await insertExercise(supabase, learnerId, 'diagnostic', parsed.data);
-      await generateAndAttachSourceDocuments(supabase, learnerId, id, parsed.data.answer_key);
+      await generateAndAttachSourceDocuments(supabase, learnerId, id, parsed.data);
       return { id };
     }
 
@@ -285,7 +356,7 @@ export async function generateAdaptiveExercise(
 
   const { id } = await insertExercise(supabase, learnerId, kind, generated);
 
-  await generateAndAttachSourceDocuments(supabase, learnerId, id, generated.answer_key);
+  await generateAndAttachSourceDocuments(supabase, learnerId, id, generated);
 
   const newLedgers = generated.answer_key.entries.map((entry) => ({
     ledgerName: entry.correct_account,
