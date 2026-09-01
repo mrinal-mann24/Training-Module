@@ -66,14 +66,18 @@ export async function generateSourceDocument(
 export async function generateBankStatementDocument(
   learnerId: string,
   lines: BankStatementLineInput[],
+  // The statement's account holder — pinned to the learner's real company so
+  // the PDF never invents one (live 2026-09-01: "Bank Statement — ABC
+  // Trading Co." on a Blossom Retail batch).
+  companyName: string,
 ): Promise<GeneratedSourceDocument> {
   let lastError: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { messages, jsonSchema } =
       lastError === null
-        ? buildBankStatementBatchPrompt(lines)
-        : buildBankStatementBatchRetryPrompt(lines, lastError);
+        ? buildBankStatementBatchPrompt(lines, companyName)
+        : buildBankStatementBatchRetryPrompt(lines, companyName, lastError);
 
     const raw = await getTracedStructuredCompletion({
       messages,

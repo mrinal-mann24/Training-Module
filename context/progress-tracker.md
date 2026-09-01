@@ -21,6 +21,12 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-01 (later): DOC-DELIVERY RACE + STATEMENT ACCOUNT-HOLDER FIXES (from the user's local test of the 5 batch fixes)
+
+User's localhost test of a fresh batch surfaced two bugs: (a) the batch arrived in chat with pointer text but NO PDF cards — DB showed the docs WERE generated (4 invoices + exactly 1 combined statement, confirming fix #1 live) but the exercise row landed at 07:00:10 and the last doc row at 07:00:42, while PendingSubmission's 5s next-exercise poll delivers the exercise as soon as its row exists → delivered docless; a refresh (timeline rebuild) showed all cards. (b) the combined statement was titled "Bank Statement — ABC Trading Co." — the batch prompt said "the account holder is the business itself" without naming it.
+
+Fixes in generate-exercise.ts / source-document.ts / generate-source-document.ts: `generateAndAttachSourceDocuments` split into `prepareSourceDocuments` (ALL slow work — LLM + render + upload — now runs BEFORE insertExercise, against a pre-generated batch-id storage folder since the bucket's RLS only scopes the learnerId segment; a doc failure now aborts before any exercise row exists, so a docless batch can never be delivered) + `attachSourceDocuments` (FK-dependent doc-row inserts right after insertExercise — milliseconds). Bank-statement generation now takes companyName (threaded from getCompanyName, 'Blossom Retail Pvt Ltd' fallback; legacy generated-diagnostic path pins the constant) and the prompt pins account holder EXACTLY to it. NOTE: an earlier working-tree copy of these same race-fix edits was silently reverted on disk (OneDrive/editor sync) before gates ran — re-applied and verified; watch for that failure mode in this OneDrive-hosted repo. 166 tests, tsc/lint clean.
+
 ## Session log — 2026-09-01: ONE COMBINED BANK STATEMENT PER BATCH (fix #1 of the user's 5-point generated-batch review)
 
 Live Module-2 batch delivered THREE separate "Bank Statement — HDFC Bank.pdf" cards plus nonsense "Invoice — HDFC Bank.pdf"/"Invoice — TDS Payable.pdf" cards. Root cause: generateAndAttachSourceDocuments generated one PDF per flagged answer-key ENTRY (per leg, not even per transaction), and trusted the LLM's source_document_type. Fixed:

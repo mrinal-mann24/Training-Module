@@ -178,7 +178,7 @@ export type BankStatementLineInput = {
 // delivered three separate "Bank Statement" cards). This prompt generates a
 // single statement whose transactions array carries one line per flagged
 // bank transaction in the batch.
-function buildBankStatementBatchSystemPrompt(lines: BankStatementLineInput[]): string {
+function buildBankStatementBatchSystemPrompt(lines: BankStatementLineInput[], companyName: string): string {
   const transactionBlocks = lines
     .map(
       (line, index) => `Transaction ${index + 1} (exercise item ${line.entry.sequence}):
@@ -203,8 +203,8 @@ Hard requirements:
   either debit or credit set (the other null) matching the money direction from
   the business's point of view, and a running balance that is arithmetically
   consistent from line to line (start from a plausible opening balance).
-- The account holder is the business itself; the period covers the span of the
-  listed dates.
+- The account holder is EXACTLY "${companyName}" — never an invented company
+  name; the period covers the span of the listed dates.
 - Line amounts must equal each transaction's stated amount exactly.
 
 ${transactionBlocks}
@@ -216,13 +216,13 @@ Never use an em dash anywhere in the text you produce; use a colon, comma, or fu
 Respond only with JSON matching the provided schema.`;
 }
 
-export function buildBankStatementBatchPrompt(lines: BankStatementLineInput[]): {
+export function buildBankStatementBatchPrompt(lines: BankStatementLineInput[], companyName: string): {
   messages: ChatMessage[];
   jsonSchema: { name: string; schema: Record<string, unknown> };
 } {
   return {
     messages: [
-      { role: 'system', content: buildBankStatementBatchSystemPrompt(lines) },
+      { role: 'system', content: buildBankStatementBatchSystemPrompt(lines, companyName) },
       {
         role: 'user',
         content: `Generate the single combined bank statement covering exercise items ${lines
@@ -239,9 +239,10 @@ export function buildBankStatementBatchPrompt(lines: BankStatementLineInput[]): 
 
 export function buildBankStatementBatchRetryPrompt(
   lines: BankStatementLineInput[],
+  companyName: string,
   validationError: string,
 ): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
-  const base = buildBankStatementBatchPrompt(lines);
+  const base = buildBankStatementBatchPrompt(lines, companyName);
   return {
     ...base,
     messages: [

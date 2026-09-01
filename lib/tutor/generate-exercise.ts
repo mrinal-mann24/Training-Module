@@ -1,8 +1,14 @@
-import { createHash } from 'node:crypto';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
-import { buildDiagnosticPrompt, buildDiagnosticRetryPrompt } from '@/lib/llm/prompts/diagnostic-exercise';
-import { buildAdaptivePrompt, buildAdaptiveRetryPrompt } from '@/lib/llm/prompts/adaptive-exercise';
+import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getTracedStructuredCompletion } from "@/lib/llm/tracing";
+import {
+  buildDiagnosticPrompt,
+  buildDiagnosticRetryPrompt,
+} from "@/lib/llm/prompts/diagnostic-exercise";
+import {
+  buildAdaptivePrompt,
+  buildAdaptiveRetryPrompt,
+} from "@/lib/llm/prompts/adaptive-exercise";
 import {
   GeneratedExerciseSchema,
   EXERCISE_DIFFICULTY_LEVELS,
@@ -10,15 +16,24 @@ import {
   type ExerciseVariant,
   type ExerciseDifficultyLevel,
   type GeneratedExercise,
-} from '@/lib/schemas/exercise';
-import { insertExercise } from '@/lib/db/queries/exercises';
-import { getCompanyLedgerRegistry, getRecentCompanyTransactionLog, getCompanyName, registerCompanyLedgers, appendCompanyTransactionLog } from '@/lib/db/queries/company';
-import { insertSourceDocument } from '@/lib/db/queries/source-documents';
-import { generateSourceDocument, generateBankStatementDocument } from '@/lib/documents/generate-source-document';
-import { renderSourceDocumentPdf } from '@/lib/documents/render-source-document';
-import type { BankStatementLineInput } from '@/lib/llm/prompts/source-document';
-import type { WeakConceptTarget } from '@/lib/tutor/mastery';
-import type { LicenseMode } from '@/lib/schemas/onboarding';
+} from "@/lib/schemas/exercise";
+import { insertExercise } from "@/lib/db/queries/exercises";
+import {
+  getCompanyLedgerRegistry,
+  getRecentCompanyTransactionLog,
+  getCompanyName,
+  registerCompanyLedgers,
+  appendCompanyTransactionLog,
+} from "@/lib/db/queries/company";
+import { insertSourceDocument } from "@/lib/db/queries/source-documents";
+import {
+  generateSourceDocument,
+  generateBankStatementDocument,
+} from "@/lib/documents/generate-source-document";
+import { renderSourceDocumentPdf } from "@/lib/documents/render-source-document";
+import type { BankStatementLineInput } from "@/lib/llm/prompts/source-document";
+import type { WeakConceptTarget } from "@/lib/tutor/mastery";
+import type { LicenseMode } from "@/lib/schemas/onboarding";
 
 const MAX_ATTEMPTS = 3;
 
@@ -28,11 +43,14 @@ const MAX_ATTEMPTS = 3;
 // vendor_invoice anyway (observed live 2026-09-01 as "Invoice — HDFC
 // Bank.pdf" and "Invoice — TDS Payable.pdf" cards), so the doc type is
 // normalized deterministically here rather than trusted.
-const BANK_SIDE_VOUCHER_TYPES = new Set(['contra', 'receipt', 'payment']);
+const BANK_SIDE_VOUCHER_TYPES = new Set(["contra", "receipt", "payment"]);
 
 export type SourceDocumentPlan = {
   // One vendor invoice per transaction (each real bill IS its own document).
-  invoices: { entry: GeneratedExercise['answer_key']['entries'][number]; partyAccounts: string[] }[];
+  invoices: {
+    entry: GeneratedExercise["answer_key"]["entries"][number];
+    partyAccounts: string[];
+  }[];
   // ALL bank-side transactions of the batch, destined for ONE combined
   // statement — a real statement lists every movement of the period.
   bankLines: BankStatementLineInput[];
@@ -43,7 +61,9 @@ export type SourceDocumentPlan = {
 // transaction flagged on both legs previously produced two identical PDFs),
 // normalizes bank-side voucher types to bank_statement, and splits into
 // per-bill invoices vs. the single combined statement's lines.
-export function planSourceDocuments(generated: GeneratedExercise): SourceDocumentPlan {
+export function planSourceDocuments(
+  generated: GeneratedExercise,
+): SourceDocumentPlan {
   const descriptionBySequence = new Map<number, string>();
   for (const transaction of generated.transactions) {
     descriptionBySequence.set(transaction.sequence, transaction.description);
@@ -53,7 +73,10 @@ export function planSourceDocuments(generated: GeneratedExercise): SourceDocumen
   const plan: SourceDocumentPlan = { invoices: [], bankLines: [] };
 
   for (const entry of generated.answer_key.entries) {
-    if (!entry.requires_source_document || entry.source_document_type === null) {
+    if (
+      !entry.requires_source_document ||
+      entry.source_document_type === null
+    ) {
       continue;
     }
     if (seenSequences.has(entry.sequence)) {
@@ -65,14 +88,18 @@ export function planSourceDocuments(generated: GeneratedExercise): SourceDocumen
       .filter((sibling) => sibling.sequence === entry.sequence)
       .map((sibling) => sibling.correct_account);
 
-    const bankSide = BANK_SIDE_VOUCHER_TYPES.has(entry.voucher_type.trim().toLowerCase());
-    const docType = bankSide ? 'bank_statement' : entry.source_document_type;
+    const bankSide = BANK_SIDE_VOUCHER_TYPES.has(
+      entry.voucher_type.trim().toLowerCase(),
+    );
+    const docType = bankSide ? "bank_statement" : entry.source_document_type;
 
-    if (docType === 'bank_statement') {
+    if (docType === "bank_statement") {
       plan.bankLines.push({
         entry,
         partyAccounts,
-        transactionDescription: descriptionBySequence.get(entry.sequence) ?? '(no description available)',
+        transactionDescription:
+          descriptionBySequence.get(entry.sequence) ??
+          "(no description available)",
       });
     } else {
       plan.invoices.push({ entry, partyAccounts });
@@ -82,71 +109,116 @@ export function planSourceDocuments(generated: GeneratedExercise): SourceDocumen
   return plan;
 }
 
-// Generates, renders, and uploads the exercise's source-document PDFs, then
-// persists the exercise_source_documents rows: one vendor invoice per billed
-// transaction, plus AT MOST ONE combined bank statement carrying every
-// bank-side transaction as a line. Runs after the exercise itself is
-// persisted (so its answer_key already exists to ground each document's
-// figures against), and is awaited by the caller — a document
-// generation/render/upload failure propagates and fails the whole
-// exercise-generation call, rather than silently delivering an exercise
-// whose promised source document never arrives. The LLM calls only produce
-// validated structured content; rendering to PDF and upload are fully
-// deterministic from there, per this unit's "code renders, LLM never
-// touches the PDF" boundary.
-async function generateAndAttachSourceDocuments(
+type PreparedSourceDocument = {
+  docType: "vendor_invoice" | "bank_statement";
+  storagePath: string;
+  content: unknown;
+};
+
+// Generates, renders, and uploads the exercise's source-document PDFs: one
+// vendor invoice per billed transaction, plus AT MOST ONE combined bank
+// statement carrying every bank-side transaction as a line. Runs BEFORE the
+// exercise row is inserted — the chat's next-exercise poll delivers an
+// exercise the moment its row exists, and the ~30-60s of LLM + render +
+// upload after insertion meant the learner received the batch with no PDF
+// cards (observed live 2026-09-01: exercise row at 07:00:10, last document
+// at 07:00:42, 5s poll landed in between). All slow work happens here
+// against a storage folder keyed by a pre-generated batch id (the bucket's
+// RLS is scoped to the learnerId folder segment only); the caller inserts
+// the exercise row and then the document rows — milliseconds, closing the
+// race. A generation/render/upload failure propagates and fails the whole
+// call before any exercise row exists, so a docless batch is never
+// delivered. The LLM calls only produce validated structured content;
+// rendering to PDF and upload are fully deterministic from there, per this
+// unit's "code renders, LLM never touches the PDF" boundary.
+async function prepareSourceDocuments(
   supabase: SupabaseClient,
   learnerId: string,
-  exerciseId: string,
   generatedExercise: GeneratedExercise,
-): Promise<void> {
+  // Pins the bank statement's account holder — without it the statement
+  // invented a company ("Bank Statement — ABC Trading Co.", observed live
+  // 2026-09-01).
+  companyName: string,
+): Promise<PreparedSourceDocument[]> {
   const plan = planSourceDocuments(generatedExercise);
+  // Storage folder + format-rotation seed base. Pre-generated (not the
+  // exercise id) so uploads can happen before the exercise row exists;
+  // rotation stays deterministic per batch.
+  const batchId = crypto.randomUUID();
+  const prepared: PreparedSourceDocument[] = [];
 
-  async function renderAndPersist(
+  async function renderAndUpload(
     generated: Awaited<ReturnType<typeof generateSourceDocument>>,
-    docType: 'vendor_invoice' | 'bank_statement',
+    docType: "vendor_invoice" | "bank_statement",
     formatSeed: string,
   ): Promise<void> {
-    // Phase 4 (spec 16): format rotation seed — deterministic per
-    // exercise + transaction, so a re-render picks the same format while
-    // documents across a batch vary.
     const pdfBuffer = await renderSourceDocumentPdf(generated, formatSeed);
 
     const docId = crypto.randomUUID();
-    const storagePath = `${learnerId}/${exerciseId}/${docId}.pdf`;
+    const storagePath = `${learnerId}/${batchId}/${docId}.pdf`;
 
     const { error: uploadError } = await supabase.storage
-      .from('exercise-documents')
-      .upload(storagePath, pdfBuffer, { contentType: 'application/pdf' });
+      .from("exercise-documents")
+      .upload(storagePath, pdfBuffer, { contentType: "application/pdf" });
 
     if (uploadError) {
       throw uploadError;
     }
 
-    await insertSourceDocument(supabase, exerciseId, docType, storagePath, generated.content);
+    prepared.push({ docType, storagePath, content: generated.content });
   }
 
   for (const invoice of plan.invoices) {
     const generated = await generateSourceDocument(
       learnerId,
-      'vendor_invoice',
+      "vendor_invoice",
       invoice.entry,
       invoice.partyAccounts,
     );
-    await renderAndPersist(generated, 'vendor_invoice', `${exerciseId}:${invoice.entry.sequence}`);
+    await renderAndUpload(
+      generated,
+      "vendor_invoice",
+      `${batchId}:${invoice.entry.sequence}`,
+    );
   }
 
   if (plan.bankLines.length > 0) {
-    const generated = await generateBankStatementDocument(learnerId, plan.bankLines);
-    await renderAndPersist(generated, 'bank_statement', `${exerciseId}:bank-statement`);
+    const generated = await generateBankStatementDocument(
+      learnerId,
+      plan.bankLines,
+      companyName,
+    );
+    await renderAndUpload(generated, "bank_statement", `${batchId}:bank-statement`);
+  }
+
+  return prepared;
+}
+
+// Fast DB-row companion to prepareSourceDocuments — runs immediately after
+// insertExercise (the FK requires the exercise row), keeping the visible
+// exercise-without-documents window to milliseconds instead of the full
+// document-generation time.
+async function attachSourceDocuments(
+  supabase: SupabaseClient,
+  exerciseId: string,
+  documents: PreparedSourceDocument[],
+): Promise<void> {
+  for (const doc of documents) {
+    await insertSourceDocument(
+      supabase,
+      exerciseId,
+      doc.docType,
+      doc.storagePath,
+      doc.content,
+    );
   }
 }
 
 // Deterministic, not random, so the same learner always gets the same variant
 // if regeneration is ever re-triggered in testing.
 export function selectDiagnosticVariant(learnerId: string): ExerciseVariant {
-  const hash = createHash('sha256').update(learnerId).digest();
-  return hash[0] % 2 === 0 ? 'A' : 'B';
+  const hash = createHash("sha256").update(learnerId).digest();
+  return hash[0] % 2 === 0 ? "A" : "B";
 }
 
 export async function generateDiagnosticExercise(
@@ -166,16 +238,30 @@ export async function generateDiagnosticExercise(
     const raw = await getTracedStructuredCompletion({
       messages,
       jsonSchema,
-      traceName: 'diagnostic-generation',
+      traceName: "diagnostic-generation",
       learnerId,
-      callType: 'diagnostic-generation',
+      callType: "diagnostic-generation",
     });
 
     const parsed = GeneratedExerciseSchema.safeParse(raw);
 
     if (parsed.success) {
-      const { id } = await insertExercise(supabase, learnerId, 'diagnostic', parsed.data);
-      await generateAndAttachSourceDocuments(supabase, learnerId, id, parsed.data);
+      // Documents first, exercise row last — see prepareSourceDocuments'
+      // race note. The legacy generated diagnostic has no company registry
+      // yet, so the product's one live company is pinned directly.
+      const documents = await prepareSourceDocuments(
+        supabase,
+        learnerId,
+        parsed.data,
+        "Blossom Retail Pvt Ltd",
+      );
+      const { id } = await insertExercise(
+        supabase,
+        learnerId,
+        "diagnostic",
+        parsed.data,
+      );
+      await attachSourceDocuments(supabase, id, documents);
       return { id };
     }
 
@@ -218,7 +304,10 @@ export function checkBatchComposition(
   }
 
   const transactionCount = generated.transactions.length;
-  if (transactionCount < MIN_TRANSACTIONS_PER_BATCH || transactionCount > MAX_TRANSACTIONS_PER_BATCH) {
+  if (
+    transactionCount < MIN_TRANSACTIONS_PER_BATCH ||
+    transactionCount > MAX_TRANSACTIONS_PER_BATCH
+  ) {
     return `The batch has ${transactionCount} transactions; the composition rules require ${MIN_TRANSACTIONS_PER_BATCH} to ${MAX_TRANSACTIONS_PER_BATCH}.`;
   }
 
@@ -234,20 +323,26 @@ export function checkBatchComposition(
   const voucherTypeBySequence = new Map<number, string>();
   for (const entry of generated.answer_key.entries) {
     if (!voucherTypeBySequence.has(entry.sequence)) {
-      voucherTypeBySequence.set(entry.sequence, entry.voucher_type.trim().toLowerCase());
+      voucherTypeBySequence.set(
+        entry.sequence,
+        entry.voucher_type.trim().toLowerCase(),
+      );
     }
   }
   let salesCount = 0;
   let purchaseCount = 0;
   for (const voucherType of voucherTypeBySequence.values()) {
-    if (voucherType === 'sales') {
+    if (voucherType === "sales") {
       salesCount++;
     }
-    if (voucherType === 'purchase') {
+    if (voucherType === "purchase") {
       purchaseCount++;
     }
   }
-  if (salesCount < MIN_SALES_TRANSACTIONS || purchaseCount < MIN_PURCHASE_TRANSACTIONS) {
+  if (
+    salesCount < MIN_SALES_TRANSACTIONS ||
+    purchaseCount < MIN_PURCHASE_TRANSACTIONS
+  ) {
     violations.push(
       `Trading-mix violated: the batch has ${salesCount} Sales and ${purchaseCount} Purchase transactions, but every batch needs at least ${MIN_SALES_TRANSACTIONS} Sales and ${MIN_PURCHASE_TRANSACTIONS} Purchase transactions — this is a GST-registered trading business, so a month of only bank movements is unrealistic. Keep the concept targeting, but weave it through a month that includes real trading activity (with GST treatment appropriate to each party's state).`,
     );
@@ -259,9 +354,15 @@ export function checkBatchComposition(
   if (batchPlan.strengths.length > 0) {
     const strengthSet = new Set<ConceptTag>(batchPlan.strengths);
     const weaknessSet = new Set<ConceptTag>(batchPlan.weaknesses);
-    const perSequence = new Map<number, { strength: boolean; weakness: boolean }>();
+    const perSequence = new Map<
+      number,
+      { strength: boolean; weakness: boolean }
+    >();
     for (const entry of generated.answer_key.entries) {
-      const slot = perSequence.get(entry.sequence) ?? { strength: false, weakness: false };
+      const slot = perSequence.get(entry.sequence) ?? {
+        strength: false,
+        weakness: false,
+      };
       for (const tag of entry.concept_tags) {
         if (strengthSet.has(tag)) {
           slot.strength = true;
@@ -284,14 +385,17 @@ export function checkBatchComposition(
       }
     }
 
-    if (strengthCount < MIN_TRANSACTIONS_PER_SIDE || weaknessCount < MIN_TRANSACTIONS_PER_SIDE) {
+    if (
+      strengthCount < MIN_TRANSACTIONS_PER_SIDE ||
+      weaknessCount < MIN_TRANSACTIONS_PER_SIDE
+    ) {
       violations.push(
-        `Batch composition violated: only ${strengthCount} transactions carry a strength concept (${batchPlan.strengths.join(', ')}) and ${weaknessCount} carry a weakness concept (${batchPlan.weaknesses.join(', ')}). At least ${MIN_TRANSACTIONS_PER_SIDE} transactions per side are required — rebuild the batch so roughly half step up the strength concepts and half reinforce the weakness concepts, with concept_tags attributing each transaction.`,
+        `Batch composition violated: only ${strengthCount} transactions carry a strength concept (${batchPlan.strengths.join(", ")}) and ${weaknessCount} carry a weakness concept (${batchPlan.weaknesses.join(", ")}). At least ${MIN_TRANSACTIONS_PER_SIDE} transactions per side are required — rebuild the batch so roughly half step up the strength concepts and half reinforce the weakness concepts, with concept_tags attributing each transaction.`,
       );
     }
   }
 
-  return violations.length > 0 ? violations.join(' ') : null;
+  return violations.length > 0 ? violations.join(" ") : null;
 }
 
 // Month-per-batch progression (2026-09-01, user's 5-point batch review #3):
@@ -301,8 +405,18 @@ export function checkBatchComposition(
 // May and June). Ordinal 1 is the diagnostic pack's April 2026; every
 // exercise after advances one calendar month.
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ] as const;
 const BOOKS_BEGIN_MONTH_INDEX = 3; // April
 const BOOKS_BEGIN_YEAR = 2026;
@@ -322,9 +436,25 @@ export function exerciseMonthForModule(moduleNumber: number): ExerciseMonth {
 // description with no parseable date is left to the prompt (failing on
 // absence would reject legitimate phrasings), and a bare month mention with
 // no day number ("settling the March invoice") is not a transaction date.
-const MONTH_ABBREVS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const MONTH_ABBREVS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
 
-export function checkBatchMonth(generated: GeneratedExercise, month: ExerciseMonth): string | null {
+export function checkBatchMonth(
+  generated: GeneratedExercise,
+  month: ExerciseMonth,
+): string | null {
   const offenders: string[] = [];
 
   for (const transaction of generated.transactions) {
@@ -334,14 +464,20 @@ export function checkBatchMonth(generated: GeneratedExercise, month: ExerciseMon
     )) {
       const monthIndex = MONTH_ABBREVS.indexOf(match[1].toLowerCase());
       if (monthIndex !== month.monthIndex || Number(match[2]) !== month.year) {
-        offenders.push(`transaction ${transaction.sequence} is dated "${match[0]}"`);
+        offenders.push(
+          `transaction ${transaction.sequence} is dated "${match[0]}"`,
+        );
       }
     }
     // "01-05-2026" / "01/05/2026" numeric style (Indian DD-MM-YYYY).
-    for (const match of transaction.description.matchAll(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g)) {
+    for (const match of transaction.description.matchAll(
+      /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g,
+    )) {
       const monthIndex = Number(match[2]) - 1;
       if (monthIndex !== month.monthIndex || Number(match[3]) !== month.year) {
-        offenders.push(`transaction ${transaction.sequence} is dated "${match[0]}"`);
+        offenders.push(
+          `transaction ${transaction.sequence} is dated "${match[0]}"`,
+        );
       }
     }
   }
@@ -349,7 +485,7 @@ export function checkBatchMonth(generated: GeneratedExercise, month: ExerciseMon
   if (offenders.length === 0) {
     return null;
   }
-  return `Month violated: every transaction must be dated inside ${month.label}, but ${[...new Set(offenders)].join('; ')}. Redate those transactions into ${month.label} — the company's timeline advances exactly one month per module and never mixes months in a batch.`;
+  return `Month violated: every transaction must be dated inside ${month.label}, but ${[...new Set(offenders)].join("; ")}. Redate those transactions into ${month.label} — the company's timeline advances exactly one month per module and never mixes months in a batch.`;
 }
 
 // Document-backed transactions must be POINTERS (2026-09-01, user's 5-point
@@ -364,10 +500,15 @@ export function checkBatchMonth(generated: GeneratedExercise, month: ExerciseMon
 const RUPEE_AMOUNT_PATTERN = /(?:₹|\bRs\.?\s?)\s*[\d,]+/i;
 const PERCENTAGE_PATTERN = /\d+(?:\.\d+)?\s*%/;
 
-export function checkDocumentBackedDescriptions(generated: GeneratedExercise): string | null {
+export function checkDocumentBackedDescriptions(
+  generated: GeneratedExercise,
+): string | null {
   const documentBackedSequences = new Set(
     generated.answer_key.entries
-      .filter((entry) => entry.requires_source_document && entry.source_document_type !== null)
+      .filter(
+        (entry) =>
+          entry.requires_source_document && entry.source_document_type !== null,
+      )
       .map((entry) => entry.sequence),
   );
   if (documentBackedSequences.size === 0) {
@@ -379,7 +520,10 @@ export function checkDocumentBackedDescriptions(generated: GeneratedExercise): s
     if (!documentBackedSequences.has(transaction.sequence)) {
       continue;
     }
-    if (RUPEE_AMOUNT_PATTERN.test(transaction.description) || PERCENTAGE_PATTERN.test(transaction.description)) {
+    if (
+      RUPEE_AMOUNT_PATTERN.test(transaction.description) ||
+      PERCENTAGE_PATTERN.test(transaction.description)
+    ) {
       offenders.push(transaction.sequence);
     }
   }
@@ -387,13 +531,15 @@ export function checkDocumentBackedDescriptions(generated: GeneratedExercise): s
   if (offenders.length === 0) {
     return null;
   }
-  return `Document-backed text violated: transaction(s) ${offenders.join(', ')} have requires_source_document true but their text states an amount or a GST rate. A document-backed transaction's line is a short pointer (date, party, what happened, which document to read) with NO figures — the learner reads the figures from the document itself. Rewrite those lines as pointers, keeping the exact figures only in the hidden answer key.`;
+  return `Document-backed text violated: transaction(s) ${offenders.join(", ")} have requires_source_document true but their text states an amount or a GST rate. A document-backed transaction's line is a short pointer (date, party, what happened, which document to read) with NO figures — the learner reads the figures from the document itself. Rewrite those lines as pointers, keeping the exact figures only in the hidden answer key.`;
 }
 
 // One level down from currentLevel, floored at L0 — used when reinforcement
 // is active, per the spec's "drops one difficulty level and re-targets"
 // rule. Never below the lowest defined level.
-function dropOneLevel(currentLevel: ExerciseDifficultyLevel): ExerciseDifficultyLevel {
+function dropOneLevel(
+  currentLevel: ExerciseDifficultyLevel,
+): ExerciseDifficultyLevel {
   const index = EXERCISE_DIFFICULTY_LEVELS.indexOf(currentLevel);
   const droppedIndex = Math.max(index - 1, 0);
   return EXERCISE_DIFFICULTY_LEVELS[droppedIndex];
@@ -416,14 +562,17 @@ export async function generateAdaptiveExercise(
   // batch plus an explain-the-entry text part — the kind drives
   // required_parts (REQUIRED_PARTS_BY_KIND) and nothing else about
   // generation. Scheduled by select-exercise-kind.ts.
-  kind: 'adaptive' | 'explain' = 'adaptive',
+  kind: "adaptive" | "explain" = "adaptive",
   recentStrengthDescriptions: string[] = [],
   // Phase 2: the 50/50 composition plan. Ignored (forced empty) in
   // escalation mode, which narrows to the single target concept.
-  batchPlan: { strengths: ConceptTag[]; weaknesses: ConceptTag[] } | null = null,
+  batchPlan: {
+    strengths: ConceptTag[];
+    weaknesses: ConceptTag[];
+  } | null = null,
   // Phase 3 (spec 15): educational-mode learners can only post on the 1st,
   // 2nd, or last day of a month — the generation prompt enforces the dates.
-  licenseMode: LicenseMode = 'licensed',
+  licenseMode: LicenseMode = "licensed",
   // Month-per-batch (2026-09-01): this exercise's ordinal in the learner's
   // journey — 1 is the diagnostic pack (April 2026), 2 the first adaptive
   // batch (May 2026), and so on, one calendar month per exercise. Computed
@@ -432,19 +581,24 @@ export async function generateAdaptiveExercise(
   // the retry loop below.
   exerciseOrdinal = 2,
 ): Promise<{ id: string }> {
-  const difficultyLevel = target.reinforcementActive ? dropOneLevel(baseDifficultyLevel) : baseDifficultyLevel;
+  const difficultyLevel = target.reinforcementActive
+    ? dropOneLevel(baseDifficultyLevel)
+    : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName] = await Promise.all([
-    getCompanyLedgerRegistry(supabase, learnerId),
-    getRecentCompanyTransactionLog(supabase, learnerId),
-    getCompanyName(supabase, learnerId),
-  ]);
+  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName] =
+    await Promise.all([
+      getCompanyLedgerRegistry(supabase, learnerId),
+      getRecentCompanyTransactionLog(supabase, learnerId),
+      getCompanyName(supabase, learnerId),
+    ]);
 
   const promptParams = {
     targetConceptTag: target.conceptTag,
-    batchStrengthConcepts: target.escalationActive || !batchPlan ? [] : batchPlan.strengths,
-    batchWeaknessConcepts: target.escalationActive || !batchPlan ? [] : batchPlan.weaknesses,
+    batchStrengthConcepts:
+      target.escalationActive || !batchPlan ? [] : batchPlan.strengths,
+    batchWeaknessConcepts:
+      target.escalationActive || !batchPlan ? [] : batchPlan.weaknesses,
     recentStrengthDescriptions,
     difficultyLevel,
     licenseMode,
@@ -455,7 +609,7 @@ export async function generateAdaptiveExercise(
     // Fallback covers a learner whose pack-assignment log row predates the
     // company field (or test paths with no pack) — the product's one live
     // company is Blossom Retail.
-    companyName: companyName ?? 'Blossom Retail Pvt Ltd',
+    companyName: companyName ?? "Blossom Retail Pvt Ltd",
   };
 
   let lastError: string | null = null;
@@ -468,15 +622,20 @@ export async function generateAdaptiveExercise(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { messages, jsonSchema } =
-      lastError === null ? buildAdaptivePrompt(promptParams) : buildAdaptiveRetryPrompt(promptParams, lastError);
+      lastError === null
+        ? buildAdaptivePrompt(promptParams)
+        : buildAdaptiveRetryPrompt(promptParams, lastError);
 
     const raw = await getTracedStructuredCompletion({
       messages,
       jsonSchema,
-      traceName: 'adaptive-generation',
+      traceName: "adaptive-generation",
       learnerId,
-      callType: 'adaptive-generation',
-      extraMetadata: { targetConceptTag: target.conceptTag, reason: target.reason },
+      callType: "adaptive-generation",
+      extraMetadata: {
+        targetConceptTag: target.conceptTag,
+        reason: target.reason,
+      },
     });
 
     const parsed = GeneratedExerciseSchema.safeParse(raw);
@@ -484,11 +643,17 @@ export async function generateAdaptiveExercise(
     if (parsed.success) {
       // Composition, month, and document-pointer violations are combined
       // into one retry message so a single retry can fix everything at once.
-      const compositionError = checkBatchComposition(parsed.data, batchPlan, target.escalationActive);
+      const compositionError = checkBatchComposition(
+        parsed.data,
+        batchPlan,
+        target.escalationActive,
+      );
       const monthError = checkBatchMonth(parsed.data, exerciseMonth);
       const documentTextError = checkDocumentBackedDescriptions(parsed.data);
-      const batchError = [compositionError, monthError, documentTextError].filter(Boolean).join(' ');
-      if (batchError === '') {
+      const batchError = [compositionError, monthError, documentTextError]
+        .filter(Boolean)
+        .join(" ");
+      if (batchError === "") {
         generated = parsed.data;
         break;
       }
@@ -510,9 +675,19 @@ export async function generateAdaptiveExercise(
     );
   }
 
+  // Slow work (LLM + PDF render + upload) BEFORE the exercise row exists —
+  // the chat's poll delivers the exercise as soon as the row appears, so
+  // documents must already be uploaded by then (2026-09-01 race fix).
+  const documents = await prepareSourceDocuments(
+    supabase,
+    learnerId,
+    generated,
+    companyName ?? "Blossom Retail Pvt Ltd",
+  );
+
   const { id } = await insertExercise(supabase, learnerId, kind, generated);
 
-  await generateAndAttachSourceDocuments(supabase, learnerId, id, generated);
+  await attachSourceDocuments(supabase, id, documents);
 
   const newLedgers = generated.answer_key.entries.map((entry) => ({
     ledgerName: entry.correct_account,
