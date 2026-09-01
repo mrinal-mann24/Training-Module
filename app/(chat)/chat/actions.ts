@@ -10,7 +10,7 @@ import {
 } from '@/lib/db/queries/learner-profile';
 import { generateDiagnosticExercise } from '@/lib/tutor/generate-exercise';
 import { assignPackDiagnostic } from '@/lib/tutor/assign-pack-exercise';
-import { getSignedPackFileCards } from '@/lib/db/queries/exercise-packs';
+import { getSignedPackFileCards, freshSignedUrlForPackFile } from '@/lib/db/queries/exercise-packs';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { getExerciseAnswerKey, getLatestDiagnosticExercise, getLatestExercise } from '@/lib/db/queries/exercises';
 import {
@@ -33,7 +33,11 @@ import type { SubmissionPartType } from '@/lib/schemas/exercise';
 import { determineNextRung } from '@/lib/tutor/hint-ladder';
 import { generateHint } from '@/lib/tutor/generate-hint';
 import { answerQuestion } from '@/lib/tutor/answer-question';
-import { getSourceDocumentsForExercise, getSignedSourceDocumentUrls } from '@/lib/db/queries/source-documents';
+import {
+  getSourceDocumentsForExercise,
+  getSignedSourceDocumentUrls,
+  freshSignedUrlForDocument,
+} from '@/lib/db/queries/source-documents';
 import { insertSubmissionPart, getSubmissionParts } from '@/lib/db/queries/submission-parts';
 import { identifyTallyFile } from '@/lib/parsing/identify-tally-file';
 import { insertQaMessage } from '@/lib/db/queries/qa-messages';
@@ -52,6 +56,30 @@ async function getExerciseSourceDocuments(
     return [];
   }
   return getSignedSourceDocumentUrls(supabase, documents);
+}
+
+// Sign-on-click (2026-09-01): the card asks for a fresh URL the moment the
+// learner clicks, so a link can never be stale however long the chat sat
+// open (Supabase Storage rejected expired links with `"exp" claim timestamp
+// check failed`, observed live). Pack files are shared content keyed by
+// storage path; generated documents are per-learner and keyed by row id, so
+// only the id is trusted from the client and the path is read server-side.
+export async function refreshDocumentUrl(
+  documentId: string,
+  kind: 'source-document' | 'pack-file',
+): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return null;
+  }
+
+  return kind === 'pack-file'
+    ? freshSignedUrlForPackFile(supabase, documentId)
+    : freshSignedUrlForDocument(supabase, documentId);
 }
 
 export type ConfirmWalkthroughResult =

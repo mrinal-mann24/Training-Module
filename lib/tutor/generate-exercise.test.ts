@@ -201,7 +201,7 @@ describe('planSourceDocuments', () => {
     expect(plan.bankLines).toHaveLength(2);
   });
 
-  it('dedupes multi-leg transactions to one document per sequence', () => {
+  it('dedupes multi-leg transactions to one document carrying the FULL leg set', () => {
     const generated = exerciseWith([
       docEntry(1, 'Deccan Traders', 'Purchase', 'vendor_invoice'),
       docEntry(1, 'Purchases', 'Purchase', 'vendor_invoice'),
@@ -210,7 +210,13 @@ describe('planSourceDocuments', () => {
     const plan = planSourceDocuments(generated);
 
     expect(plan.invoices).toHaveLength(1);
-    expect(plan.invoices[0].partyAccounts).toEqual(['Deccan Traders', 'Purchases']);
+    // The invoice generator needs every leg (base + tax + party) so the
+    // PDF's figures can be pinned to the answer key exactly.
+    expect(plan.invoices[0].legs.map((leg) => leg.correct_account)).toEqual([
+      'Deccan Traders',
+      'Purchases',
+    ]);
+    expect(plan.invoices[0].transactionDescription).toContain('transaction 1');
   });
 
   it('carries the transaction description into the statement line for date grounding', () => {

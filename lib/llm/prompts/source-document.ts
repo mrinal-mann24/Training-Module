@@ -1,6 +1,5 @@
 import type { ChatMessage } from '@/lib/llm/client';
 import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
-import type { SourceDocumentType } from '@/lib/schemas/source-document';
 
 const VENDOR_INVOICE_JSON_SCHEMA = {
   type: 'object',
@@ -92,52 +91,125 @@ like a real bank's terse transaction description, never an accounting instructio
 Do not include any hint about correct ledger names, voucher types, or tax head
 classification anywhere in the document.`;
 
-// Grounds the document's figures in the specific answer-key entry it
-// represents, so a learner correctly working from the document arrives at
-// exactly the posting the answer key expects — the document's total/amount
-// must be internally consistent with entry.amount.
-function buildTransactionContext(entry: AnswerKeyEntry, partyAccounts: string[]): string {
-  const partyLine =
-    partyAccounts.length > 0
-      ? `- Parties/accounts involved in this transaction: ${partyAccounts.join('; ')}
-  The document's vendor/customer/account-holder name MUST be the counterparty
-  from this list — NEVER an invented name (a document naming a party that
-  appears nowhere in the exercise confuses the learner and is wrong).`
-      : '';
-  return `The document represents this transaction from the exercise's answer key
-(grounding only — never reproduce this raw structure in the document itself):
-${partyLine}
-- Amount: ${entry.amount}
-- Voucher type: ${entry.voucher_type}
-- GST head: ${entry.gst_head ?? 'none'}, rate: ${entry.gst_rate ?? 'n/a'}
-- TDS section: ${entry.tds_section ?? 'none'}, rate: ${entry.tds_rate ?? 'n/a'}, base: ${entry.tds_base ?? 'n/a'}
-- Bill reference: ${entry.bill_reference ?? 'none'}
+// One vendor invoice, grounded on the transaction's COMPLETE leg set plus
+// its description (2026-09-01): the previous single-leg grounding let the
+// PDF's figures contradict the answer key — every delivered invoice in the
+// first live intern batches carried a wrong total, wrong/missing tax, and an
+// invented "2024-01-15" date, and since doc-backed transaction text carries
+// no figures, a learner posting faithfully from the PDF was marked wrong.
+export type VendorInvoiceInput = {
+  // Every answer-key leg of this transaction (party + base + tax legs for
+  // multi-leg keys; just the party leg for single-leg keys).
+  legs: AnswerKeyEntry[];
+  // The exercise's own transaction line — grounds the DATE (answer-key
+  // entries carry no date field).
+  transactionDescription: string;
+};
 
-The document's figures (line item amounts, tax breakup, total, or transaction
-amount/balance) must be internally consistent with this amount and tax
-information — a learner correctly reading the document and applying their own
-accounting judgment should arrive at a posting matching this answer key entry.`;
+// The exact figures the invoice must print, derived deterministically from
+// the leg set — never left to the model. Multi-leg keys read them off the
+// legs (base = the Dr non-tax legs, tax = the GST-named legs, total = the Cr
+// party leg); a single-leg key carries only the party total plus gst_head/
+// gst_rate, so base and tax are computed from the rate (total is inclusive).
+export type VendorInvoiceFigures = {
+  vendorAccount: string;
+  total: number;
+  base: number;
+  cgst: number | null;
+  sgst: number | null;
+  igst: number | null;
+};
+
+const GST_LEG_PATTERN = /\b(cgst|sgst|igst)\b/i;
+
+export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigures {
+  const taxLegs = legs.filter((leg) => GST_LEG_PATTERN.test(leg.correct_account));
+  const nonTax = legs.filter((leg) => !GST_LEG_PATTERN.test(leg.correct_account));
+  // On a purchase the vendor is the credited leg; base legs are the debits.
+  const partyLeg = nonTax.find((leg) => leg.dr_cr === 'Cr') ?? nonTax[0];
+  const baseLegs = nonTax.filter((leg) => leg !== partyLeg);
+
+  if (legs.length === 1) {
+    // Single-leg key: party total inclusive of tax; split by the stated rate.
+    const head = partyLeg.gst_head;
+    const rate = (partyLeg.gst_rate ?? 18) / 100;
+    if (!head) {
+      return { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base: partyLeg.amount, cgst: null, sgst: null, igst: null };
+    }
+    const base = Math.round(partyLeg.amount / (1 + rate));
+    const tax = partyLeg.amount - base;
+    return head === 'IGST'
+      ? { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: null, sgst: null, igst: tax }
+      : { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: tax / 2, sgst: tax / 2, igst: null };
+  }
+
+  const headAmount = (head: string) => {
+    const matched = taxLegs.filter((leg) => new RegExp(`\\b${head}\\b`, 'i').test(leg.correct_account));
+    return matched.length > 0 ? matched.reduce((sum, leg) => sum + leg.amount, 0) : null;
+  };
+  return {
+    vendorAccount: partyLeg.correct_account,
+    total: partyLeg.amount,
+    base: baseLegs.reduce((sum, leg) => sum + leg.amount, 0),
+    cgst: headAmount('cgst'),
+    sgst: headAmount('sgst'),
+    igst: headAmount('igst'),
+  };
 }
 
-function buildSystemPrompt(docType: SourceDocumentType, entry: AnswerKeyEntry, partyAccounts: string[]): string {
-  const docTypeInstruction =
-    docType === 'vendor_invoice'
-      ? `Generate the structured content for a realistic vendor invoice/bill — the kind a
-small Indian trading business would receive from a supplier. Include the vendor's
-name (from the transaction context below), a valid-looking GSTIN format, an invoice number, an invoice date, one or
-more line items, the tax breakup as it would actually be printed (CGST+SGST for an
-intra-state supply, or IGST for inter-state — pick whichever is consistent with the
-transaction context below, and leave the unused fields null), and the total amount.`
-      : `Generate the structured content for a realistic bank statement excerpt covering the
-period this transaction falls in. Include a plausible account holder name, the
-statement period, and a list of transactions (one of which is the transaction
-described below) with date, a terse bank-style narration, debit/credit amounts (only
-one of the two set per row, the other null), and a running balance.`;
+// Pulls the transaction's date out of its description line ("On 06-May-2026,
+// ..." / "06/05/2026") — the same token shapes checkBatchMonth validates.
+export function extractTransactionDate(
+  description: string,
+): { day: number; monthIndex: number; year: number } | null {
+  const MONTH_ABBREVS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const named = /\b(\d{1,2})[-\s/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-\s/]*(\d{4})\b/i.exec(description);
+  if (named) {
+    return { day: Number(named[1]), monthIndex: MONTH_ABBREVS.indexOf(named[2].toLowerCase()), year: Number(named[3]) };
+  }
+  const numeric = /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/.exec(description);
+  if (numeric) {
+    return { day: Number(numeric[1]), monthIndex: Number(numeric[2]) - 1, year: Number(numeric[3]) };
+  }
+  return null;
+}
+
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function formatInvoiceDate(date: { day: number; monthIndex: number; year: number }): string {
+  return `${String(date.day).padStart(2, '0')}-${MONTH_NAMES_SHORT[date.monthIndex]}-${date.year}`;
+}
+
+function buildVendorInvoiceSystemPrompt(input: VendorInvoiceInput): string {
+  const figures = deriveInvoiceFigures(input.legs);
+  const date = extractTransactionDate(input.transactionDescription);
+  const billRef = input.legs.find((leg) => leg.bill_reference)?.bill_reference;
+
+  const taxLines = [
+    figures.cgst !== null ? `  cgst_amount: exactly ${figures.cgst}` : '  cgst_amount: null',
+    figures.sgst !== null ? `  sgst_amount: exactly ${figures.sgst}` : '  sgst_amount: null',
+    figures.igst !== null ? `  igst_amount: exactly ${figures.igst}` : '  igst_amount: null',
+  ].join('\n');
 
   return `You are generating structured source-document content for an accounting training
-exercise. ${docTypeInstruction}
+exercise: a realistic vendor invoice/bill, the kind a small Indian trading
+business would receive from a supplier. Include the vendor's name, a
+valid-looking GSTIN format, an invoice number, the invoice date, one or more
+line items, the tax breakup as printed, and the total.
 
-${buildTransactionContext(entry, partyAccounts)}
+HARD FIGURE REQUIREMENTS — these are the exact numbers the answer key scores
+against, and the learner's ONLY source for them is this document, so they are
+non-negotiable:
+- vendorName: "${figures.vendorAccount}" exactly (never an invented name).
+- invoiceDate: exactly "${date ? formatInvoiceDate(date) : 'the date stated in the transaction description below'}".
+- invoiceNumber: ${billRef ? `"${String(billRef).split(/[\s(]/)[0]}" exactly` : 'a realistic bill number'}.
+- lineItems: one or more items whose amounts SUM to exactly ${figures.base}
+  (taxable value, before tax).
+- taxBreakup:
+${taxLines}
+- totalAmount: exactly ${figures.total} (line items plus tax).
+
+Transaction being documented: ${input.transactionDescription}
 
 ${CONTENT_BOUNDARY_INSTRUCTION}
 
@@ -146,20 +218,35 @@ Never use an em dash anywhere in the text you produce; use a colon, comma, or fu
 Respond only with JSON matching the provided schema.`;
 }
 
-export function buildSourceDocumentPrompt(
-  docType: SourceDocumentType,
-  entry: AnswerKeyEntry,
-  partyAccounts: string[],
+export function buildVendorInvoicePrompt(
+  input: VendorInvoiceInput,
 ): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
   return {
     messages: [
-      { role: 'system', content: buildSystemPrompt(docType, entry, partyAccounts) },
-      { role: 'user', content: `Generate the ${docType} content for transaction ${entry.sequence}.` },
+      { role: 'system', content: buildVendorInvoiceSystemPrompt(input) },
+      { role: 'user', content: `Generate the vendor invoice for transaction ${input.legs[0].sequence}.` },
     ],
     jsonSchema: {
-      name: docType,
-      schema: docType === 'vendor_invoice' ? VENDOR_INVOICE_JSON_SCHEMA : BANK_STATEMENT_JSON_SCHEMA,
+      name: 'vendor_invoice',
+      schema: VENDOR_INVOICE_JSON_SCHEMA,
     },
+  };
+}
+
+export function buildVendorInvoiceRetryPrompt(
+  input: VendorInvoiceInput,
+  validationError: string,
+): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+  const base = buildVendorInvoicePrompt(input);
+  return {
+    ...base,
+    messages: [
+      ...base.messages,
+      {
+        role: 'user',
+        content: `Your previous response failed validation with this error: ${validationError}. Respond again with corrected JSON matching the schema and the HARD FIGURE REQUIREMENTS exactly.`,
+      },
+    ],
   };
 }
 
@@ -255,21 +342,3 @@ export function buildBankStatementBatchRetryPrompt(
   };
 }
 
-export function buildSourceDocumentRetryPrompt(
-  docType: SourceDocumentType,
-  entry: AnswerKeyEntry,
-  partyAccounts: string[],
-  validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
-  const base = buildSourceDocumentPrompt(docType, entry, partyAccounts);
-  return {
-    ...base,
-    messages: [
-      ...base.messages,
-      {
-        role: 'user',
-        content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
-      },
-    ],
-  };
-}

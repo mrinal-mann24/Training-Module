@@ -22,6 +22,7 @@ import { CONCEPT_TAGS, EXERCISE_DIFFICULTY_LEVELS, type ExerciseDifficultyLevel 
 import { getModuleProgress, upsertModuleProgress } from '@/lib/db/queries/module-progress';
 import { deriveNextModuleProgress } from '@/lib/tutor/module-progress';
 import { classifyRectificationsForExercise, type RectificationResult } from '@/lib/tutor/rectification';
+import { recordSubmissionScore } from '@/lib/llm/tracing';
 
 // Triggered by the submitFiles Server Action (lib/db/queries/submissions.ts's
 // insertSubmission having already created the row with status: 'validating').
@@ -185,6 +186,17 @@ export const runScoring = inngest.createFunction(
       // source-document PDFs add 60s+; holding the feedback hostage to them
       // was the 3-minute wait observed live 2026-08-21).
       await updateSubmissionStatus(supabase, submissionId, 'scored', null);
+
+      // Langfuse evals (2026-09-01): each scored submission becomes a set of
+      // scores on a per-submission trace, so cost/model changes can be
+      // correlated with learner outcomes. Fire-and-forget.
+      recordSubmissionScore({
+        learnerId: submission.learner_id,
+        submissionId,
+        weightedScore: scoringResult.weighted_score,
+        overallResult: scoringResult.overall_result,
+        tbTieOut: scoringResult.tb_tie_out,
+      });
     });
 
     // Mastery + module-progress recompute (Unit 09 mastery, Unit 12 module

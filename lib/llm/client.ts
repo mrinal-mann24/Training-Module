@@ -17,6 +17,25 @@ export type StructuredCompletionParams = {
   model?: string;
 };
 
+// Token/cost accounting per call (2026-09-01): OpenRouter reports prompt/
+// completion tokens and, with usage accounting enabled, the actual USD cost
+// it charged — captured so Langfuse can attribute spend per call type,
+// model, and learner. All fields null when the provider omits them.
+export type StructuredCompletionUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  costUsd: number | null;
+};
+
+export type StructuredCompletionResult = {
+  output: unknown;
+  // The model that actually served the call (OpenRouter echoes the resolved
+  // id), falling back to the requested one.
+  model: string;
+  usage: StructuredCompletionUsage;
+};
+
 // Thin fetch-based OpenRouter client (no SDK dependency — OpenRouter's API is
 // OpenAI-compatible REST, so a wrapper is simpler than pulling in an SDK).
 // Model is pinned via OPENROUTER_MODEL so it can change without a code change.
@@ -24,7 +43,7 @@ export type StructuredCompletionParams = {
 // json_schema) — confirm this on OpenRouter's model page before changing it.
 export async function getStructuredCompletion(
   params: StructuredCompletionParams,
-): Promise<unknown> {
+): Promise<StructuredCompletionResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = params.model ?? process.env.OPENROUTER_MODEL;
 
@@ -61,6 +80,9 @@ export async function getStructuredCompletion(
     body: JSON.stringify({
       model,
       messages: messagesWithSchema,
+      // OpenRouter usage accounting: include the actual charged cost (USD)
+      // in the response's usage block, alongside token counts.
+      usage: { include: true },
       response_format: {
         type: 'json_schema',
         json_schema: {
@@ -78,7 +100,14 @@ export async function getStructuredCompletion(
   }
 
   const data = (await response.json()) as {
+    model?: string;
     choices: Array<{ message: { content: string } }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      cost?: number;
+    };
   };
 
   const content = data.choices[0]?.message.content;
@@ -86,7 +115,16 @@ export async function getStructuredCompletion(
     throw new Error('OpenRouter response contained no message content.');
   }
 
-  return JSON.parse(extractJsonPayload(content)) as unknown;
+  return {
+    output: JSON.parse(extractJsonPayload(content)) as unknown,
+    model: data.model ?? model,
+    usage: {
+      promptTokens: data.usage?.prompt_tokens ?? null,
+      completionTokens: data.usage?.completion_tokens ?? null,
+      totalTokens: data.usage?.total_tokens ?? null,
+      costUsd: data.usage?.cost ?? null,
+    },
+  };
 }
 
 // Some models return the JSON wrapped in a markdown code fence despite the

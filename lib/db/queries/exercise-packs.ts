@@ -2,7 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AnswerKey, ExerciseVariant } from '@/lib/schemas/exercise';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
+// 24 hours — see the same constant in source-documents.ts for why (expired
+// links on a long-open chat tab, 2026-09-01). Pack cards re-sign on click too.
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24;
 
 // Signs a pack exercise's shared files ('packs' bucket, authenticated select
 // policy — same content for every learner, unlike the per-learner
@@ -32,6 +34,21 @@ export async function getSignedPackFileCards(
       };
     }),
   );
+}
+
+// Re-signs one pack file on demand (sign-on-click). Pack cards carry the
+// storage path as their id, and the 'packs' bucket's select policy is
+// authenticated-only shared content, so signing by path is safe here — unlike
+// the per-learner exercise-documents bucket, which signs by row id.
+export async function freshSignedUrlForPackFile(
+  supabase: SupabaseClient,
+  storagePath: string,
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from('packs')
+    .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+
+  return error || !data ? null : data.signedUrl;
 }
 
 export type ExercisePack = {

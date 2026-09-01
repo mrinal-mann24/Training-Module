@@ -13,7 +13,13 @@ export type SourceDocumentForLearner = {
   createdAt: string;
 };
 
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
+// 24 hours (2026-09-01): links are signed when the chat page renders, so a
+// 1-hour TTL meant a learner who left the tab open — or came back to an
+// earlier batch — hit Supabase Storage's `"exp" claim timestamp check
+// failed` on View. The card also re-signs on click (freshSourceDocumentUrl),
+// so this TTL only has to cover the common case; training PDFs carry no
+// sensitive data and live in a per-learner, RLS-scoped bucket.
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24;
 
 // Resolves a signed URL for each document's storage_path, using the
 // authenticated (not service-role) client — the exercise-documents bucket's
@@ -80,6 +86,32 @@ function deriveDocumentName(docType: SourceDocumentType, structuredData: unknown
   return accountHolderName
     ? `${DOC_TYPE_LABEL.bank_statement} — ${accountHolderName}.pdf`
     : `${DOC_TYPE_LABEL.bank_statement}.pdf`;
+}
+
+// Mints a FRESH signed URL for one document, identified by its own row id
+// (never a client-supplied storage path — the path is read from the row, and
+// the authenticated client's RLS on both the table and the bucket keeps a
+// learner to their own documents). Backs the card's sign-on-click behaviour,
+// so a link can never be stale no matter how long the chat sat open.
+export async function freshSignedUrlForDocument(
+  supabase: SupabaseClient,
+  documentId: string,
+): Promise<string | null> {
+  const { data: row, error } = await supabase
+    .from('exercise_source_documents')
+    .select('storage_path')
+    .eq('id', documentId)
+    .maybeSingle();
+
+  if (error || !row) {
+    return null;
+  }
+
+  const { data, error: signError } = await supabase.storage
+    .from('exercise-documents')
+    .createSignedUrl(row.storage_path as string, SIGNED_URL_TTL_SECONDS);
+
+  return signError || !data ? null : data.signedUrl;
 }
 
 // Fetches every source document attached to an exercise, for delivery

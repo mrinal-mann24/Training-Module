@@ -2,37 +2,109 @@ import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
 import {
   buildBankStatementBatchPrompt,
   buildBankStatementBatchRetryPrompt,
-  buildSourceDocumentPrompt,
-  buildSourceDocumentRetryPrompt,
+  buildVendorInvoicePrompt,
+  buildVendorInvoiceRetryPrompt,
+  deriveInvoiceFigures,
+  extractTransactionDate,
+  formatInvoiceDate,
   type BankStatementLineInput,
+  type VendorInvoiceInput,
 } from '@/lib/llm/prompts/source-document';
-import { GeneratedSourceDocumentSchema, type GeneratedSourceDocument, type SourceDocumentType } from '@/lib/schemas/source-document';
-import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
+import {
+  GeneratedSourceDocumentSchema,
+  type GeneratedSourceDocument,
+  type VendorInvoiceContent,
+} from '@/lib/schemas/source-document';
 
 const MAX_ATTEMPTS = 3;
 
-// Generates the structured content for one source document, grounded in the
-// specific answer-key entry it represents so its figures are internally
-// consistent with what a correct posting would require. Same bounded-retry
-// pattern as every other LLM call type in this codebase — validated against
-// GeneratedSourceDocumentSchema, retried with the validation error fed back
-// into the prompt, never persisted/rendered unvalidated.
-export async function generateSourceDocument(
+const AMOUNT_TOLERANCE = 0.01;
+
+function amountMatches(actual: number | null, expected: number | null): boolean {
+  if (expected === null) {
+    // Unused tax heads may print as null or an explicit 0 — both fine.
+    return actual === null || Math.abs(actual) < AMOUNT_TOLERANCE;
+  }
+  return actual !== null && Math.abs(actual - expected) < AMOUNT_TOLERANCE;
+}
+
+// Deterministic figure/date validation for a generated invoice — the same
+// role the line-count check plays for the bank statement. Every delivered
+// invoice in the first live intern batches contradicted its answer key
+// (wrong totals, missing IGST, all dated "2024-01-15"); with this check a
+// document-vs-answer-key contradiction can no longer be rendered at all.
+// Exported for tests.
+export function checkVendorInvoiceContent(
+  content: VendorInvoiceContent,
+  input: VendorInvoiceInput,
+): string | null {
+  const figures = deriveInvoiceFigures(input.legs);
+  const violations: string[] = [];
+
+  const lineSum = content.lineItems.reduce((sum, item) => sum + item.amount, 0);
+  if (Math.abs(lineSum - figures.base) >= AMOUNT_TOLERANCE) {
+    violations.push(`lineItems sum to ${lineSum} but must sum to exactly ${figures.base}.`);
+  }
+  if (Math.abs(content.totalAmount - figures.total) >= AMOUNT_TOLERANCE) {
+    violations.push(`totalAmount is ${content.totalAmount} but must be exactly ${figures.total}.`);
+  }
+  if (!amountMatches(content.taxBreakup.cgst_amount, figures.cgst)) {
+    violations.push(`cgst_amount is ${content.taxBreakup.cgst_amount} but must be ${figures.cgst ?? 'null'}.`);
+  }
+  if (!amountMatches(content.taxBreakup.sgst_amount, figures.sgst)) {
+    violations.push(`sgst_amount is ${content.taxBreakup.sgst_amount} but must be ${figures.sgst ?? 'null'}.`);
+  }
+  if (!amountMatches(content.taxBreakup.igst_amount, figures.igst)) {
+    violations.push(`igst_amount is ${content.taxBreakup.igst_amount} but must be ${figures.igst ?? 'null'}.`);
+  }
+
+  const expectedDate = extractTransactionDate(input.transactionDescription);
+  if (expectedDate) {
+    const printed = extractTransactionDate(content.invoiceDate) ?? isoDate(content.invoiceDate);
+    if (
+      !printed ||
+      printed.year !== expectedDate.year ||
+      printed.monthIndex !== expectedDate.monthIndex ||
+      printed.day !== expectedDate.day
+    ) {
+      violations.push(
+        `invoiceDate is "${content.invoiceDate}" but must be exactly "${formatInvoiceDate(expectedDate)}" (the transaction's own date).`,
+      );
+    }
+  }
+
+  const vendorNorm = content.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const expectedNorm = figures.vendorAccount.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!vendorNorm.includes(expectedNorm) && !expectedNorm.includes(vendorNorm)) {
+    violations.push(`vendorName is "${content.vendorName}" but must be "${figures.vendorAccount}".`);
+  }
+
+  return violations.length > 0 ? violations.join(' ') : null;
+}
+
+// "2026-05-06"-style dates, which extractTransactionDate's DD-first patterns
+// don't cover.
+function isoDate(value: string): { day: number; monthIndex: number; year: number } | null {
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value.trim());
+  return match
+    ? { year: Number(match[1]), monthIndex: Number(match[2]) - 1, day: Number(match[3]) }
+    : null;
+}
+
+// Generates one vendor invoice, grounded on the transaction's complete leg
+// set + description and validated figure-by-figure against them. Same
+// bounded validate-and-retry pattern as every LLM call in this codebase.
+export async function generateVendorInvoiceDocument(
   learnerId: string,
-  docType: SourceDocumentType,
-  entry: AnswerKeyEntry,
-  // All account names on this transaction's legs — the document's party name
-  // is pinned to these (fix for a live-observed PDF titled with an invented
-  // "Shree Traders" that appeared nowhere in the batch, 2026-08-24).
-  partyAccounts: string[] = [],
+  input: VendorInvoiceInput,
 ): Promise<GeneratedSourceDocument> {
   let lastError: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { messages, jsonSchema } =
       lastError === null
-        ? buildSourceDocumentPrompt(docType, entry, partyAccounts)
-        : buildSourceDocumentRetryPrompt(docType, entry, partyAccounts, lastError);
+        ? buildVendorInvoicePrompt(input)
+        : buildVendorInvoiceRetryPrompt(input, lastError);
 
     const raw = await getTracedStructuredCompletion({
       messages,
@@ -44,12 +116,21 @@ export async function generateSourceDocument(
       // OPENROUTER_DOCUMENT_MODEL) cuts the batch tail dramatically; falls
       // back to the main OPENROUTER_MODEL when unset.
       model: process.env.OPENROUTER_DOCUMENT_MODEL,
-      extraMetadata: { docType, transactionSequence: entry.sequence },
+      extraMetadata: { docType: 'vendor_invoice', transactionSequence: input.legs[0].sequence },
     });
 
     const parsed = GeneratedSourceDocumentSchema.safeParse(raw);
 
     if (parsed.success) {
+      if (parsed.data.doc_type !== 'vendor_invoice') {
+        lastError = `Expected doc_type "vendor_invoice", got "${parsed.data.doc_type}".`;
+        continue;
+      }
+      const figureError = checkVendorInvoiceContent(parsed.data.content, input);
+      if (figureError !== null) {
+        lastError = figureError;
+        continue;
+      }
       return parsed.data;
     }
 
@@ -57,7 +138,7 @@ export async function generateSourceDocument(
   }
 
   throw new Error(
-    `Source document generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
+    `Vendor invoice generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
   );
 }
 

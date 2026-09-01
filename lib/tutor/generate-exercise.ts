@@ -27,11 +27,15 @@ import {
 } from "@/lib/db/queries/company";
 import { insertSourceDocument } from "@/lib/db/queries/source-documents";
 import {
-  generateSourceDocument,
+  generateVendorInvoiceDocument,
   generateBankStatementDocument,
 } from "@/lib/documents/generate-source-document";
 import { renderSourceDocumentPdf } from "@/lib/documents/render-source-document";
-import type { BankStatementLineInput } from "@/lib/llm/prompts/source-document";
+import type {
+  BankStatementLineInput,
+  VendorInvoiceInput,
+} from "@/lib/llm/prompts/source-document";
+import type { GeneratedSourceDocument } from "@/lib/schemas/source-document";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -46,11 +50,12 @@ const MAX_ATTEMPTS = 3;
 const BANK_SIDE_VOUCHER_TYPES = new Set(["contra", "receipt", "payment"]);
 
 export type SourceDocumentPlan = {
-  // One vendor invoice per transaction (each real bill IS its own document).
-  invoices: {
-    entry: GeneratedExercise["answer_key"]["entries"][number];
-    partyAccounts: string[];
-  }[];
+  // One vendor invoice per transaction (each real bill IS its own document),
+  // carrying the transaction's COMPLETE leg set + description so the invoice
+  // generator can pin base/tax/total/date to the answer key exactly
+  // (2026-09-01: single-leg grounding let every delivered invoice contradict
+  // its key).
+  invoices: VendorInvoiceInput[];
   // ALL bank-side transactions of the batch, destined for ONE combined
   // statement — a real statement lists every movement of the period.
   bankLines: BankStatementLineInput[];
@@ -84,25 +89,25 @@ export function planSourceDocuments(
     }
     seenSequences.add(entry.sequence);
 
-    const partyAccounts = generated.answer_key.entries
-      .filter((sibling) => sibling.sequence === entry.sequence)
-      .map((sibling) => sibling.correct_account);
+    const legs = generated.answer_key.entries.filter(
+      (sibling) => sibling.sequence === entry.sequence,
+    );
 
     const bankSide = BANK_SIDE_VOUCHER_TYPES.has(
       entry.voucher_type.trim().toLowerCase(),
     );
     const docType = bankSide ? "bank_statement" : entry.source_document_type;
+    const transactionDescription =
+      descriptionBySequence.get(entry.sequence) ?? "(no description available)";
 
     if (docType === "bank_statement") {
       plan.bankLines.push({
         entry,
-        partyAccounts,
-        transactionDescription:
-          descriptionBySequence.get(entry.sequence) ??
-          "(no description available)",
+        partyAccounts: legs.map((leg) => leg.correct_account),
+        transactionDescription,
       });
     } else {
-      plan.invoices.push({ entry, partyAccounts });
+      plan.invoices.push({ legs, transactionDescription });
     }
   }
 
@@ -147,7 +152,7 @@ async function prepareSourceDocuments(
   const batchId = crypto.randomUUID();
 
   async function renderAndUpload(
-    generated: Awaited<ReturnType<typeof generateSourceDocument>>,
+    generated: GeneratedSourceDocument,
     docType: "vendor_invoice" | "bank_statement",
     formatSeed: string,
   ): Promise<PreparedSourceDocument> {
@@ -173,16 +178,11 @@ async function prepareSourceDocuments(
   // dominating the next-batch step). Promise.all keeps result order
   // deterministic (invoices by plan order, statement last).
   const invoicePromises = plan.invoices.map((invoice) =>
-    generateSourceDocument(
-      learnerId,
-      "vendor_invoice",
-      invoice.entry,
-      invoice.partyAccounts,
-    ).then((generated) =>
+    generateVendorInvoiceDocument(learnerId, invoice).then((generated) =>
       renderAndUpload(
         generated,
         "vendor_invoice",
-        `${batchId}:${invoice.entry.sequence}`,
+        `${batchId}:${invoice.legs[0].sequence}`,
       ),
     ),
   );

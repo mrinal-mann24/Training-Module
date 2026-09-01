@@ -50,17 +50,34 @@ export async function getTracedStructuredCompletion(
   const generation = trace.generation({
     name: params.traceName,
     input: params.messages,
+    // The requested model; overwritten on end with the id OpenRouter actually
+    // served, so Langfuse cost/latency dashboards group by real model.
+    model: params.model ?? process.env.OPENROUTER_MODEL,
     metadata,
   });
 
   try {
-    const output = await getStructuredCompletion({
+    const result = await getStructuredCompletion({
       messages: params.messages,
       jsonSchema: params.jsonSchema,
       model: params.model,
     });
-    generation.end({ output });
-    return output;
+    generation.end({
+      output: result.output,
+      model: result.model,
+      // Token usage + the USD cost OpenRouter actually charged — this is
+      // what lights up Langfuse's cost/token dashboards (2026-09-01).
+      usage: {
+        input: result.usage.promptTokens ?? undefined,
+        output: result.usage.completionTokens ?? undefined,
+        total: result.usage.totalTokens ?? undefined,
+        unit: 'TOKENS',
+      },
+      ...(result.usage.costUsd !== null
+        ? { costDetails: { total: result.usage.costUsd } }
+        : {}),
+    });
+    return result.output;
   } catch (error) {
     generation.end({
       output: null,
@@ -74,5 +91,32 @@ export async function getTracedStructuredCompletion(
     // full timeout when the host is down). Tracing is observability — it
     // must never sit on the learner's critical path.
     void langfuse.flushAsync().catch(() => {});
+  }
+}
+
+// Pushes a scored submission's outcome into Langfuse as SCORES on a
+// per-submission trace (2026-09-01), so model/prompt changes can be
+// correlated with learner results over time (Langfuse → Scores):
+// weighted_score (0-1), passed (1/0), tb_tie_out (1/0). Fire-and-forget,
+// same never-on-the-critical-path rule as the generation tracing above.
+export function recordSubmissionScore(params: {
+  learnerId: string;
+  submissionId: string;
+  weightedScore: number;
+  overallResult: 'pass' | 'partial' | 'fail';
+  tbTieOut: boolean;
+}): void {
+  try {
+    const trace = langfuse.trace({
+      name: 'submission-scored',
+      userId: params.learnerId,
+      metadata: { submissionId: params.submissionId, overallResult: params.overallResult },
+    });
+    trace.score({ name: 'weighted_score', value: params.weightedScore });
+    trace.score({ name: 'passed', value: params.overallResult === 'pass' ? 1 : 0 });
+    trace.score({ name: 'tb_tie_out', value: params.tbTieOut ? 1 : 0 });
+    void langfuse.flushAsync().catch(() => {});
+  } catch {
+    // Observability failures never affect scoring.
   }
 }

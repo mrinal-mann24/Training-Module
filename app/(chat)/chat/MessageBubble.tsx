@@ -89,7 +89,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {message.sourceDocuments && message.sourceDocuments.length > 0 && (
           <div className="mt-3 space-y-2">
             {message.sourceDocuments.map((doc) => (
-              <DocumentCard key={doc.id} documentName={doc.documentName} url={doc.url} />
+              <DocumentCard
+                key={doc.id}
+                documentName={doc.documentName}
+                url={doc.url}
+                documentId={doc.id}
+                // A pack card's id IS its storage path (getSignedPackFileCards);
+                // a generated document's id is its table row uuid. The slash
+                // is what separates the two, and it decides which bucket the
+                // click re-signs against.
+                isPackFile={doc.id.includes('/')}
+              />
             ))}
           </div>
         )}
