@@ -81,6 +81,22 @@ describe('deriveInvoiceFigures', () => {
     });
   });
 
+  it('treats CGST/SGST gst_rate as PER-HEAD when splitting a single-leg total', () => {
+    // Praveen's live DT/334 key: 69,620 inclusive at CGST gst_rate 9 (i.e.
+    // 9% + 9% = 18% combined) must split to 59,000 + 5,310 + 5,310 — the
+    // as-combined reading produced 63,872 + 2,874 + 2,874 (caught by the
+    // 2026-09-01 live cross-check).
+    const single = [leg({ correct_account: 'Deccan Traders', dr_cr: 'Cr', amount: 69620, gst_head: 'CGST', gst_rate: 9 })];
+    expect(deriveInvoiceFigures(single)).toEqual({
+      vendorAccount: 'Deccan Traders',
+      total: 69620,
+      base: 59000,
+      cgst: 5310,
+      sgst: 5310,
+      igst: null,
+    });
+  });
+
   it('handles a no-GST single leg', () => {
     const single = [leg({ correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 30000 })];
     expect(deriveInvoiceFigures(single)).toEqual({

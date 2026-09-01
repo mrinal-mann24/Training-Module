@@ -132,11 +132,15 @@ export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigur
   if (legs.length === 1) {
     // Single-leg key: party total inclusive of tax; split by the stated rate.
     const head = partyLeg.gst_head;
-    const rate = (partyLeg.gst_rate ?? 18) / 100;
     if (!head) {
       return { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base: partyLeg.amount, cgst: null, sgst: null, igst: null };
     }
-    const base = Math.round(partyLeg.amount / (1 + rate));
+    // For CGST/SGST the key stores the PER-HEAD rate (gst_rate 9 = 9% CGST +
+    // 9% SGST = 18% combined — confirmed against Praveen's live key,
+    // 2026-09-01); IGST's rate is already the whole tax.
+    const statedRate = partyLeg.gst_rate ?? (head === 'IGST' ? 18 : 9);
+    const combinedRate = (head === 'IGST' ? statedRate : statedRate * 2) / 100;
+    const base = Math.round(partyLeg.amount / (1 + combinedRate));
     const tax = partyLeg.amount - base;
     return head === 'IGST'
       ? { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: null, sgst: null, igst: tax }
