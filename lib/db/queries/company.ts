@@ -88,6 +88,36 @@ export async function getRecentCompanyTransactionLog(
   return data ?? [];
 }
 
+// The learner's single persistent company name, read from the OLDEST log
+// row — the pack assignment writes `company: pack.company_name` there
+// (assign-pack-exercise.ts). The recent-slice query above returns the NEWEST
+// rows, so the name silently fell out of the generation prompt once a
+// learner accumulated 10+ log entries (user's 5-point batch review #5,
+// 2026-09-01) — this reads it explicitly instead. Null when no pack has
+// been assigned yet.
+export async function getCompanyName(
+  supabase: SupabaseClient,
+  learnerId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('company_transaction_log')
+    .select('voucher_summary')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  const summary = data?.voucher_summary;
+  if (summary && typeof summary === 'object' && 'company' in summary && typeof summary.company === 'string') {
+    return summary.company;
+  }
+  return null;
+}
+
 export async function appendCompanyTransactionLog(
   supabase: SupabaseClient,
   learnerId: string,

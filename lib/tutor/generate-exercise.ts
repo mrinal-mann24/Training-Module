@@ -12,7 +12,7 @@ import {
   type GeneratedExercise,
 } from '@/lib/schemas/exercise';
 import { insertExercise } from '@/lib/db/queries/exercises';
-import { getCompanyLedgerRegistry, getRecentCompanyTransactionLog, registerCompanyLedgers, appendCompanyTransactionLog } from '@/lib/db/queries/company';
+import { getCompanyLedgerRegistry, getRecentCompanyTransactionLog, getCompanyName, registerCompanyLedgers, appendCompanyTransactionLog } from '@/lib/db/queries/company';
 import { insertSourceDocument } from '@/lib/db/queries/source-documents';
 import { generateSourceDocument, generateBankStatementDocument } from '@/lib/documents/generate-source-document';
 import { renderSourceDocumentPdf } from '@/lib/documents/render-source-document';
@@ -435,9 +435,10 @@ export async function generateAdaptiveExercise(
   const difficultyLevel = target.reinforcementActive ? dropOneLevel(baseDifficultyLevel) : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog] = await Promise.all([
+  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName] = await Promise.all([
     getCompanyLedgerRegistry(supabase, learnerId),
     getRecentCompanyTransactionLog(supabase, learnerId),
+    getCompanyName(supabase, learnerId),
   ]);
 
   const promptParams = {
@@ -451,6 +452,10 @@ export async function generateAdaptiveExercise(
     companyLedgerRegistry,
     recentCompanyTransactionLog,
     exerciseMonthLabel: exerciseMonth.label,
+    // Fallback covers a learner whose pack-assignment log row predates the
+    // company field (or test paths with no pack) — the product's one live
+    // company is Blossom Retail.
+    companyName: companyName ?? 'Blossom Retail Pvt Ltd',
   };
 
   let lastError: string | null = null;

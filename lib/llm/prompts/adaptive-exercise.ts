@@ -28,11 +28,22 @@ export type AdaptiveExerciseParams = {
   // module 1 is the diagnostic pack's April 2026, each module after
   // advances one month. The LLM never chooses the month itself.
   exerciseMonthLabel: string;
+  // The learner's single persistent company, pinned by NAME (2026-09-01,
+  // user's 5-point batch review #5) — read from the company log's pack
+  // assignment row rather than inferred from the ledger list, so it can
+  // never drift as the log's recent slice rolls forward.
+  companyName: string;
 };
 
 function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
+  const companyLine = `THE COMPANY IS: ${params.companyName} (home state Karnataka, GST state code 29).
+Every batch is set in this exact company — by name — for the learner's entire
+journey. Never rename it, never move it to another state.`;
+
   if (params.companyLedgerRegistry.length === 0 && params.recentCompanyTransactionLog.length === 0) {
-    return 'This is the learner\'s first adaptive exercise — no ledgers or transactions exist yet in their company. Introduce new, realistic ledger/party names freely.';
+    return `${companyLine}
+
+This is the learner's first adaptive exercise — no ledgers or transactions exist yet in their company. Introduce new, realistic ledger/party names freely (within this company).`;
   }
 
   const ledgerLines = params.companyLedgerRegistry
@@ -43,7 +54,9 @@ function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
     .map((entry) => `- ${JSON.stringify(entry.voucher_summary)}`)
     .join('\n');
 
-  return `COMPANY CONTINUITY IS MANDATORY. The learner works in ONE single persistent
+  return `${companyLine}
+
+COMPANY CONTINUITY IS MANDATORY. The learner works in ONE single persistent
 Tally company for their entire journey — the SAME company name, state, bank
 account, and parties as the transactions below. NEVER invent a different
 company, a different home state, or a generic "Savings Account / Current
