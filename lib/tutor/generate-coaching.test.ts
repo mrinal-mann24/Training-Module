@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ScoringResult, VoucherDiff } from '@/lib/schemas/scoring';
 import type { CoachingSignal } from '@/lib/llm/prompts/coaching';
-import { buildCoachingSignal, buildSequenceLabels, checkOpeningLineFacts, composeFallbackOpeningLine, groupDescriptionsByField } from './generate-coaching';
+import { buildCoachingSignal, buildSequenceLabels, checkFeedbackIdentifiers, checkOpeningLineFacts, composeFallbackOpeningLine, groupDescriptionsByField } from './generate-coaching';
 
 function signalWith(overrides: Partial<CoachingSignal>): CoachingSignal {
   return {
@@ -209,5 +209,67 @@ describe('buildCoachingSignal flagged-area accuracy (pilot 2026-08-31)', () => {
     expect(signal.incorrectConceptDescriptions[0]).toMatch(/not to have been recorded/);
     expect(signal.incorrectConceptDescriptions[0]).toContain('AI-201');
     expect(signal.incorrectConceptDescriptions[0]).not.toMatch(/ledger account classification/);
+  });
+});
+
+describe('guardrails (2026-09-01: identifier echo, praise/flag exclusivity, label collisions)', () => {
+  it('checkFeedbackIdentifiers catches a mistyped identifier (the live DW-115 slip)', () => {
+    const signal = signalWith({
+      incorrectConceptDescriptions: ['the ledger account classification (DT-115 (the Office Equipment purchase))'],
+    });
+    const issue = checkFeedbackIdentifiers(
+      { went_well: [], needs_work: ['Take another look at DW-115, the Office Equipment purchase.'] },
+      signal,
+    );
+    expect(issue).toContain('DW-115');
+  });
+
+  it('checkFeedbackIdentifiers passes when identifiers are copied exactly', () => {
+    const signal = signalWith({
+      incorrectConceptDescriptions: ['the GST treatment (INV-016 and CA26-101)'],
+      correctConceptDescriptions: ['the Debit/Credit direction (INV-M-101)'],
+    });
+    const issue = checkFeedbackIdentifiers(
+      {
+        went_well: ['Your direction on INV-M-101 was precise.'],
+        needs_work: ['Review the GST on INV-016 and CA26-101.'],
+      },
+      signal,
+    );
+    expect(issue).toBeNull();
+  });
+
+  it('checkFeedbackIdentifiers ignores plain prose without identifier tokens', () => {
+    const issue = checkFeedbackIdentifiers(
+      { went_well: ['Solid voucher-type choices throughout.'], needs_work: ['Revisit the narrations.'] },
+      signalWith({}),
+    );
+    expect(issue).toBeNull();
+  });
+
+  it('buildCoachingSignal drops a partially-wrong transaction from the praise side', () => {
+    const signal = buildCoachingSignal(
+      scoringResultWith([
+        { voucherRef: 5, field: 'account', expected_masked: true, is_correct: false, error_code: 'ACCOUNT_WRONG' },
+        { voucherRef: 5, field: 'dr_cr', expected_masked: true, is_correct: true, error_code: null },
+        { voucherRef: 9, field: 'dr_cr', expected_masked: true, is_correct: true, error_code: null },
+      ]),
+    );
+    // Transaction 5 is flagged, so its correct dr_cr must not be praised;
+    // fully-clean transaction 9 still is.
+    expect(signal.correctConceptDescriptions).toEqual(['the Debit/Credit direction (transaction 9)']);
+  });
+
+  it('buildSequenceLabels disambiguates colliding labels with the amount', () => {
+    const leg = (sequence: number, amount: number) => ({
+      sequence, correct_account: 'Bank Charges', dr_cr: 'Dr' as const, amount,
+      voucher_type: 'Payment', gst_head: null, gst_rate: null, tds_section: null,
+      tds_rate: null, tds_base: null, bill_reference: null, narration: null,
+      concept_tags: ['payment_voucher_basics' as const], requires_source_document: false,
+      source_document_type: null,
+    });
+    const labels = buildSequenceLabels({ entries: [leg(46, 350), leg(78, 850)] });
+    expect(labels.get(46)).toBe('the Bank Charges payment of Rs. 350');
+    expect(labels.get(78)).toBe('the Bank Charges payment of Rs. 850');
   });
 });

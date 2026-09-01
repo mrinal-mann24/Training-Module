@@ -75,6 +75,29 @@ export function buildSequenceLabels(answerKey: AnswerKey): Map<number, string> {
     const descriptiveLeg = legs.find((leg) => !/^(hdfc|bank|cash)/i.test(leg.correct_account)) ?? legs[0];
     labels.set(sequence, `the ${descriptiveLeg.correct_account} ${legs[0].voucher_type.toLowerCase()}`);
   }
+
+  // Collision guardrail (2026-09-01): two different transactions can produce
+  // the same label (the key has two "Bank Charges" payments) — praise for one
+  // and a flag for the other then read as the tool contradicting itself.
+  // Colliding labels get the transaction's amount appended (a fact from the
+  // learner's own source documents, so it never leaks the answer key).
+  const sequencesByLabel = new Map<string, number[]>();
+  for (const [sequence, label] of labels) {
+    const group = sequencesByLabel.get(label) ?? [];
+    group.push(sequence);
+    sequencesByLabel.set(label, group);
+  }
+  for (const [label, sequences] of sequencesByLabel) {
+    if (sequences.length < 2) {
+      continue;
+    }
+    for (const sequence of sequences) {
+      const amount = bySequence.get(sequence)?.[0]?.amount;
+      if (amount !== undefined) {
+        labels.set(sequence, `${label} of Rs. ${Math.abs(amount).toLocaleString('en-IN')}`);
+      }
+    }
+  }
   return labels;
 }
 
@@ -163,8 +186,20 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
   // be offered as things done well — praising them produces feedback
   // congratulating the learner on GST/TDS handling in an exercise that
   // contained neither.
+  //
+  // Praise/flag exclusivity guardrail (2026-09-01): a transaction with ANY
+  // flagged field is dropped from the praise side entirely — "DT-115 handled
+  // well" and "revisit DT-115" in the same feedback is factually consistent
+  // (different fields) but reads as the tool contradicting itself to a
+  // learner. Praise only fully-clean transactions.
+  const flaggedSequences = new Set(
+    incorrectDiffs.map((diff) => diff.voucherRef).filter((ref): ref is number => ref !== null),
+  );
   const correctDiffs = scoringResult.per_voucher_diffs.filter(
-    (diff) => diff.is_correct && !diff.vacuously_correct,
+    (diff) =>
+      diff.is_correct &&
+      !diff.vacuously_correct &&
+      (diff.voucherRef === null || !flaggedSequences.has(diff.voucherRef)),
   );
 
   const prioritizedIncorrect = [...assessedIncorrect].sort(
@@ -308,13 +343,34 @@ export async function generateCoaching(
       // retried; if retries exhaust, the result_line is replaced with a
       // code-composed one rather than showing the learner a false cause.
       const factualIssue = checkOpeningLineFacts(parsed.data.opening_line, signal);
-      if (factualIssue === null) {
+      // Identifier-echo guard (2026-09-01): the model must copy identifiers
+      // from the signal EXACTLY — a live feedback bullet printed "DW-115"
+      // where the signal said DT-115, sending the learner hunting for an
+      // entry that doesn't exist. Both issues retry together.
+      const identifierIssue = checkFeedbackIdentifiers(parsed.data, signal);
+      const issues = [factualIssue, identifierIssue].filter(Boolean).join(' ');
+      if (issues === '') {
         return parsed.data;
       }
       if (attempt === MAX_ATTEMPTS) {
-        return { ...parsed.data, opening_line: composeFallbackOpeningLine(signal) };
+        // Deterministic fallbacks rather than shipping wrong text: replace a
+        // factually-wrong opening line, and replace the bullet lists with
+        // code-composed ones when they carry an identifier the signal never
+        // stated.
+        return {
+          ...parsed.data,
+          opening_line: factualIssue === null ? parsed.data.opening_line : composeFallbackOpeningLine(signal),
+          ...(identifierIssue === null
+            ? {}
+            : {
+                went_well: [],
+                needs_work: signal.incorrectConceptDescriptions.map(
+                  (area) => `Take another look at ${area}.`,
+                ),
+              }),
+        };
       }
-      lastError = factualIssue;
+      lastError = issues;
       continue;
     }
 
@@ -322,6 +378,38 @@ export async function generateCoaching(
   }
 
   throw new Error(`Coaching generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`);
+}
+
+// Identifier-like tokens: uppercase-led hyphenated references as they appear
+// in the signal's labels — DT-115, INV-016, INV-M-101, CA26-101, AI-201.
+const FEEDBACK_IDENTIFIER_PATTERN = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b/g;
+
+// Every identifier the model writes must literally appear in the signal it
+// was given — the scoring engine is the only source of truth for WHICH
+// entries are affected, and a mistyped reference sends the learner hunting
+// for an entry that doesn't exist. Returns a retry message naming the
+// invented identifiers, or null when the text is clean. Exported for tests.
+export function checkFeedbackIdentifiers(
+  coaching: Pick<Coaching, 'went_well' | 'needs_work'>,
+  signal: CoachingSignal,
+): string | null {
+  const allowedText = [
+    ...signal.incorrectConceptDescriptions,
+    ...signal.correctConceptDescriptions,
+    ...signal.missingPartDescriptions,
+    ...signal.rectificationDescriptions,
+  ].join(' ');
+  const allowed = new Set(allowedText.match(FEEDBACK_IDENTIFIER_PATTERN) ?? []);
+
+  const written = [...coaching.went_well, ...coaching.needs_work].join(' ');
+  const unknown = [
+    ...new Set((written.match(FEEDBACK_IDENTIFIER_PATTERN) ?? []).filter((id) => !allowed.has(id))),
+  ];
+
+  if (unknown.length === 0) {
+    return null;
+  }
+  return `Your bullets mention identifier(s) not present in the scoring signal: ${unknown.join(', ')}. Copy identifiers EXACTLY as the signal states them — never retype, alter, or invent a reference.`;
 }
 
 // Returns a retry-feedback message when opening_line contradicts the computed

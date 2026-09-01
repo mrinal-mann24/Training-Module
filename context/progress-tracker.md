@@ -21,6 +21,17 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-01 (later 2): FEEDBACK GUARDRAILS + MODEL UPGRADE TO CLAUDE SONNET 5
+
+After verifying the intern's second attempt scored correctly (84, engine-reproduced exactly), three remaining feedback-prose polish issues were fixed with deterministic guardrails (user's directive: enterprise accuracy via verification, not model trust) plus a model upgrade:
+
+1. **Identifier-echo guard** (`checkFeedbackIdentifiers`, generate-coaching.ts): every identifier-like token (uppercase hyphenated refs: DT-115, INV-M-101, CA26-101) in the model's went_well/needs_work must literally appear in the scoring signal — a live bullet printed "DW-115" for DT-115. Violations retry alongside checkOpeningLineFacts; after MAX_ATTEMPTS the bullet lists are replaced with code-composed ones (needs_work from incorrectConceptDescriptions verbatim, went_well emptied) rather than shipping invented references.
+2. **Praise/flag exclusivity** (buildCoachingSignal): transactions with ANY flagged field are dropped from the praise side — "DT-115 handled well" + "revisit DT-115" in one feedback was factually consistent (different fields) but read as self-contradiction.
+3. **Label-collision disambiguation** (buildSequenceLabels): duplicate labels (two "Bank Charges payment" sequences) get the transaction amount appended ("of Rs. 350" / "of Rs. 850") — an answer-key fact also present in the learner's own source documents, so no key leakage.
+4. **Model**: OPENROUTER_MODEL switched from openai/gpt-4o-mini to **anthropic/claude-sonnet-5** in .env.local. NOTE: the VPS .env must be updated by hand (env files are gitignored) and the first live call should be watched to confirm OpenRouter's structured-output translation for this model.
+
+5 new guardrail tests (171 total). tsc/lint clean.
+
 ## Session log — 2026-09-01 (later): DOC-DELIVERY RACE + STATEMENT ACCOUNT-HOLDER FIXES (from the user's local test of the 5 batch fixes)
 
 User's localhost test of a fresh batch surfaced two bugs: (a) the batch arrived in chat with pointer text but NO PDF cards — DB showed the docs WERE generated (4 invoices + exactly 1 combined statement, confirming fix #1 live) but the exercise row landed at 07:00:10 and the last doc row at 07:00:42, while PendingSubmission's 5s next-exercise poll delivers the exercise as soon as its row exists → delivered docless; a refresh (timeline rebuild) showed all cards. (b) the combined statement was titled "Bank Statement — ABC Trading Co." — the batch prompt said "the account holder is the business itself" without naming it.
