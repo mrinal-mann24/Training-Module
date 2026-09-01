@@ -257,6 +257,13 @@ export const runScoring = inngest.createFunction(
       const batchPlan = selectBatchConcepts(target, allAttempts, currentMastery);
       // Phase 1: the batch intro names what the learner is strong at.
       const recentStrengthDescriptions = batchPlan.strengths.map((tag) => tag.replace(/_/g, ' '));
+      // Month-per-batch (2026-09-01): the company's timeline advances one
+      // calendar month per exercise, anchored on the diagnostic pack's April
+      // 2026 — priorExerciseCount includes the diagnostic, so the first
+      // adaptive batch (count 1) lands in May, the next in June, and so on.
+      // Anchored to exercise count, not mastered-concept count, so the month
+      // always moves forward exactly once per batch regardless of how fast
+      // concepts are mastered.
       await generateAdaptiveExercise(
         supabase,
         submission.learner_id,
@@ -266,6 +273,7 @@ export const runScoring = inngest.createFunction(
         recentStrengthDescriptions,
         batchPlan,
         profile.license_mode,
+        priorExerciseCount + 1,
       );
     });
 

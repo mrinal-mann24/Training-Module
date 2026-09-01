@@ -23,6 +23,11 @@ export type AdaptiveExerciseParams = {
   escalationActive: boolean;
   companyLedgerRegistry: CompanyLedgerRegistryEntry[];
   recentCompanyTransactionLog: CompanyTransactionLogEntry[];
+  // Month-per-module (2026-09-01): the calendar month this batch lives in
+  // (e.g. "May 2026"), computed in code from the learner's module number —
+  // module 1 is the diagnostic pack's April 2026, each module after
+  // advances one month. The LLM never chooses the month itself.
+  exerciseMonthLabel: string;
 };
 
 function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
@@ -115,8 +120,17 @@ transactions and even if it targets the right concept overall:
 - AT LEAST 4 transactions are REINFORCEMENT: they exercise the weakness
   concepts listed below at the stated level, cleaner and more scaffolded,
   giving honest reps on exactly what went wrong.
-- Before finalizing, COUNT your own transactions by concept_tags: if fewer
-  than 4 carry a strength concept, or fewer than 4 carry a weakness concept,
+- TRADING MIX (hard requirement): the learner's company is a GST-registered
+  TRADING business, so every batch includes at least 2 Sales transactions and
+  at least 2 Purchase transactions with realistic GST treatment (intra-state
+  CGST+SGST or inter-state IGST per the party's state), whatever the target
+  concept is. A bank-side target is practiced ALONGSIDE the month's trading
+  activity, never instead of it — a month of only cash/bank movements is
+  unrealistic and invalid. Trading transactions may (and usually should)
+  double as the step-up or reinforcement reps via their concept_tags.
+- Before finalizing, COUNT your own transactions by concept_tags AND by
+  voucher type: if fewer than 4 carry a strength concept, fewer than 4 carry
+  a weakness concept, fewer than 2 are Sales, or fewer than 2 are Purchases,
   the batch is invalid — revise it before responding.
 - Every transaction's answer key concept_tags name the concept(s) that
   transaction serves, so scoring can attribute each rep to its side.
@@ -138,22 +152,23 @@ ledger ("Wallet", "Money Account") — cash movements go through the company's
 actual Cash and bank ledgers. Spread the transactions across DIFFERENT dates
 in the month (a real batch isn't all posted on one day).
 
-Dates: every transaction is dated in 2026, continuing the company's timeline —
-use the month FOLLOWING the latest transaction visible in the company context
-below (if none is visible, use recent 2026 dates). The learner's books begin
-01-Apr-2026: a voucher dated before that, or in any other year, is REJECTED by
-the submission gate outright, so a wrong year breaks the whole batch. Amounts
-are in Indian Rupees.${
+Dates (HARD REQUIREMENT): EVERY transaction in this batch is dated inside
+${params.exerciseMonthLabel} — no other month, no other year, ever. The
+company's timeline advances exactly one month per module, computed by the
+system, and a batch never mixes months. Write each date explicitly in every
+transaction line (e.g. "On 01-${params.exerciseMonthLabel.slice(0, 3)}-${params.exerciseMonthLabel.slice(-4)}, ...").
+The learner's books begin 01-Apr-2026: a voucher dated before that, or in any
+other year, is REJECTED by the submission gate outright. Amounts are in
+Indian Rupees.${
     params.licenseMode === 'educational'
       ? `
 
 EDUCATIONAL MODE DATE RULE (hard requirement): this learner's Tally
 Educational Mode only saves vouchers dated the 1st, 2nd, or LAST day of a
 month. EVERY transaction in this batch must be dated on one of those three
-days — spread the batch across those allowed days, and across two
-consecutive months where the timeline permits, instead of across arbitrary
-dates. Any other day of the month makes the voucher unpostable for this
-learner.`
+days WITHIN ${params.exerciseMonthLabel} — multiple vouchers on the same
+allowed day are fine and expected. Any other day of the month makes the
+voucher unpostable for this learner.`
       : ''
   }
 
@@ -184,6 +199,20 @@ batch are delivered to the learner as lines of ONE combined statement, so flag
 every genuinely bank-visible movement consistently. Otherwise set
 requires_source_document to false and source_document_type to null. Not every
 transaction needs one — use judgment, don't force it onto every entry.
+
+DOCUMENT-BACKED TRANSACTION TEXT (hard requirement): when a transaction has
+requires_source_document true, its numbered line is a short POINTER, not a
+spelled-out entry — the learner must pull the figures from the document, like
+real work. The pointer states the date, the party, and what happened, then
+directs to the document: "On 05-May-2026, an invoice arrived from Signage
+Advertising for marketing collaterals: post it from the attached invoice", or
+"On 12-May-2026, a receipt from Delhi Bazaar landed in the bank: post it from
+the bank statement". NEVER state the amount, the GST amount or rate, or the
+tax split in a document-backed transaction's text — restating them makes the
+document pointless. (The hidden answer key still carries the exact figures as
+always.) Transactions WITHOUT a document keep full explicit details in the
+text: date, parties with state, amounts with GST stated separately, bill
+numbers.
 
 Never use an em dash anywhere in learner-facing text; use a colon, comma, or full stop.
 

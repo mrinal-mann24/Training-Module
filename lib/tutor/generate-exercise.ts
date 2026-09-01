@@ -196,6 +196,15 @@ export async function generateDiagnosticExercise(
 const MIN_TRANSACTIONS_PER_BATCH = 10;
 const MAX_TRANSACTIONS_PER_BATCH = 12;
 const MIN_TRANSACTIONS_PER_SIDE = 4;
+// Trading-mix floor (2026-09-01, user's 5-point batch review #2): the
+// learner's company is a GST-registered trading business, so a real month
+// ALWAYS has trading activity — a batch that is pure bank movement (the
+// observed live Module-2 batch: contra/receipt/payment only) is unrealistic
+// and quietly stops drilling GST classification, which lives on
+// sales/purchases. Two of each, not one: a single rep can't vary the
+// judgment (e.g. one intra-state + one inter-state sale).
+const MIN_SALES_TRANSACTIONS = 2;
+const MIN_PURCHASE_TRANSACTIONS = 2;
 
 export function checkBatchComposition(
   generated: GeneratedExercise,
@@ -213,44 +222,172 @@ export function checkBatchComposition(
     return `The batch has ${transactionCount} transactions; the composition rules require ${MIN_TRANSACTIONS_PER_BATCH} to ${MAX_TRANSACTIONS_PER_BATCH}.`;
   }
 
+  // All remaining violations are collected into ONE message so a retry can
+  // fix everything in a single pass — sequential single-violation errors
+  // would burn the bounded retry budget one rule at a time.
+  const violations: string[] = [];
+
+  // Trading mix, counted per transaction (sequence) off the answer key's own
+  // voucher types — enforced for EVERY non-escalation batch, including the
+  // no-strengths-yet case below, since a trading month needs trading
+  // activity regardless of the concept plan.
+  const voucherTypeBySequence = new Map<number, string>();
+  for (const entry of generated.answer_key.entries) {
+    if (!voucherTypeBySequence.has(entry.sequence)) {
+      voucherTypeBySequence.set(entry.sequence, entry.voucher_type.trim().toLowerCase());
+    }
+  }
+  let salesCount = 0;
+  let purchaseCount = 0;
+  for (const voucherType of voucherTypeBySequence.values()) {
+    if (voucherType === 'sales') {
+      salesCount++;
+    }
+    if (voucherType === 'purchase') {
+      purchaseCount++;
+    }
+  }
+  if (salesCount < MIN_SALES_TRANSACTIONS || purchaseCount < MIN_PURCHASE_TRANSACTIONS) {
+    violations.push(
+      `Trading-mix violated: the batch has ${salesCount} Sales and ${purchaseCount} Purchase transactions, but every batch needs at least ${MIN_SALES_TRANSACTIONS} Sales and ${MIN_PURCHASE_TRANSACTIONS} Purchase transactions — this is a GST-registered trading business, so a month of only bank movements is unrealistic. Keep the concept targeting, but weave it through a month that includes real trading activity (with GST treatment appropriate to each party's state).`,
+    );
+  }
+
   // A learner with no established strengths legitimately gets a one-sided
-  // batch (the prompt fills the step-up half with the target concept).
-  if (batchPlan.strengths.length === 0) {
+  // batch (the prompt fills the step-up half with the target concept) — the
+  // side split is skipped, but the trading mix above still applies.
+  if (batchPlan.strengths.length > 0) {
+    const strengthSet = new Set<ConceptTag>(batchPlan.strengths);
+    const weaknessSet = new Set<ConceptTag>(batchPlan.weaknesses);
+    const perSequence = new Map<number, { strength: boolean; weakness: boolean }>();
+    for (const entry of generated.answer_key.entries) {
+      const slot = perSequence.get(entry.sequence) ?? { strength: false, weakness: false };
+      for (const tag of entry.concept_tags) {
+        if (strengthSet.has(tag)) {
+          slot.strength = true;
+        }
+        if (weaknessSet.has(tag)) {
+          slot.weakness = true;
+        }
+      }
+      perSequence.set(entry.sequence, slot);
+    }
+
+    let strengthCount = 0;
+    let weaknessCount = 0;
+    for (const slot of perSequence.values()) {
+      if (slot.strength) {
+        strengthCount++;
+      }
+      if (slot.weakness) {
+        weaknessCount++;
+      }
+    }
+
+    if (strengthCount < MIN_TRANSACTIONS_PER_SIDE || weaknessCount < MIN_TRANSACTIONS_PER_SIDE) {
+      violations.push(
+        `Batch composition violated: only ${strengthCount} transactions carry a strength concept (${batchPlan.strengths.join(', ')}) and ${weaknessCount} carry a weakness concept (${batchPlan.weaknesses.join(', ')}). At least ${MIN_TRANSACTIONS_PER_SIDE} transactions per side are required — rebuild the batch so roughly half step up the strength concepts and half reinforce the weakness concepts, with concept_tags attributing each transaction.`,
+      );
+    }
+  }
+
+  return violations.length > 0 ? violations.join(' ') : null;
+}
+
+// Month-per-batch progression (2026-09-01, user's 5-point batch review #3):
+// the company's timeline is computed in code, never guessed by the LLM (the
+// company log stores no dates, so "use the month following the latest
+// transaction" had nothing to anchor on — observed live as one batch mixing
+// May and June). Ordinal 1 is the diagnostic pack's April 2026; every
+// exercise after advances one calendar month.
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+const BOOKS_BEGIN_MONTH_INDEX = 3; // April
+const BOOKS_BEGIN_YEAR = 2026;
+
+export type ExerciseMonth = { label: string; monthIndex: number; year: number };
+
+export function exerciseMonthForModule(moduleNumber: number): ExerciseMonth {
+  const offset = BOOKS_BEGIN_MONTH_INDEX + Math.max(moduleNumber, 1) - 1;
+  const monthIndex = offset % 12;
+  const year = BOOKS_BEGIN_YEAR + Math.floor(offset / 12);
+  return { label: `${MONTH_NAMES[monthIndex]} ${year}`, monthIndex, year };
+}
+
+// Scans the generated transactions' own descriptions for date tokens and
+// rejects any dated outside the assigned month — the same feed-the-retry
+// mechanism as checkBatchComposition. Only POSITIVE mismatches fail: a
+// description with no parseable date is left to the prompt (failing on
+// absence would reject legitimate phrasings), and a bare month mention with
+// no day number ("settling the March invoice") is not a transaction date.
+const MONTH_ABBREVS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+export function checkBatchMonth(generated: GeneratedExercise, month: ExerciseMonth): string | null {
+  const offenders: string[] = [];
+
+  for (const transaction of generated.transactions) {
+    // "01-May-2026", "1 May 2026", "01/May/2026" style.
+    for (const match of transaction.description.matchAll(
+      /\b\d{1,2}[-\s/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-\s/]*(\d{4})\b/gi,
+    )) {
+      const monthIndex = MONTH_ABBREVS.indexOf(match[1].toLowerCase());
+      if (monthIndex !== month.monthIndex || Number(match[2]) !== month.year) {
+        offenders.push(`transaction ${transaction.sequence} is dated "${match[0]}"`);
+      }
+    }
+    // "01-05-2026" / "01/05/2026" numeric style (Indian DD-MM-YYYY).
+    for (const match of transaction.description.matchAll(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g)) {
+      const monthIndex = Number(match[2]) - 1;
+      if (monthIndex !== month.monthIndex || Number(match[3]) !== month.year) {
+        offenders.push(`transaction ${transaction.sequence} is dated "${match[0]}"`);
+      }
+    }
+  }
+
+  if (offenders.length === 0) {
+    return null;
+  }
+  return `Month violated: every transaction must be dated inside ${month.label}, but ${[...new Set(offenders)].join('; ')}. Redate those transactions into ${month.label} — the company's timeline advances exactly one month per module and never mixes months in a batch.`;
+}
+
+// Document-backed transactions must be POINTERS (2026-09-01, user's 5-point
+// batch review #4): when a transaction ships as a PDF, its text line must
+// not restate the figures — the learner reads them from the document, like
+// real work. Observed live: every doc-backed line spelled out the full
+// amount and GST, making the PDFs decorative. This scans doc-flagged
+// transactions' descriptions for figure leaks (a rupee amount, or a
+// percentage — a GST rate) and feeds violations into the same retry
+// message. Dates ("01-May-2026") and identifiers ("HDFC Bank — 1234",
+// invoice #DT2026) deliberately don't match these patterns.
+const RUPEE_AMOUNT_PATTERN = /(?:₹|\bRs\.?\s?)\s*[\d,]+/i;
+const PERCENTAGE_PATTERN = /\d+(?:\.\d+)?\s*%/;
+
+export function checkDocumentBackedDescriptions(generated: GeneratedExercise): string | null {
+  const documentBackedSequences = new Set(
+    generated.answer_key.entries
+      .filter((entry) => entry.requires_source_document && entry.source_document_type !== null)
+      .map((entry) => entry.sequence),
+  );
+  if (documentBackedSequences.size === 0) {
     return null;
   }
 
-  const strengthSet = new Set<ConceptTag>(batchPlan.strengths);
-  const weaknessSet = new Set<ConceptTag>(batchPlan.weaknesses);
-  const perSequence = new Map<number, { strength: boolean; weakness: boolean }>();
-  for (const entry of generated.answer_key.entries) {
-    const slot = perSequence.get(entry.sequence) ?? { strength: false, weakness: false };
-    for (const tag of entry.concept_tags) {
-      if (strengthSet.has(tag)) {
-        slot.strength = true;
-      }
-      if (weaknessSet.has(tag)) {
-        slot.weakness = true;
-      }
+  const offenders: number[] = [];
+  for (const transaction of generated.transactions) {
+    if (!documentBackedSequences.has(transaction.sequence)) {
+      continue;
     }
-    perSequence.set(entry.sequence, slot);
-  }
-
-  let strengthCount = 0;
-  let weaknessCount = 0;
-  for (const slot of perSequence.values()) {
-    if (slot.strength) {
-      strengthCount++;
-    }
-    if (slot.weakness) {
-      weaknessCount++;
+    if (RUPEE_AMOUNT_PATTERN.test(transaction.description) || PERCENTAGE_PATTERN.test(transaction.description)) {
+      offenders.push(transaction.sequence);
     }
   }
 
-  if (strengthCount < MIN_TRANSACTIONS_PER_SIDE || weaknessCount < MIN_TRANSACTIONS_PER_SIDE) {
-    return `Batch composition violated: only ${strengthCount} transactions carry a strength concept (${batchPlan.strengths.join(', ')}) and ${weaknessCount} carry a weakness concept (${batchPlan.weaknesses.join(', ')}). At least ${MIN_TRANSACTIONS_PER_SIDE} transactions per side are required — rebuild the batch so roughly half step up the strength concepts and half reinforce the weakness concepts, with concept_tags attributing each transaction.`;
+  if (offenders.length === 0) {
+    return null;
   }
-
-  return null;
+  return `Document-backed text violated: transaction(s) ${offenders.join(', ')} have requires_source_document true but their text states an amount or a GST rate. A document-backed transaction's line is a short pointer (date, party, what happened, which document to read) with NO figures — the learner reads the figures from the document itself. Rewrite those lines as pointers, keeping the exact figures only in the hidden answer key.`;
 }
 
 // One level down from currentLevel, floored at L0 — used when reinforcement
@@ -287,8 +424,16 @@ export async function generateAdaptiveExercise(
   // Phase 3 (spec 15): educational-mode learners can only post on the 1st,
   // 2nd, or last day of a month — the generation prompt enforces the dates.
   licenseMode: LicenseMode = 'licensed',
+  // Month-per-batch (2026-09-01): this exercise's ordinal in the learner's
+  // journey — 1 is the diagnostic pack (April 2026), 2 the first adaptive
+  // batch (May 2026), and so on, one calendar month per exercise. Computed
+  // in code by the caller (run-scoring passes priorExerciseCount + 1),
+  // stated to the prompt as a hard rule, and enforced by checkBatchMonth in
+  // the retry loop below.
+  exerciseOrdinal = 2,
 ): Promise<{ id: string }> {
   const difficultyLevel = target.reinforcementActive ? dropOneLevel(baseDifficultyLevel) : baseDifficultyLevel;
+  const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
   const [companyLedgerRegistry, recentCompanyTransactionLog] = await Promise.all([
     getCompanyLedgerRegistry(supabase, learnerId),
@@ -305,6 +450,7 @@ export async function generateAdaptiveExercise(
     escalationActive: target.escalationActive,
     companyLedgerRegistry,
     recentCompanyTransactionLog,
+    exerciseMonthLabel: exerciseMonth.label,
   };
 
   let lastError: string | null = null;
@@ -331,13 +477,18 @@ export async function generateAdaptiveExercise(
     const parsed = GeneratedExerciseSchema.safeParse(raw);
 
     if (parsed.success) {
+      // Composition, month, and document-pointer violations are combined
+      // into one retry message so a single retry can fix everything at once.
       const compositionError = checkBatchComposition(parsed.data, batchPlan, target.escalationActive);
-      if (compositionError === null) {
+      const monthError = checkBatchMonth(parsed.data, exerciseMonth);
+      const documentTextError = checkDocumentBackedDescriptions(parsed.data);
+      const batchError = [compositionError, monthError, documentTextError].filter(Boolean).join(' ');
+      if (batchError === '') {
         generated = parsed.data;
         break;
       }
       unbalancedFallback = parsed.data;
-      lastError = compositionError;
+      lastError = batchError;
       continue;
     }
 
