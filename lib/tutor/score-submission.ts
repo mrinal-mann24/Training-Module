@@ -63,10 +63,28 @@ function editDistanceAtMost(a: string, b: string, max: number): boolean {
   return previous[b.length] <= max;
 }
 
+// GST ledgers are matched by tax HEAD, not by exact wording: the authored
+// pack (and Tally's own defaults) name them plainly "IGST"/"CGST"/"SGST",
+// generated keys say "Output IGST"/"Input CGST", and a 4-letter name can
+// never clear the 5-char containment floor below — so a learner posting the
+// right head to the right side was scored ACCOUNT_WRONG on every tax leg
+// (Garima's Level 2, 2026-09-02). Input-vs-output side is still judged by
+// diffGst, so this leniency only removes the naming penalty.
+const GST_HEAD_TOKEN = /\b(cgst|sgst|igst)\b/i;
+
+function gstHeadOf(name: string): string | null {
+  const match = GST_HEAD_TOKEN.exec(name);
+  return match ? match[1].toLowerCase() : null;
+}
+
 function accountNamesMatch(actual: string, expected: string): boolean {
   const a = normalizeAccountName(actual);
   const b = normalizeAccountName(expected);
   if (a === b) {
+    return true;
+  }
+  const actualHead = gstHeadOf(actual);
+  if (actualHead !== null && actualHead === gstHeadOf(expected)) {
     return true;
   }
   const shorter = a.length <= b.length ? a : b;
@@ -222,10 +240,16 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
     });
   }
 
-  // Voucher-level fields: every leg in a transaction's answer key shares the
-  // same voucher_type/gst/tds/bill_reference/narration expectation, so the
-  // first leg's values represent the whole transaction.
-  const expected = expectedLegs[0];
+  // Voucher-level fields: voucher_type/bill_reference/narration are shared by
+  // every leg, so the first leg represents the transaction — EXCEPT the tax
+  // expectation. Generated keys carry gst_head/tds_section only on the tax
+  // leg itself (the party leg says null), so reading legs[0] declared "no
+  // GST expected" and flagged every correct GST posting as GST_UNEXPECTED
+  // (Garima's Level 2: 6 of 6 taxed transactions, 2026-09-02). The
+  // transaction's expectation is whichever leg states one.
+  const gstLeg = expectedLegs.find((leg) => leg.gst_head !== null) ?? expectedLegs[0];
+  const tdsLeg = expectedLegs.find((leg) => leg.tds_section !== null) ?? expectedLegs[0];
+  const expected = { ...expectedLegs[0], gst_head: gstLeg.gst_head, gst_rate: gstLeg.gst_rate, tds_section: tdsLeg.tds_section, tds_rate: tdsLeg.tds_rate, tds_base: tdsLeg.tds_base };
 
   const voucherTypeCorrect = voucher.voucherType.trim().toLowerCase() === expected.voucher_type.trim().toLowerCase();
   diffs.push({
@@ -381,8 +405,14 @@ function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRe
     };
   }
 
+  // Generated keys annotate references — "BR-205 (New Ref)", "Against DT-114
+  // (Partial)" — and comparing the whole string meant a learner's correct
+  // "BR-205" never matched (Garima's Level 2: 7 false BILL_REFERENCE_WRONGs,
+  // 2026-09-02). Only the reference itself is compared: parentheticals and
+  // the "Against" prefix are annotations, not part of the ref.
   const expectedRefs = expected.bill_reference
     .split(/[,;]/)
+    .map((ref) => ref.replace(/\([^)]*\)/g, '').replace(/^\s*against\s+/i, ''))
     .map((ref) => normalizeAccountName(ref))
     .filter((ref) => ref.length > 0);
   const referenceCorrect = actualReferences.some((actual) => {

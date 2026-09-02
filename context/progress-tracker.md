@@ -751,3 +751,36 @@ Also this session: `20260817130000_module_progress.sql` applied live by the user
 - Hit a real bug after the email+password rewrite: `actions.ts` (a `'use server'` file) exported `initialAuthFormState`, a plain object constant, alongside the async Server Actions. Next.js requires `'use server'` files to export only async functions — non-function exports throw `A "use server" file can only export async functions, found object.` at runtime (not caught by `npm run build`, only surfaced when actually hitting `/login` in the dev server). Fixed by moving `AuthFormState`/`initialAuthFormState` into a new `app/(auth)/login/auth-form-state.ts` and importing from there in both `actions.ts` and `AuthForm.tsx`. Lesson: `'use server'` files need their state/types split into a separate plain module, not colocated even for small unit-local state.
 - `proxy.ts` vs `middleware.ts`: user first asked to keep `middleware.ts` (declined the Next.js 16 codemod), later in the same session asked to "fix the migrate part" — confirmed via a clarifying question that this meant migrating to `proxy.ts` after all. Now on `proxy.ts` (function renamed `middleware` → `proxy`), deprecation warning gone. If asked again, check current state in the file first rather than assuming either direction.
 - Also confirmed during this session: `npm run build`/`npm run lint` passing does not guarantee no runtime errors — the `'use server'` export bug and the stale-Turbopack-cache issue (`rm -rf .next` needed after significant file renames while `next dev` was running) both only surfaced by actually running the dev server. Static checks are necessary but not sufficient for this stack.
+
+### 2026-09-02 (session 4) — Scorer fairness fixes surfaced by Garima's Level 2 preview
+
+Previewing Garima's Level 2 exports (correct shape: 12 May vouchers, 69-row
+ledger-wise TB, gate valid) against her patched key scored 74%/fail, but a
+per-transaction diff showed her posting was largely right. Three scorer
+defects in `lib/tutor/score-submission.ts` were penalising correct work and
+would have hit every intern on generated (multi-leg) keys:
+
+1. **GST expectation read from the wrong leg.** Generated keys carry
+   `gst_head`/`tds_section` only on the tax leg; the party leg says null.
+   `diffVoucher` used `expectedLegs[0]` for the whole transaction, so every
+   correct GST posting was `GST_UNEXPECTED` (6 of 6 taxed transactions). Now
+   the transaction's tax expectation is whichever leg states one.
+2. **Annotated bill references never matched.** Keys store
+   `"BR-205 (New Ref)"` / `"Against DT-114 (Partial)"`; `diffBillReference`
+   compared the whole string, so a learner's correct `BR-205` allocation was
+   `BILL_REFERENCE_WRONG` (7 false flags). Parentheticals and the `Against`
+   prefix are stripped before comparison; genuinely wrong refs still fail.
+3. **GST ledger naming penalised on the tax leg.** Tally/pack ledgers are
+   plain `IGST`/`CGST`/`SGST`; keys say `Output IGST`/`Input CGST`. A 4-letter
+   name can never clear the 5-char containment floor, so the tax leg was
+   `ACCOUNT_WRONG`. `accountNamesMatch` now treats names sharing the same GST
+   head token as a match (input/output side is still judged by `diffGst`).
+
+Result on the real files: Garima 74% → 94% (remaining flags are genuine:
+2 bank↔cash moves posted as Payment instead of Contra, `Petty Cash` ledger
+instead of `Cash`, MS-331 posted as 49,999 + IGST 1, `INV-011`/`DT-115` refs
+instead of `BR-205`/`DT-114`); Praveen 85% → 95%. Tie-out still false for
+both because uncorrected April balances carry forward (Office Equipment,
+Sales Returns netted into Sales, Bank Charges, Software Subscription) — by
+design of the one-continuous-books model. Regression tests added under
+"scorer fairness fixes from Garima Level 2".

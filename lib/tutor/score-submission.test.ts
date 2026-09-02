@@ -923,3 +923,72 @@ describe('Trial Balance tie-out account matching (2026-09-02)', () => {
     expect(scoreSubmission(dayBook, trialBalance, answerKey).tb_tie_out).toBe(true);
   });
 });
+
+describe('scorer fairness fixes from Garima Level 2 (2026-09-02)', () => {
+  const leg = (
+    sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number,
+    extra: Partial<AnswerKey['entries'][number]> = {},
+  ): AnswerKey['entries'][number] => ({
+    sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Sales',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['gst_classification' as const],
+    requires_source_document: false, source_document_type: null, ...extra,
+  });
+
+  it('reads the GST expectation from whichever leg carries it, not just the first leg', () => {
+    // Generated keys put gst_head on the tax leg only; the party leg says
+    // null. Reading legs[0] declared "no GST expected" and flagged a correct
+    // IGST posting as GST_UNEXPECTED.
+    const answerKey = {
+      entries: [
+        leg(1, 'Rajasthan Home Decor', 'Dr', 94400),
+        leg(1, 'Sales', 'Cr', 80000),
+        leg(1, 'Output IGST', 'Cr', 14400, { gst_head: 'IGST', gst_rate: 18 }),
+      ],
+    };
+    const dayBook = { vouchers: [{
+      voucherType: 'Sales', date: '20260505', narration: 'Sold goods',
+      ledgerEntries: [
+        { ledgerName: 'Rajasthan Home Decor', amount: 94400, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'Sales', amount: 80000, drOrCr: 'Cr' as const, billAllocations: [] },
+        { ledgerName: 'IGST', amount: 14400, drOrCr: 'Cr' as const, billAllocations: [] },
+      ],
+    }] };
+    const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
+    const gst = result.per_voucher_diffs.find((d) => d.field === 'gst');
+    expect(gst?.is_correct).toBe(true);
+    expect(gst?.error_code).toBeNull();
+    // ...and the plain "IGST" ledger satisfies the "Output IGST" tax leg.
+    expect(result.per_voucher_diffs.filter((d) => d.field === 'account').every((d) => d.is_correct)).toBe(true);
+  });
+
+  it('matches a bill reference regardless of "(New Ref)" / "Against ... (Partial)" annotations', () => {
+    const answerKey = {
+      entries: [
+        leg(1, 'Rajasthan Home Decor', 'Dr', 60000, { voucher_type: 'Receipt', bill_reference: 'Against BR-205 (Partial)' }),
+        leg(1, 'HDFC Bank — 1234', 'Cr', 60000, { voucher_type: 'Receipt', bill_reference: 'Against BR-205 (Partial)' }),
+      ],
+    };
+    const dayBook = { vouchers: [{
+      voucherType: 'Receipt', date: '20260514', narration: 'UPI/26051401/RAJHOME/PMT received from Rajasthan Home Decor',
+      ledgerEntries: [
+        { ledgerName: 'Rajasthan Home Decor', amount: 60000, drOrCr: 'Dr' as const, billAllocations: [{ name: 'BR-205', amount: 60000 }] },
+        { ledgerName: 'HDFC Bank — 1234', amount: 60000, drOrCr: 'Cr' as const, billAllocations: [] },
+      ],
+    }] };
+    const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.find((d) => d.field === 'bill_reference')?.is_correct).toBe(true);
+  });
+
+  it('still rejects a genuinely wrong bill reference', () => {
+    const answerKey = {
+      entries: [leg(1, 'Deccan Traders', 'Dr', 40000, { voucher_type: 'Payment', bill_reference: 'Against DT-114 (Partial)' })],
+    };
+    const dayBook = { vouchers: [{
+      voucherType: 'Payment', date: '20260518', narration: 'NEFT/N26051801/DECCAN/PMT to Deccan Traders',
+      ledgerEntries: [{ ledgerName: 'Deccan Traders', amount: 40000, drOrCr: 'Dr' as const, billAllocations: [{ name: 'DT-115', amount: 40000 }] }],
+    }] };
+    const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.find((d) => d.field === 'bill_reference')?.error_code).toBe('BILL_REFERENCE_WRONG');
+  });
+});
