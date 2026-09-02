@@ -784,3 +784,29 @@ both because uncorrected April balances carry forward (Office Equipment,
 Sales Returns netted into Sales, Bank Charges, Software Subscription) — by
 design of the one-continuous-books model. Regression tests added under
 "scorer fairness fixes from Garima Level 2".
+
+### 2026-09-02 (session 5) — Garima Level 3 verified; multi-rate GST consolidation fix
+
+Garima uploaded Level 2 (scored 95%/partial with the fixed scorer) and Level 3
+(`explain`, June 2026, 12 tx) generated at 07:51 UTC. Verified against DB:
+all 12 transactions balanced; till opened at -200 and Tx 1 is the forced
+Contra withdrawal (cash never negative afterwards); 35 opening balances match
+the netting of her diagnostic + Level 2 keys (tax ledgers excluded by design);
+all 4 vendor invoices (MS-2201, DT-889, CW-771, VV-556) match the key totals,
+tax heads and June dates; the bank statement is pinned to Blossom Retail Pvt
+Ltd and its 3 lines match the key receipts/payment exactly.
+
+One scoring risk found and fixed: Tx 7 (Mysore Decor, 9%+9% furniture and
+6%+6% packing on one invoice) is stored as two CGST legs + two SGST legs, but
+Tally shows ONE combined CGST/SGST line per voucher. The natural posting
+scored 76% with two false ACCOUNT_WRONGs. `diffVoucherAgainstAnswerKey` now
+consolidates expected legs and posted ledger entries by (account, side)
+before leg matching; both consolidated and split postings score 100%, and
+the CGST-twice/SGST-missing case is still caught. Real-file previews
+unchanged (Garima L2 94%, Praveen L2 95%). Tests: 209 passing.
+
+Cosmetic, not scored: the generated bank statement's running balance column
+(1.25L → 1.27L) and its narration refs (N26050108…) do not match the key's
+narration UTRs (UTR7788392…) or the true HDFC balance (~17.9L). Narration is
+scored for presence only, so no learner impact; candidate for a later
+statement-grounding pass.

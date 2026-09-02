@@ -181,6 +181,49 @@ function collectBillReferences(entries: LedgerEntry[]): string[] {
 // voucher_type/gst/tds/bill_reference/narration are voucher-level, not
 // leg-level, so they're diffed once per voucher (against the first leg),
 // not once per leg — matching per-leg would double-count identical values.
+// A multi-rate invoice (furniture at 9%+9%, packing at 6%+6%) lands in a
+// generated key as two CGST legs and two SGST legs, but Tally shows ONE
+// combined CGST line and ONE SGST line on the voucher — and some learners
+// type two lines anyway. Both are the same correct posting, so legs and
+// ledger entries are consolidated by (account, side) before leg matching;
+// otherwise the second CGST leg found nothing left to match and the natural
+// posting scored two false ACCOUNT_WRONGs (Garima's Level 3 Tx 7, 76% vs
+// 100%, 2026-09-02). GST pair completeness still reads the raw entries.
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function consolidateExpectedLegs(legs: AnswerKeyEntry[]): AnswerKeyEntry[] {
+  const merged: AnswerKeyEntry[] = [];
+  for (const leg of legs) {
+    const existing = merged.find(
+      (m) => m.dr_cr === leg.dr_cr && normalizeAccountName(m.correct_account) === normalizeAccountName(leg.correct_account),
+    );
+    if (existing) {
+      existing.amount = round2(existing.amount + leg.amount);
+    } else {
+      merged.push({ ...leg });
+    }
+  }
+  return merged;
+}
+
+function consolidateLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
+  const merged: LedgerEntry[] = [];
+  for (const entry of entries) {
+    const existing = merged.find(
+      (m) => m.drOrCr === entry.drOrCr && normalizeAccountName(m.ledgerName) === normalizeAccountName(entry.ledgerName),
+    );
+    if (existing) {
+      existing.amount = round2(existing.amount + entry.amount);
+      existing.billAllocations = [...existing.billAllocations, ...entry.billAllocations];
+    } else {
+      merged.push({ ...entry, billAllocations: [...entry.billAllocations] });
+    }
+  }
+  return merged;
+}
+
 function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs: AnswerKeyEntry[]): VoucherDiff[] {
   const diffs: VoucherDiff[] = [];
   const sequence = expectedLegs[0].sequence;
@@ -196,9 +239,9 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
     return diffs;
   }
 
-  const unmatchedEntries = [...voucher.ledgerEntries];
+  const unmatchedEntries = consolidateLedgerEntries(voucher.ledgerEntries);
 
-  for (const expectedLeg of expectedLegs) {
+  for (const expectedLeg of consolidateExpectedLegs(expectedLegs)) {
     const matchIndex = unmatchedEntries.findIndex((entry) => legMatchesEntry(entry, expectedLeg));
     const matchingEntry = matchIndex === -1 ? undefined : unmatchedEntries[matchIndex];
     if (matchIndex !== -1) {

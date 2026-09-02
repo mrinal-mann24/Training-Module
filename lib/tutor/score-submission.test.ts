@@ -992,3 +992,42 @@ describe('scorer fairness fixes from Garima Level 2 (2026-09-02)', () => {
     expect(result.per_voucher_diffs.find((d) => d.field === 'bill_reference')?.error_code).toBe('BILL_REFERENCE_WRONG');
   });
 });
+
+describe('multi-rate invoices: consolidated vs split GST lines (Garima Level 3 Tx 7, 2026-09-02)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, gst: 'CGST' | 'SGST' | null = null, rate: number | null = null): AnswerKey['entries'][number] => ({
+    sequence: 1, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Sales',
+    gst_head: gst, gst_rate: rate, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'MD-142', narration: null, concept_tags: ['gst_classification' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  // Furniture 30,000 @ 9%+9% and packing 10,000 @ 6%+6% on one invoice: the
+  // key carries two CGST legs and two SGST legs.
+  const answerKey = { entries: [
+    leg('Mysore Decor', 'Dr', 46600), leg('Sales', 'Cr', 40000),
+    leg('Output CGST', 'Cr', 2700, 'CGST', 18), leg('Output SGST', 'Cr', 2700, 'SGST', 18),
+    leg('Output CGST', 'Cr', 600, 'CGST', 12), leg('Output SGST', 'Cr', 600, 'SGST', 12),
+  ] };
+  const voucher = (lines: [string, number][]) => ({ vouchers: [{
+    voucherType: 'Sales', date: '20260612', narration: 'Sold furniture and packing to Mysore Decor, Invoice MD-142',
+    ledgerEntries: lines.map(([name, amount]) => ({
+      ledgerName: name, amount, drOrCr: (name === 'Mysore Decor' ? 'Dr' : 'Cr') as 'Dr' | 'Cr',
+      billAllocations: name === 'Mysore Decor' ? [{ name: 'MD-142', amount }] : [],
+    })),
+  }] });
+
+  it('accepts the way Tally shows it: one combined CGST line and one SGST line', () => {
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 3300], ['SGST', 3300]]), { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.filter((d) => !d.is_correct)).toEqual([]);
+    expect(result.weighted_score).toBeCloseTo(1.0, 5);
+  });
+
+  it('equally accepts the split posting with a line per rate', () => {
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 2700], ['SGST', 2700], ['CGST', 600], ['SGST', 600]]), { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.filter((d) => !d.is_correct)).toEqual([]);
+  });
+
+  it('still catches a missing SGST when CGST was posted twice', () => {
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 3300], ['CGST', 3300]]), { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.some((d) => d.error_code === 'GST_MISSING' || d.error_code === 'ACCOUNT_WRONG')).toBe(true);
+  });
+});
