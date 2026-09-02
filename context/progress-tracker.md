@@ -21,6 +21,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-02: CASH/BANK FEASIBILITY — generated batches must be POSTABLE
+
+Garima reported: "I am facing an issue with closing balance cash value in bank statement. According to my previous entry its says i don't have sufficient cash to transfer it to bank." She was right, and it is a generator bug, NOT a scoring or document bug (the answer key and PDF agreed with each other perfectly — the TRANSACTION ITSELF was impossible).
+
+Root cause: batch generation had zero visibility into ledger balances. `company_transaction_log` stores voucher types, ledger names and counts — never amounts — so the model invented plausible-sounding cash figures. Netting her real answer keys: April pack leaves Cash at exactly ₹19,900; her delivered batch opens with a ₹45,000 cash deposit, driving Cash to −₹25,100.
+
+Fix (same grounded-then-verified pattern as the invoice/month/trading-mix fixes):
+- `getExpectedCashPosition` (company.ts): nets Cash and Bank across EVERY prior answer key for the learner (opening_balances + entries), i.e. the CORRECT position — deliberately not the learner's own possibly-miskeyed exports, since an exercise must be solvable by someone who posted correctly. Verified against live data: returns 19,900 / 867,186 for Garima.
+- Prompt gained an OPENING BALANCES hard-requirement block stating both balances, that cash may never go negative and the bank may never be overdrawn, that deposits are capped by cash on hand at that moment, and to size movements to the position rather than round-sounding figures.
+- `checkCashFeasibility` (generate-exercise.ts, pure/exported): walks the batch in sequence order applying cash/bank movements to the opening position and rejects naming the first overdrawing transaction; feeds the same combined retry message as composition/month/doc-pointer. Order-sensitive by design (a deposit before the withdrawal that funds it is correctly rejected).
+- 7 new tests incl. Garima's exact numbers, plus a live-data check confirming her delivered batch is caught at transaction 1. 192 total, tsc/lint clean.
+
+NOTE: her CURRENT batch is already delivered and still contains the impossible transaction — needs regeneration or a manual amount adjustment; the fix prevents recurrence only.
+
 ## Session log — 2026-09-01 (later 6): EXPIRED PDF LINKS + LIVE ANSWER-KEY/PDF MISMATCH
 
 **(a) Expired document links.** Learners hit Supabase Storage `{"error":"InvalidJWT","message":"\"exp\" claim timestamp check failed"}` on View. Cause: signed URLs are minted when the chat page RENDERS, with a 1-hour TTL — any tab left open longer (or an older batch revisited) served a dead link. Fixed both ways: TTL 1h → 24h in source-documents.ts and exercise-packs.ts, AND sign-on-click — new `freshSignedUrlForDocument` (by ROW ID; the storage path is read server-side, never trusted from the client) / `freshSignedUrlForPackFile` (by path; 'packs' is shared authenticated content), exposed through the `refreshDocumentUrl` server action, called by DocumentCard (now a client component) which opens the tab synchronously BEFORE awaiting so pop-up blockers don't kill it, and falls back to the render-time href if the refresh fails. MessageBubble distinguishes the two card kinds by `id.includes('/')` (pack ids ARE storage paths; document ids are uuids).

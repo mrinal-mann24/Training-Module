@@ -1,4 +1,67 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AnswerKey } from '@/lib/schemas/exercise';
+
+// Cash and bank ledger recognition. The company's Cash-in-Hand ledger is
+// plainly "Cash"; its bank ledger carries the bank's name ("HDFC Bank —
+// 1234"). Group rows ("Cash-in-Hand", "Bank Accounts") never appear in an
+// answer key, only ledgers do.
+const CASH_ACCOUNT_PATTERN = /^cash\b|cash-in-hand/i;
+const BANK_ACCOUNT_PATTERN = /\bbank\b|hdfc/i;
+
+export type CompanyCashPosition = { cash: number; bank: number };
+
+// The company's expected Cash and Bank balances after everything the learner
+// has been asked to post so far, computed by netting the ANSWER KEYS (the
+// correct position), not the learner's own possibly-miskeyed exports — an
+// exercise has to be solvable by someone who posted correctly.
+//
+// Added 2026-09-02 after a live report: a generated batch opened with
+// "deposit cash into HDFC Bank" for ₹45,000 when the learner's correct cash
+// on hand was ₹19,900, because batch generation had no visibility into
+// balances at all (company_transaction_log stores voucher types and ledger
+// names, never amounts). Netted over her real data this returns 19,900,
+// and her delivered batch drives it to -20,100 — the impossibility she
+// spotted.
+export async function getExpectedCashPosition(
+  supabase: SupabaseClient,
+  learnerId: string,
+): Promise<CompanyCashPosition> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('answer_key')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const position: CompanyCashPosition = { cash: 0, bank: 0 };
+  for (const row of data ?? []) {
+    const key = (row as { answer_key: AnswerKey | null }).answer_key;
+    if (!key) {
+      continue;
+    }
+    applyCashMovements(position, key.opening_balances ?? []);
+    applyCashMovements(position, key.entries ?? []);
+  }
+  return position;
+}
+
+function applyCashMovements(
+  position: CompanyCashPosition,
+  legs: { account?: string; correct_account?: string; dr_cr: 'Dr' | 'Cr'; amount: number }[],
+): void {
+  for (const leg of legs) {
+    const account = leg.account ?? leg.correct_account ?? '';
+    const signed = leg.dr_cr === 'Dr' ? leg.amount : -leg.amount;
+    if (CASH_ACCOUNT_PATTERN.test(account)) {
+      position.cash += signed;
+    } else if (BANK_ACCOUNT_PATTERN.test(account)) {
+      position.bank += signed;
+    }
+  }
+}
 
 export type CompanyLedgerRegistryEntry = {
   ledger_name: string;

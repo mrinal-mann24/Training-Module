@@ -33,6 +33,11 @@ export type AdaptiveExerciseParams = {
   // assignment row rather than inferred from the ledger list, so it can
   // never drift as the log's recent slice rolls forward.
   companyName: string;
+  // The company's Cash and Bank balances entering this batch, netted from
+  // every prior answer key (2026-09-02): without them the model invented
+  // cash movements the learner could not possibly post, e.g. a ₹45,000 cash
+  // deposit against ₹19,900 of cash on hand.
+  cashPosition: { cash: number; bank: number };
 };
 
 function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
@@ -157,6 +162,19 @@ Recently strong areas (for the opening line): ${
   }
 
 Difficulty level: ${params.difficultyLevel}.
+
+OPENING BALANCES (hard requirement): entering this batch the company holds
+Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and
+Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank.
+Every transaction must be POSTABLE from that position: cash can never go
+negative at any point in the batch, and the bank can never be overdrawn.
+Cash deposits into the bank are limited by the cash actually on hand at that
+moment (opening cash plus any cash the batch itself brings in first), and
+cash withdrawals plus payments are limited by the running bank balance. Size
+the cash movements to the position, not to round-sounding figures: with a
+small cash balance, a realistic deposit is a few thousand rupees, not tens
+of thousands. Walk your own transactions in order before responding and
+confirm neither balance ever goes below zero.
 
 Ledgers and parties: use ONLY accounts that exist in the company registry
 below, or genuinely new realistic parties introduced by this batch's own

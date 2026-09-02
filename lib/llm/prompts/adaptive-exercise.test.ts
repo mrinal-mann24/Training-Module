@@ -14,6 +14,7 @@ function params(overrides: Partial<AdaptiveExerciseParams> = {}): AdaptiveExerci
     recentCompanyTransactionLog: [],
     exerciseMonthLabel: 'May 2026',
     companyName: 'Blossom Retail Pvt Ltd',
+    cashPosition: { cash: 19900, bank: 867186 },
     ...overrides,
   };
 }
@@ -44,6 +45,15 @@ describe('buildAdaptivePrompt company and month pinning (5-point review, 2026-09
   it('states the assigned month as a hard rule', () => {
     const prompt = systemPrompt(params());
     expect(prompt).toContain('dated inside\nMay 2026');
+  });
+
+  it('states the opening cash and bank balances as a hard constraint', () => {
+    // Without these the model invented unpostable cash movements (a 45,000
+    // deposit against 19,900 of cash on hand, reported live 2026-09-02).
+    const prompt = systemPrompt(params());
+    expect(prompt).toContain('OPENING BALANCES');
+    expect(prompt).toContain('19,900');
+    expect(prompt).toContain('cash can never go\nnegative');
   });
 
   it('scopes the educational-mode date rule to the assigned month only', () => {

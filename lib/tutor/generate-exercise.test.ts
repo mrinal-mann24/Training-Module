@@ -370,3 +370,90 @@ describe('checkDocumentBackedDescriptions', () => {
     expect(checkDocumentBackedDescriptions(generated)).toBe(null);
   });
 });
+
+// --- cash/bank feasibility (2026-09-02, Garima's live report) ---
+
+import { checkCashFeasibility } from './generate-exercise';
+
+function cashBatch(
+  items: { sequence: number; account: string; drCr: 'Dr' | 'Cr'; amount: number }[],
+): GeneratedExercise {
+  const sequences = [...new Set(items.map((i) => i.sequence))];
+  return {
+    scenario: 'Batch: same company, continuing.',
+    transactions: sequences.map((sequence) => ({ sequence, description: `Transaction ${sequence}` })),
+    difficulty_level: 'L1',
+    variant: 'A',
+    answer_key: {
+      entries: items.map((i) => ({
+        ...entry(i.sequence, ['contra_voucher_basics'] as ConceptTag[], 'Contra'),
+        correct_account: i.account,
+        dr_cr: i.drCr,
+        amount: i.amount,
+      })),
+    },
+  };
+}
+
+describe('checkCashFeasibility', () => {
+  it('rejects the live failure: depositing more cash than the company holds', () => {
+    // Garima's real position after the April pack was Cash 19,900; her
+    // delivered batch opened with a 45,000 cash deposit, driving Cash to
+    // -25,100 (her exact report: "i don't have sufficient cash to transfer
+    // it to bank").
+    const batch = cashBatch([
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 45000 },
+      { sequence: 1, account: 'Cash', drCr: 'Cr', amount: 45000 },
+    ]);
+    const error = checkCashFeasibility(batch, { cash: 19900, bank: 867186 });
+    expect(error).toContain('Cash feasibility violated');
+    expect(error).toContain('transaction 1');
+  });
+
+  it('accepts a deposit within the cash on hand', () => {
+    const batch = cashBatch([
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 15000 },
+      { sequence: 1, account: 'Cash', drCr: 'Cr', amount: 15000 },
+    ]);
+    expect(checkCashFeasibility(batch, { cash: 19900, bank: 867186 })).toBeNull();
+  });
+
+  it('counts cash the batch itself brings in before a later deposit', () => {
+    // Withdraw 40,000 from the bank first, then depositing 45,000 is fine.
+    const batch = cashBatch([
+      { sequence: 1, account: 'Cash', drCr: 'Dr', amount: 40000 },
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Cr', amount: 40000 },
+      { sequence: 2, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 45000 },
+      { sequence: 2, account: 'Cash', drCr: 'Cr', amount: 45000 },
+    ]);
+    expect(checkCashFeasibility(batch, { cash: 19900, bank: 867186 })).toBeNull();
+  });
+
+  it('rejects an order that overdraws cash even though the batch nets out', () => {
+    // Same two transactions as above, but the deposit comes FIRST.
+    const batch = cashBatch([
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 45000 },
+      { sequence: 1, account: 'Cash', drCr: 'Cr', amount: 45000 },
+      { sequence: 2, account: 'Cash', drCr: 'Dr', amount: 40000 },
+      { sequence: 2, account: 'HDFC Bank — 1234', drCr: 'Cr', amount: 40000 },
+    ]);
+    expect(checkCashFeasibility(batch, { cash: 19900, bank: 867186 })).toContain('transaction 1');
+  });
+
+  it('rejects a bank overdraft', () => {
+    const batch = cashBatch([
+      { sequence: 1, account: 'Cash', drCr: 'Dr', amount: 90000 },
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Cr', amount: 90000 },
+    ]);
+    const error = checkCashFeasibility(batch, { cash: 5000, bank: 50000 });
+    expect(error).toContain('Bank feasibility violated');
+  });
+
+  it('ignores non-cash ledgers entirely', () => {
+    const batch = cashBatch([
+      { sequence: 1, account: 'Kochi Modern', drCr: 'Dr', amount: 500000 },
+      { sequence: 1, account: 'Sales', drCr: 'Cr', amount: 500000 },
+    ]);
+    expect(checkCashFeasibility(batch, { cash: 100, bank: 100 })).toBeNull();
+  });
+});

@@ -22,6 +22,7 @@ import {
   getCompanyLedgerRegistry,
   getRecentCompanyTransactionLog,
   getCompanyName,
+  getExpectedCashPosition,
   registerCompanyLedgers,
   appendCompanyTransactionLog,
 } from "@/lib/db/queries/company";
@@ -542,6 +543,54 @@ export function checkDocumentBackedDescriptions(
   return `Document-backed text violated: transaction(s) ${offenders.join(", ")} have requires_source_document true but their text states an amount or a GST rate. A document-backed transaction's line is a short pointer (date, party, what happened, which document to read) with NO figures — the learner reads the figures from the document itself. Rewrite those lines as pointers, keeping the exact figures only in the hidden answer key.`;
 }
 
+// Cash/bank feasibility (2026-09-02): a generated batch must be POSTABLE
+// from the company's actual position — a learner cannot deposit cash she
+// does not hold. Reported live: a batch opened with a ₹45,000 cash deposit
+// against a correct cash balance of ₹19,900, driving Cash to -₹20,100.
+// Batch generation had no balance visibility at all, so it invented
+// plausible-sounding figures. This walks the batch in sequence order,
+// applying each transaction's cash and bank movements to the opening
+// position, and rejects the batch naming the first transaction that would
+// overdraw either. Bank is checked too (an overdraft is equally
+// unpostable), with a small tolerance so a to-the-rupee zero doesn't trip.
+const CASH_LEDGER_PATTERN = /^cash\b|cash-in-hand/i;
+const BANK_LEDGER_PATTERN = /\bbank\b|hdfc/i;
+const OVERDRAW_TOLERANCE = 0.005;
+
+export function checkCashFeasibility(
+  generated: GeneratedExercise,
+  opening: { cash: number; bank: number },
+): string | null {
+  const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
+  for (const entry of generated.answer_key.entries) {
+    const group = bySequence.get(entry.sequence) ?? [];
+    group.push(entry);
+    bySequence.set(entry.sequence, group);
+  }
+
+  let cash = opening.cash;
+  let bank = opening.bank;
+
+  for (const [sequence, legs] of [...bySequence.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const leg of legs) {
+      const signed = leg.dr_cr === "Dr" ? leg.amount : -leg.amount;
+      if (CASH_LEDGER_PATTERN.test(leg.correct_account)) {
+        cash += signed;
+      } else if (BANK_LEDGER_PATTERN.test(leg.correct_account)) {
+        bank += signed;
+      }
+    }
+    if (cash < -OVERDRAW_TOLERANCE) {
+      return `Cash feasibility violated: transaction ${sequence} drives Cash-in-Hand to ${Math.round(cash)}, but cash can never go negative. The company holds ${Math.round(opening.cash)} in cash at the start of this batch, so every cash payment or cash-to-bank deposit across the batch must stay within that plus whatever cash the batch itself brings in. Rescale or reorder the cash movements to fit.`;
+    }
+    if (bank < -OVERDRAW_TOLERANCE) {
+      return `Bank feasibility violated: transaction ${sequence} drives the bank account to ${Math.round(bank)}, an overdraft the learner cannot post. The company holds ${Math.round(opening.bank)} in the bank at the start of this batch; keep every payment and bank-to-cash withdrawal within the running balance.`;
+    }
+  }
+
+  return null;
+}
+
 // One level down from currentLevel, floored at L0 — used when reinforcement
 // is active, per the spec's "drops one difficulty level and re-targets"
 // rule. Never below the lowest defined level.
@@ -594,11 +643,12 @@ export async function generateAdaptiveExercise(
     : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName] =
+  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition] =
     await Promise.all([
       getCompanyLedgerRegistry(supabase, learnerId),
       getRecentCompanyTransactionLog(supabase, learnerId),
       getCompanyName(supabase, learnerId),
+      getExpectedCashPosition(supabase, learnerId),
     ]);
 
   const promptParams = {
@@ -618,6 +668,7 @@ export async function generateAdaptiveExercise(
     // company field (or test paths with no pack) — the product's one live
     // company is Blossom Retail.
     companyName: companyName ?? "Blossom Retail Pvt Ltd",
+    cashPosition,
   };
 
   let lastError: string | null = null;
@@ -649,8 +700,9 @@ export async function generateAdaptiveExercise(
     const parsed = GeneratedExerciseSchema.safeParse(raw);
 
     if (parsed.success) {
-      // Composition, month, and document-pointer violations are combined
-      // into one retry message so a single retry can fix everything at once.
+      // Composition, month, document-pointer, and cash-feasibility
+      // violations are combined into one retry message so a single retry can
+      // fix everything at once.
       const compositionError = checkBatchComposition(
         parsed.data,
         batchPlan,
@@ -658,7 +710,8 @@ export async function generateAdaptiveExercise(
       );
       const monthError = checkBatchMonth(parsed.data, exerciseMonth);
       const documentTextError = checkDocumentBackedDescriptions(parsed.data);
-      const batchError = [compositionError, monthError, documentTextError]
+      const cashError = checkCashFeasibility(parsed.data, cashPosition);
+      const batchError = [compositionError, monthError, documentTextError, cashError]
         .filter(Boolean)
         .join(" ");
       if (batchError === "") {
