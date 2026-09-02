@@ -21,6 +21,16 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-02 (later 2): OVERDRAWN-TILL RECOVERY — no regeneration for the live interns
+
+User decision: Praveen has already completed his current batch in Tally (not yet submitted) and Garima is mid-way; neither batch is to be regenerated. Both posted the impossible deposits, so their books now carry NEGATIVE cash (Garima −20,100; Praveen −55,100 once his key is double-entry). Since the company is one continuous set of books, their next batch must start from that position rather than pretend otherwise.
+
+- **Generator (code):** when the carried-forward cash is negative, the adaptive prompt now states the overdraft and REQUIRES transaction 1 to be a bank→Cash Contra withdrawal of at least the shortfall plus a working float, before any other cash movement — a legitimate "replenish the till" entry, one easy transaction, no rework. `checkCashFeasibility` already enforced it mechanically (any non-restoring tx1 leaves cash negative → rejected); its message now distinguishes "the till OPENS overdrawn, replenish first" from "this transaction drove cash negative". Robust to either learner having skipped the bad deposit instead (extra cash never breaks postability). 4 new tests (203 total), tsc/lint clean.
+- **Current keys (SQL, Downloads/patch-current-batches.sql, originals backed up as BACKUP_{garima,praveen}_current_answerkey.json):** both get the 31 carried-forward opening balances so the tie-out is fair on submission (the keys predate fix #1); Praveen's 12 single-leg transactions get their counterpart legs (Cash/bank for contras, receipt/payment bank legs, Sales/Purchases net of tax per the GST-as-metadata model — e.g. Deccan 69,620 gross → Purchases 59,000) so both sides are scored and cash nets truthfully. Added legs are flagged requires_source_document=false (their documents already exist).
+- Verified pre-run: a perfect submission against each patched key scores 100% / tie_out true / pass and passes checkDoubleEntry.
+
+Sequence for the user: run the SQL → deploy → interns submit current batch → Level 3 auto-generates opening with the replenishment.
+
 ## Session log — 2026-09-02 (later): ONE CONTINUOUS SET OF BOOKS — carried-forward openings, double-entry integrity, tie-out matcher
 
 A full audit (every exercise, every learner, code + DB) surfaced two live bugs and, while fixing them, a third that had been silent since the tie-out was written.

@@ -165,7 +165,17 @@ Difficulty level: ${params.difficultyLevel}.
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
 Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and
-Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank.
+Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank.${
+    params.cashPosition.cash < 0
+      ? `
+THE TILL IS OVERDRAWN by Rs ${Math.abs(Math.round(params.cashPosition.cash)).toLocaleString('en-IN')}
+(an earlier batch called for a deposit larger than the cash actually held).
+Transaction 1 of THIS batch MUST therefore be a Contra withdrawal from the
+bank to Cash of at least that shortfall plus a sensible working float
+(round up to a clean figure), so the till is positive before anything else
+happens. No other cash movement may precede it.`
+      : ''
+  }
 Every transaction must be POSTABLE from that position: cash can never go
 negative at any point in the batch, and the bank can never be overdrawn.
 Cash deposits into the bank are limited by the cash actually on hand at that

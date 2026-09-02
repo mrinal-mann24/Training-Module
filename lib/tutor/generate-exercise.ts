@@ -645,6 +645,11 @@ export function checkCashFeasibility(
       }
     }
     if (cash < -OVERDRAW_TOLERANCE) {
+      // A till that is ALREADY overdrawn on entry (an earlier batch's fault,
+      // not this one's) needs a different instruction: replenish first.
+      if (opening.cash < -OVERDRAW_TOLERANCE) {
+        return `Cash feasibility violated: the till opens this batch overdrawn at ${Math.round(opening.cash)}, and transaction ${sequence} leaves it at ${Math.round(cash)}. Transaction 1 must be a Contra withdrawal from the bank to Cash large enough to clear the shortfall (at least ${Math.abs(Math.round(opening.cash))}) before any other cash movement; every transaction after it must then keep cash non-negative.`;
+      }
       return `Cash feasibility violated: transaction ${sequence} drives Cash-in-Hand to ${Math.round(cash)}, but cash can never go negative. The company holds ${Math.round(opening.cash)} in cash at the start of this batch, so every cash payment or cash-to-bank deposit across the batch must stay within that plus whatever cash the batch itself brings in. Rescale or reorder the cash movements to fit.`;
     }
     if (bank < -OVERDRAW_TOLERANCE) {

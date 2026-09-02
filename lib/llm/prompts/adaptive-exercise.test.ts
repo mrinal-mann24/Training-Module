@@ -62,3 +62,16 @@ describe('buildAdaptivePrompt company and month pinning (5-point review, 2026-09
     expect(prompt).not.toContain('two\nconsecutive months');
   });
 });
+
+describe('overdrawn till instruction (2026-09-02)', () => {
+  it('orders a replenishing withdrawal first when opening cash is negative', () => {
+    const prompt = systemPrompt(params({ cashPosition: { cash: -70100, bank: 900000 } }));
+    expect(prompt).toContain('THE TILL IS OVERDRAWN by Rs 70,100');
+    expect(prompt).toContain('Transaction 1 of THIS batch MUST therefore be a Contra withdrawal');
+  });
+
+  it('omits the instruction when cash is healthy', () => {
+    const prompt = systemPrompt(params());
+    expect(prompt).not.toContain('TILL IS OVERDRAWN');
+  });
+});

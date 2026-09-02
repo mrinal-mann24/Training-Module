@@ -542,3 +542,29 @@ describe('checkDoubleEntry', () => {
     expect(checkDoubleEntry(broken)).toContain('do not balance');
   });
 });
+
+describe('checkCashFeasibility with an overdrawn till (2026-09-02, live learners)', () => {
+  // Both live learners posted an impossible deposit from an earlier batch, so
+  // their next batch opens with negative cash and MUST replenish first.
+  const overdrawn = { cash: -70100, bank: 900000 };
+
+  it('rejects a batch that does not replenish the till first', () => {
+    const batch = cashBatch([
+      { sequence: 1, account: 'Kochi Modern', drCr: 'Dr', amount: 100000 },
+      { sequence: 1, account: 'Sales', drCr: 'Cr', amount: 100000 },
+    ]);
+    const error = checkCashFeasibility(batch, overdrawn);
+    expect(error).toContain('opens this batch overdrawn');
+    expect(error).toContain('at least 70100');
+  });
+
+  it('accepts a batch whose first transaction clears the shortfall', () => {
+    const batch = cashBatch([
+      { sequence: 1, account: 'Cash', drCr: 'Dr', amount: 80000 },
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Cr', amount: 80000 },
+      { sequence: 2, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 5000 },
+      { sequence: 2, account: 'Cash', drCr: 'Cr', amount: 5000 },
+    ]);
+    expect(checkCashFeasibility(batch, overdrawn)).toBeNull();
+  });
+});
