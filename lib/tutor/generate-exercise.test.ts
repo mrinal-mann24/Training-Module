@@ -457,3 +457,88 @@ describe('checkCashFeasibility', () => {
     expect(checkCashFeasibility(batch, { cash: 100, bank: 100 })).toBeNull();
   });
 });
+
+// --- double-entry integrity (2026-09-02, Praveen's single-leg batch) ---
+
+import { checkDoubleEntry } from './generate-exercise';
+
+function legs(
+  items: { seq: number; account: string; drCr: 'Dr' | 'Cr'; amount: number; gst?: 'CGST' | 'SGST' | 'IGST' | null; tds?: string | null }[],
+): GeneratedExercise {
+  const sequences = [...new Set(items.map((i) => i.seq))];
+  return {
+    scenario: 'Batch: same company, continuing.',
+    transactions: sequences.map((sequence) => ({ sequence, description: `Transaction ${sequence}` })),
+    difficulty_level: 'L1',
+    variant: 'A',
+    answer_key: {
+      entries: items.map((i) => ({
+        ...entry(i.seq, ['contra_voucher_basics'] as ConceptTag[], 'Contra'),
+        correct_account: i.account,
+        dr_cr: i.drCr,
+        amount: i.amount,
+        gst_head: i.gst ?? null,
+        tds_section: i.tds ?? null,
+      })),
+    },
+  };
+}
+
+describe('checkDoubleEntry', () => {
+  it('rejects the live failure: single-leg transactions with no credit side', () => {
+    // Praveen's delivered batch: 12/12 transactions carried only "Dr HDFC
+    // Bank 90,000" with no matching credit, so the missing side was never
+    // scored and the cash walk was blind to it.
+    const batch = legs([
+      { seq: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 90000 },
+      { seq: 2, account: 'Cash', drCr: 'Dr', amount: 25000 },
+    ]);
+    const error = checkDoubleEntry(batch);
+    expect(error).toContain('Double-entry violated');
+    expect(error).toContain('transaction(s) 1, 2 have only one side');
+  });
+
+  it('accepts a proper two-sided contra', () => {
+    const batch = legs([
+      { seq: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 15000 },
+      { seq: 1, account: 'Cash', drCr: 'Cr', amount: 15000 },
+    ]);
+    expect(checkDoubleEntry(batch)).toBeNull();
+  });
+
+  it('rejects a two-sided transaction whose totals do not balance', () => {
+    const batch = legs([
+      { seq: 1, account: 'HDFC Bank — 1234', drCr: 'Dr', amount: 15000 },
+      { seq: 1, account: 'Cash', drCr: 'Cr', amount: 12000 },
+    ]);
+    expect(checkDoubleEntry(batch)).toContain('Dr 15000 vs Cr 12000');
+  });
+
+  it('tolerates the documented GST-as-metadata imbalance', () => {
+    // A taxed sale legitimately shows Dr 118,000 against Cr 100,000 because
+    // the 18,000 GST rides as gst_head metadata, not as a ledger leg — the
+    // same design score-submission.ts exempts from tie-out.
+    const batch = legs([
+      { seq: 1, account: 'Kochi Modern', drCr: 'Dr', amount: 118000, gst: 'IGST' },
+      { seq: 1, account: 'Sales', drCr: 'Cr', amount: 100000, gst: 'IGST' },
+    ]);
+    expect(checkDoubleEntry(batch)).toBeNull();
+  });
+
+  it('still balances a transaction that carries EXPLICIT tax legs', () => {
+    // When GST is posted as real legs, the transaction must balance exactly.
+    const batch = legs([
+      { seq: 1, account: 'Kochi Modern', drCr: 'Dr', amount: 118000, gst: 'IGST' },
+      { seq: 1, account: 'Sales', drCr: 'Cr', amount: 100000, gst: 'IGST' },
+      { seq: 1, account: 'Output IGST', drCr: 'Cr', amount: 18000, gst: 'IGST' },
+    ]);
+    expect(checkDoubleEntry(batch)).toBeNull();
+
+    const broken = legs([
+      { seq: 1, account: 'Kochi Modern', drCr: 'Dr', amount: 118000, gst: 'IGST' },
+      { seq: 1, account: 'Sales', drCr: 'Cr', amount: 100000, gst: 'IGST' },
+      { seq: 1, account: 'Output IGST', drCr: 'Cr', amount: 9000, gst: 'IGST' },
+    ]);
+    expect(checkDoubleEntry(broken)).toContain('do not balance');
+  });
+});

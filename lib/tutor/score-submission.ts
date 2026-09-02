@@ -606,6 +606,23 @@ function checkTrialBalanceTieOut(trialBalance: ParsedTrialBalance, answerKey: An
     }
   }
 
+  // TB rows that are an EXACT name match for some expected account belong to
+  // that account and nothing else. Without this, containment matching let a
+  // short name swallow a longer, genuinely different one: "Sales" matched
+  // both "Sales" and "Sales Returns", so BOTH accounts were compared against
+  // the sum of the two and tie-out could never succeed (found 2026-09-02
+  // while verifying the carried-forward openings fix — it had been quietly
+  // failing every submission that used a returns ledger).
+  const exactlyClaimed = new Set<string>();
+  for (const account of expectedClosingBalances.keys()) {
+    const names = [account, ...(aliasesByAccount.get(account) ?? [])].map(normalizeAccountName);
+    for (const ledger of trialBalance.ledgers) {
+      if (names.includes(normalizeAccountName(ledger.ledgerName))) {
+        exactlyClaimed.add(ledger.ledgerName);
+      }
+    }
+  }
+
   for (const [account, expectedBalance] of expectedClosingBalances) {
     if (TIE_OUT_EXEMPT_PATTERN.test(account)) {
       continue;
@@ -613,10 +630,21 @@ function checkTrialBalanceTieOut(trialBalance: ParsedTrialBalance, answerKey: An
     // Aggregate every TB row matching this account: a learner may split one
     // logical account across ledgers (e.g. "Credit Sales A/c" + "Cash Sales
     // A/c" where the key says "Sales") — their SUM is what must tie out.
+    // Exact matches win outright; the fuzzy split-account fallback only
+    // considers rows no other expected account has claimed exactly.
     const acceptableNames = [account, ...(aliasesByAccount.get(account) ?? [])];
-    const matchingRows = trialBalance.ledgers.filter((ledger) =>
-      acceptableNames.some((name) => accountNamesMatch(ledger.ledgerName, name)),
+    const normalizedNames = acceptableNames.map(normalizeAccountName);
+    const exactRows = trialBalance.ledgers.filter((ledger) =>
+      normalizedNames.includes(normalizeAccountName(ledger.ledgerName)),
     );
+    const matchingRows =
+      exactRows.length > 0
+        ? exactRows
+        : trialBalance.ledgers.filter(
+            (ledger) =>
+              !exactlyClaimed.has(ledger.ledgerName) &&
+              acceptableNames.some((name) => accountNamesMatch(ledger.ledgerName, name)),
+          );
     if (matchingRows.length === 0) {
       if (amountsMatch(0, expectedBalance)) {
         continue;

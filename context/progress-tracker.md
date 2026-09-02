@@ -21,6 +21,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-02 (later): ONE CONTINUOUS SET OF BOOKS — carried-forward openings, double-entry integrity, tie-out matcher
+
+A full audit (every exercise, every learner, code + DB) surfaced two live bugs and, while fixing them, a third that had been silent since the tie-out was written.
+
+**(1) Adaptive batches could never pass.** Generated answer keys carried no `opening_balances`, so `checkTrialBalanceTieOut` expected closing = that batch's movements alone, while a learner's real Tally export is CUMULATIVE (the company never resets). Proved with a synthetic flawless May submission: 100% score, `tb_tie_out` false, capped at 'partial'. Every adaptive/explain batch was affected; only the diagnostic (which ships its own openings) tied out. Fix: `getExpectedOpeningBalances` (company.ts) nets every prior answer key — openings + entries, GST/TDS excluded since those ride as metadata and are tie-out-exempt anyway — and generateAdaptiveExercise stamps the result onto the batch's answer key before persisting, so expected closing = carried-forward position + this batch. Same flawless submission now scores 100% / tie_out true / **pass**.
+
+**(2) Single-leg answer keys.** Praveen's delivered batch had 12/12 transactions with ONE leg ("Dr HDFC Bank 90,000", no credit): the missing side was never scored, TB maths counted half of each transaction, and checkCashFeasibility was blind to the cash legs — which is why his unpostable ₹90,000 deposit passed the cash walk. New `checkDoubleEntry` (generate-exercise.ts) requires ≥1 Dr and ≥1 Cr leg per transaction and, for transactions with no tax metadata, exact Dr/Cr balance. Deliberately tolerant of the documented GST-as-metadata imbalance (a taxed sale is legitimately Dr 118,000 / Cr 100,000) but strict once explicit tax legs are present. Runs before the cash check in the combined retry message, since fixing the legs is what lets the cash walk see anything.
+
+**(3) Tie-out account matcher swallowed sibling accounts (pre-existing).** Containment matching let "Sales" match BOTH "Sales" and "Sales Returns", so each was compared against the SUM of the two and tie-out could never succeed for any submission using a returns ledger — this alone would have kept failing even after fix (1). `checkTrialBalanceTieOut` now resolves exact name matches first and only falls back to the fuzzy split-account rule for rows no other expected account has claimed exactly, preserving the "Credit Sales A/c + Cash Sales A/c both map to Sales" behaviour it was written for.
+
+Verified false alarms (checked, NOT bugs): the diagnostic's 47 "Dr != Cr" transactions are the documented GST-as-metadata design (Dr 112,100 − Cr 95,000 = exactly the 17,100 IGST); diagnostic tie-out failures reflect real learner errors; Inngest's /.netlify and /.redwood 404s are framework auto-discovery.
+
+12 new tests (199 total), tsc/lint/build clean. STILL OPEN: three delivered batches (Garima, Praveen, template595) remain unpostable and need regeneration; template595's invoices still contradict its key.
+
 ## Session log — 2026-09-02: CASH/BANK FEASIBILITY — generated batches must be POSTABLE
 
 Garima reported: "I am facing an issue with closing balance cash value in bank statement. According to my previous entry its says i don't have sufficient cash to transfer it to bank." She was right, and it is a generator bug, NOT a scoring or document bug (the answer key and PDF agreed with each other perfectly — the TRANSACTION ITSELF was impossible).

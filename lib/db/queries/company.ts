@@ -63,6 +63,68 @@ function applyCashMovements(
   }
 }
 
+// GST/TDS ledgers are excluded from the carried-forward opening position:
+// the answer-key model holds GST and TDS as voucher-level METADATA
+// (gst_head/tds_section), not as ledger legs, so their balances cannot be
+// derived from the keys — which is exactly why checkTrialBalanceTieOut
+// already exempts them from comparison.
+const TAX_LEDGER_PATTERN = /gst|tds/i;
+
+export type OpeningBalance = { account: string; dr_cr: 'Dr' | 'Cr'; amount: number };
+
+// The company's closing position across EVERY exercise so far, shaped as the
+// opening balances of the next one. The learner works one continuous set of
+// books — April's closing balances are May's opening balances — so a batch's
+// expected closing has to be (carried-forward position + this batch's
+// movements). Without this an adaptive batch's answer key described only its
+// own movements while the learner's real Tally export is cumulative, so
+// checkTrialBalanceTieOut failed even a flawless submission and capped every
+// adaptive result at 'partial' (proved 2026-09-02: a 100%-correct May
+// submission scored 100% with tb_tie_out false).
+export async function getExpectedOpeningBalances(
+  supabase: SupabaseClient,
+  learnerId: string,
+): Promise<OpeningBalance[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('answer_key')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  const net = new Map<string, number>();
+  const apply = (account: string, drCr: 'Dr' | 'Cr', amount: number) => {
+    if (!account || TAX_LEDGER_PATTERN.test(account)) {
+      return;
+    }
+    net.set(account, (net.get(account) ?? 0) + (drCr === 'Dr' ? amount : -amount));
+  };
+
+  for (const row of data ?? []) {
+    const key = (row as { answer_key: AnswerKey | null }).answer_key;
+    if (!key) {
+      continue;
+    }
+    for (const opening of key.opening_balances ?? []) {
+      apply(opening.account, opening.dr_cr, opening.amount);
+    }
+    for (const entry of key.entries ?? []) {
+      apply(entry.correct_account, entry.dr_cr, entry.amount);
+    }
+  }
+
+  return [...net.entries()]
+    .filter(([, signed]) => Math.abs(signed) >= 0.005)
+    .map(([account, signed]) => ({
+      account,
+      dr_cr: signed > 0 ? ('Dr' as const) : ('Cr' as const),
+      amount: Math.abs(signed),
+    }));
+}
+
 export type CompanyLedgerRegistryEntry = {
   ledger_name: string;
   ledger_type: string;

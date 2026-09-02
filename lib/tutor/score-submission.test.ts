@@ -847,3 +847,79 @@ describe('voucher-type-aware narration (Phase 3, spec 15)', () => {
     expect(diff?.error_code).toBe('NARRATION_MISSING');
   });
 });
+
+describe('Trial Balance tie-out account matching (2026-09-02)', () => {
+  const leg = (
+    sequence: number,
+    account: string,
+    drCr: 'Dr' | 'Cr',
+    amount: number,
+  ) => ({
+    sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Sales',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['sales_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+
+  it('does not let a short account name swallow a longer, different one', () => {
+    // "Sales" matched BOTH "Sales" and "Sales Returns" through containment,
+    // so each account was compared against the sum of the two and tie-out
+    // could never succeed for any submission using a returns ledger.
+    const answerKey = {
+      entries: [
+        leg(1, 'Customer A', 'Dr', 85000),
+        leg(1, 'Sales', 'Cr', 100000),
+        leg(1, 'Sales Returns', 'Dr', 15000),
+      ],
+    };
+    const dayBook = {
+      vouchers: [
+        {
+          voucherType: 'Sales', date: '20260504', narration: 'Being the sale',
+          ledgerEntries: [
+            { ledgerName: 'Customer A', amount: 85000, drOrCr: 'Dr' as const, billAllocations: [] },
+            { ledgerName: 'Sales', amount: 100000, drOrCr: 'Cr' as const, billAllocations: [] },
+            { ledgerName: 'Sales Returns', amount: 15000, drOrCr: 'Dr' as const, billAllocations: [] },
+          ],
+        },
+      ],
+    };
+    const trialBalance = {
+      ledgers: [
+        { ledgerName: 'Customer A', closingDebit: 85000, closingCredit: 0 },
+        { ledgerName: 'Sales', closingDebit: 0, closingCredit: 100000 },
+        { ledgerName: 'Sales Returns', closingDebit: 15000, closingCredit: 0 },
+      ],
+    };
+
+    expect(scoreSubmission(dayBook, trialBalance, answerKey).tb_tie_out).toBe(true);
+  });
+
+  it('still sums a genuinely split account when no exact row exists', () => {
+    // The behaviour the containment rule exists for: the learner split one
+    // logical "Sales" across two ledgers of their own naming.
+    const answerKey = {
+      entries: [leg(1, 'Customer A', 'Dr', 100000), leg(1, 'Sales', 'Cr', 100000)],
+    };
+    const dayBook = {
+      vouchers: [
+        {
+          voucherType: 'Sales', date: '20260504', narration: 'Being the sale',
+          ledgerEntries: [
+            { ledgerName: 'Customer A', amount: 100000, drOrCr: 'Dr' as const, billAllocations: [] },
+            { ledgerName: 'Sales', amount: 100000, drOrCr: 'Cr' as const, billAllocations: [] },
+          ],
+        },
+      ],
+    };
+    const trialBalance = {
+      ledgers: [
+        { ledgerName: 'Customer A', closingDebit: 100000, closingCredit: 0 },
+        { ledgerName: 'Credit Sales A/c', closingDebit: 0, closingCredit: 60000 },
+        { ledgerName: 'Cash Sales A/c', closingDebit: 0, closingCredit: 40000 },
+      ],
+    };
+
+    expect(scoreSubmission(dayBook, trialBalance, answerKey).tb_tie_out).toBe(true);
+  });
+});

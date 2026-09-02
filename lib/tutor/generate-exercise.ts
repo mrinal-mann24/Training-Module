@@ -23,6 +23,7 @@ import {
   getRecentCompanyTransactionLog,
   getCompanyName,
   getExpectedCashPosition,
+  getExpectedOpeningBalances,
   registerCompanyLedgers,
   appendCompanyTransactionLog,
 } from "@/lib/db/queries/company";
@@ -543,6 +544,69 @@ export function checkDocumentBackedDescriptions(
   return `Document-backed text violated: transaction(s) ${offenders.join(", ")} have requires_source_document true but their text states an amount or a GST rate. A document-backed transaction's line is a short pointer (date, party, what happened, which document to read) with NO figures — the learner reads the figures from the document itself. Rewrite those lines as pointers, keeping the exact figures only in the hidden answer key.`;
 }
 
+// Double-entry integrity (2026-09-02): every transaction's answer key must
+// carry BOTH sides. A live batch was delivered with 12 of 12 transactions
+// holding a single leg ("Dr HDFC Bank 90,000" with no matching credit),
+// which silently broke three things at once: the missing side was never
+// scored, the Trial Balance maths counted half of each transaction, and the
+// cash-feasibility walk could not see the cash legs at all — so an
+// unpostable ₹90,000 deposit sailed through.
+//
+// The amount comparison deliberately runs ONLY on transactions with no tax
+// component. The answer-key model carries GST and TDS as voucher-level
+// METADATA rather than ledger legs (see score-submission.ts's tie-out
+// exemption), so a taxed sale legitimately shows Dr 118,000 against Cr
+// 100,000. Contra, receipt, payment and journal transactions carry no such
+// metadata, and those are exactly where an imbalance corrupts cash.
+const TAX_LEG_PATTERN = /\b(cgst|sgst|igst|gst|tds)\b/i;
+const DOUBLE_ENTRY_TOLERANCE = 0.01;
+
+export function checkDoubleEntry(generated: GeneratedExercise): string | null {
+  const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
+  for (const entry of generated.answer_key.entries) {
+    const group = bySequence.get(entry.sequence) ?? [];
+    group.push(entry);
+    bySequence.set(entry.sequence, group);
+  }
+
+  const missingSide: number[] = [];
+  const unbalanced: string[] = [];
+
+  for (const [sequence, legs] of [...bySequence.entries()].sort((a, b) => a[0] - b[0])) {
+    const debits = legs.filter((leg) => leg.dr_cr === "Dr");
+    const credits = legs.filter((leg) => leg.dr_cr === "Cr");
+
+    if (debits.length === 0 || credits.length === 0) {
+      missingSide.push(sequence);
+      continue;
+    }
+
+    const carriesTaxMetadata = legs.some((leg) => leg.gst_head !== null || leg.tds_section !== null);
+    const hasExplicitTaxLeg = legs.some((leg) => TAX_LEG_PATTERN.test(leg.correct_account));
+    if (carriesTaxMetadata && !hasExplicitTaxLeg) {
+      continue; // GST/TDS held as metadata — an imbalance here is by design.
+    }
+
+    const drTotal = debits.reduce((sum, leg) => sum + leg.amount, 0);
+    const crTotal = credits.reduce((sum, leg) => sum + leg.amount, 0);
+    if (Math.abs(drTotal - crTotal) > DOUBLE_ENTRY_TOLERANCE) {
+      unbalanced.push(`transaction ${sequence} (Dr ${Math.round(drTotal)} vs Cr ${Math.round(crTotal)})`);
+    }
+  }
+
+  const problems: string[] = [];
+  if (missingSide.length > 0) {
+    problems.push(
+      `transaction(s) ${missingSide.join(", ")} have only one side. EVERY transaction's answer key needs at least one Dr leg AND at least one Cr leg: a contra deposit is Dr the bank and Cr Cash, a payment is Dr the party and Cr the bank, a sale is Dr the customer and Cr Sales.`,
+    );
+  }
+  if (unbalanced.length > 0) {
+    problems.push(`${unbalanced.join("; ")} do not balance: total debits must equal total credits.`);
+  }
+
+  return problems.length > 0 ? `Double-entry violated: ${problems.join(" ")}` : null;
+}
+
 // Cash/bank feasibility (2026-09-02): a generated batch must be POSTABLE
 // from the company's actual position — a learner cannot deposit cash she
 // does not hold. Reported live: a batch opened with a ₹45,000 cash deposit
@@ -643,12 +707,13 @@ export async function generateAdaptiveExercise(
     : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition] =
+  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition, openingBalances] =
     await Promise.all([
       getCompanyLedgerRegistry(supabase, learnerId),
       getRecentCompanyTransactionLog(supabase, learnerId),
       getCompanyName(supabase, learnerId),
       getExpectedCashPosition(supabase, learnerId),
+      getExpectedOpeningBalances(supabase, learnerId),
     ]);
 
   const promptParams = {
@@ -710,8 +775,18 @@ export async function generateAdaptiveExercise(
       );
       const monthError = checkBatchMonth(parsed.data, exerciseMonth);
       const documentTextError = checkDocumentBackedDescriptions(parsed.data);
+      // Double-entry runs BEFORE cash feasibility in the message order
+      // because a single-leg key makes the cash walk blind — fixing the legs
+      // is what lets the cash check see the movements at all.
+      const doubleEntryError = checkDoubleEntry(parsed.data);
       const cashError = checkCashFeasibility(parsed.data, cashPosition);
-      const batchError = [compositionError, monthError, documentTextError, cashError]
+      const batchError = [
+        compositionError,
+        monthError,
+        documentTextError,
+        doubleEntryError,
+        cashError,
+      ]
         .filter(Boolean)
         .join(" ");
       if (batchError === "") {
@@ -739,14 +814,25 @@ export async function generateAdaptiveExercise(
   // Slow work (LLM + PDF render + upload) BEFORE the exercise row exists —
   // the chat's poll delivers the exercise as soon as the row appears, so
   // documents must already be uploaded by then (2026-09-01 race fix).
+  // The learner keeps ONE continuous set of books, so this batch's answer
+  // key must describe the company's cumulative position, not just its own
+  // movements: expected closing = carried-forward opening + this batch.
+  // Without it checkTrialBalanceTieOut compared batch-only movements against
+  // the learner's cumulative Tally export and failed a flawless submission,
+  // capping every adaptive result at 'partial' (2026-09-02).
+  const generatedWithOpenings: GeneratedExercise = {
+    ...generated,
+    answer_key: { ...generated.answer_key, opening_balances: openingBalances },
+  };
+
   const documents = await prepareSourceDocuments(
     supabase,
     learnerId,
-    generated,
+    generatedWithOpenings,
     companyName ?? "Blossom Retail Pvt Ltd",
   );
 
-  const { id } = await insertExercise(supabase, learnerId, kind, generated);
+  const { id } = await insertExercise(supabase, learnerId, kind, generatedWithOpenings);
 
   await attachSourceDocuments(supabase, id, documents);
 
