@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatExerciseContent } from '@/lib/chat/exercise-content';
 import type { ChatMessage } from '@/app/(chat)/chat/message';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { Submission } from '@/lib/db/queries/submissions';
@@ -49,7 +50,7 @@ export function assembleTimeline(rows: {
         id: `exercise-${exercise.id}`,
         role: 'assistant',
         kind: 'exercise',
-        content: itemLines ? `${exercise.scenario}\n\n${itemLines}` : exercise.scenario,
+        content: formatExerciseContent(exercise.scenario, itemLines),
         // Historical module numbers aren't stored (module is a derived
         // progress value); the current number is a close-enough label for
         // history and exact for the latest exercise.

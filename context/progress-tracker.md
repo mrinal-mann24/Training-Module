@@ -875,3 +875,13 @@ positive (Garima 10,000 → 30,000, closing 9,900; Praveen 50,000 → 70,000,
 closing 11,400 after his 3,500 cash payment), corrects the "minus Rs …"
 figure in the prose, and strips Praveen's duplicated inline list. To be run
 by the owner before either uploads Level 3.
+
+### 2026-09-02 (session 8) — "Stock items are optional" note on every exercise
+
+Praveen asked whether Level 3's itemised invoices require stock items. The
+evaluator scores ledgers only, so `lib/chat/exercise-content.ts` now composes
+the exercise message (scenario + items + a fixed note: stock items optional,
+accounting mode is fine, evaluation checks ledgers/amounts/GST/bill
+references). Both message builders (`build-timeline.ts` server timeline and
+`ChatShell.tsx` live append) use it, so the text cannot drift. Deterministic
+UI text, not a prompt change — applies to every exercise including the pack.

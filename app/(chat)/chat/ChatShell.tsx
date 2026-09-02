@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
+import { formatExerciseContent } from '@/lib/chat/exercise-content';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
@@ -34,7 +35,7 @@ function exerciseToMessages(
       id: `exercise-${exercise.id}`,
       role: 'assistant',
       kind: 'exercise',
-      content: `${exercise.scenario}\n\n${itemLines}`,
+      content: formatExerciseContent(exercise.scenario, itemLines),
       // Small inline progress label, existing token styles only — no new
       // screen (Unit 09's design note; the full progress view is Unit 12).
       progressLabel: `Module ${moduleNumber} · Level ${exercise.difficulty_level.replace('L', '')}`,
