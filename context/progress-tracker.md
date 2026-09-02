@@ -849,3 +849,29 @@ split on commas BEFORE the parenthetical was stripped, so a key like
 non-references. Both `billReferenceTokens` (documents) and
 `diffBillReference` (scorer) now strip parentheticals first, then split.
 Regression test added to the scorer suite.
+
+### 2026-09-02 (session 7) — Carried-forward openings double-counted April (Praveen's "-35,200 vs -80,100")
+
+Praveen reported his Level 3 said the till was at -35,200 while his Tally
+showed Cash Cr 80,100 (+ a 25,000 petty-cash ledger = -55,100). His books
+were right; the key was wrong. `getExpectedOpeningBalances` /
+`getExpectedCashPosition` summed EVERY prior key's opening_balances +
+entries, but a generated key's openings are already the cumulative position
+(stamped from the same function), so April was counted twice: both Level 3
+keys opened with HDFC at ~18.2L instead of ~9.5L, Sales at 51L instead of
+26L, Garima's till at -200 instead of -20,100 (31 of 35/36 accounts wrong).
+The 2026-09-02 (session 5) verification of those openings used the same
+flawed netting and therefore passed — a wrong check, corrected here.
+
+Fix: `netAnswerKeys` in `lib/db/queries/company.ts` — a key's non-empty
+opening_balances RESET the running position before its entries apply; keys
+without openings add on top. `cashPositionFromNet` / `openingBalancesFromNet`
+shape the two consumers off the same net. Unit tests in `company.test.ts`.
+
+Live data: `Downloads/patch-level3-openings.sql` (backup JSON alongside)
+rewrites both Level 3 keys' opening_balances to the true post-Level-2
+position, raises Transaction 1's withdrawal so the till actually turns
+positive (Garima 10,000 → 30,000, closing 9,900; Praveen 50,000 → 70,000,
+closing 11,400 after his 3,500 cash payment), corrects the "minus Rs …"
+figure in the prose, and strips Praveen's duplicated inline list. To be run
+by the owner before either uploads Level 3.

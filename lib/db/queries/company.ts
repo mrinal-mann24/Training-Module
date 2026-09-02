@@ -22,10 +22,51 @@ export type CompanyCashPosition = { cash: number; bank: number };
 // names, never amounts). Netted over her real data this returns 19,900,
 // and her delivered batch drives it to -20,100 — the impossibility she
 // spotted.
-export async function getExpectedCashPosition(
-  supabase: SupabaseClient,
-  learnerId: string,
-): Promise<CompanyCashPosition> {
+// Netting rule for the company's position across its answer keys. A key's
+// opening_balances are the company's CUMULATIVE position at the start of
+// that batch: the pack's openings on the diagnostic, the stamped
+// carry-forward on every generated batch. They therefore RESET the running
+// position before that batch's entries are applied. Adding them on top of
+// the earlier keys counted April twice — live 2026-09-02: both Level 3 keys
+// opened with HDFC at 18.2L instead of 9.5L and Praveen's till at -35,200
+// instead of -55,100, which he spotted against his own Tally (his books were
+// right; the key was wrong). Keys without openings (older batches) simply
+// add their movements on top.
+export function netAnswerKeys(keys: AnswerKey[]): Map<string, number> {
+  let net = new Map<string, number>();
+  const apply = (account: string, drCr: 'Dr' | 'Cr', amount: number) => {
+    if (!account) {
+      return;
+    }
+    net.set(account, (net.get(account) ?? 0) + (drCr === 'Dr' ? amount : -amount));
+  };
+  for (const key of keys) {
+    if (key.opening_balances && key.opening_balances.length > 0) {
+      net = new Map<string, number>();
+      for (const opening of key.opening_balances) {
+        apply(opening.account, opening.dr_cr, opening.amount);
+      }
+    }
+    for (const entry of key.entries ?? []) {
+      apply(entry.correct_account, entry.dr_cr, entry.amount);
+    }
+  }
+  return net;
+}
+
+export function cashPositionFromNet(net: Map<string, number>): CompanyCashPosition {
+  const position: CompanyCashPosition = { cash: 0, bank: 0 };
+  for (const [account, signed] of net) {
+    if (CASH_ACCOUNT_PATTERN.test(account)) {
+      position.cash += signed;
+    } else if (BANK_ACCOUNT_PATTERN.test(account)) {
+      position.bank += signed;
+    }
+  }
+  return position;
+}
+
+async function loadAnswerKeys(supabase: SupabaseClient, learnerId: string): Promise<AnswerKey[]> {
   const { data, error } = await supabase
     .from('exercises')
     .select('answer_key')
@@ -36,32 +77,18 @@ export async function getExpectedCashPosition(
     throw error;
   }
 
-  const position: CompanyCashPosition = { cash: 0, bank: 0 };
-  for (const row of data ?? []) {
-    const key = (row as { answer_key: AnswerKey | null }).answer_key;
-    if (!key) {
-      continue;
-    }
-    applyCashMovements(position, key.opening_balances ?? []);
-    applyCashMovements(position, key.entries ?? []);
-  }
-  return position;
+  return (data ?? [])
+    .map((row) => (row as { answer_key: AnswerKey | null }).answer_key)
+    .filter((key): key is AnswerKey => key !== null);
 }
 
-function applyCashMovements(
-  position: CompanyCashPosition,
-  legs: { account?: string; correct_account?: string; dr_cr: 'Dr' | 'Cr'; amount: number }[],
-): void {
-  for (const leg of legs) {
-    const account = leg.account ?? leg.correct_account ?? '';
-    const signed = leg.dr_cr === 'Dr' ? leg.amount : -leg.amount;
-    if (CASH_ACCOUNT_PATTERN.test(account)) {
-      position.cash += signed;
-    } else if (BANK_ACCOUNT_PATTERN.test(account)) {
-      position.bank += signed;
-    }
-  }
+export async function getExpectedCashPosition(
+  supabase: SupabaseClient,
+  learnerId: string,
+): Promise<CompanyCashPosition> {
+  return cashPositionFromNet(netAnswerKeys(await loadAnswerKeys(supabase, learnerId)));
 }
+
 
 // GST/TDS ledgers are excluded from the carried-forward opening position:
 // the answer-key model holds GST and TDS as voucher-level METADATA
@@ -81,48 +108,21 @@ export type OpeningBalance = { account: string; dr_cr: 'Dr' | 'Cr'; amount: numb
 // checkTrialBalanceTieOut failed even a flawless submission and capped every
 // adaptive result at 'partial' (proved 2026-09-02: a 100%-correct May
 // submission scored 100% with tb_tie_out false).
-export async function getExpectedOpeningBalances(
-  supabase: SupabaseClient,
-  learnerId: string,
-): Promise<OpeningBalance[]> {
-  const { data, error } = await supabase
-    .from('exercises')
-    .select('answer_key')
-    .eq('learner_id', learnerId)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  const net = new Map<string, number>();
-  const apply = (account: string, drCr: 'Dr' | 'Cr', amount: number) => {
-    if (!account || TAX_LEDGER_PATTERN.test(account)) {
-      return;
-    }
-    net.set(account, (net.get(account) ?? 0) + (drCr === 'Dr' ? amount : -amount));
-  };
-
-  for (const row of data ?? []) {
-    const key = (row as { answer_key: AnswerKey | null }).answer_key;
-    if (!key) {
-      continue;
-    }
-    for (const opening of key.opening_balances ?? []) {
-      apply(opening.account, opening.dr_cr, opening.amount);
-    }
-    for (const entry of key.entries ?? []) {
-      apply(entry.correct_account, entry.dr_cr, entry.amount);
-    }
-  }
-
+export function openingBalancesFromNet(net: Map<string, number>): OpeningBalance[] {
   return [...net.entries()]
-    .filter(([, signed]) => Math.abs(signed) >= 0.005)
+    .filter(([account, signed]) => !TAX_LEDGER_PATTERN.test(account) && Math.abs(signed) >= 0.005)
     .map(([account, signed]) => ({
       account,
       dr_cr: signed > 0 ? ('Dr' as const) : ('Cr' as const),
       amount: Math.abs(signed),
     }));
+}
+
+export async function getExpectedOpeningBalances(
+  supabase: SupabaseClient,
+  learnerId: string,
+): Promise<OpeningBalance[]> {
+  return openingBalancesFromNet(netAnswerKeys(await loadAnswerKeys(supabase, learnerId)));
 }
 
 export type CompanyLedgerRegistryEntry = {
