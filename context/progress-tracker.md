@@ -810,3 +810,42 @@ Cosmetic, not scored: the generated bank statement's running balance column
 narration UTRs (UTR7788392…) or the true HDFC balance (~17.9L). Narration is
 scored for presence only, so no learner impact; candidate for a later
 statement-grounding pass.
+
+### 2026-09-02 (session 6) — Praveen's two Level 2/3 complaints → two generator guardrails
+
+1. **Bank statement must show what the key expects (invisible bill reference).**
+   Praveen's Level 2 key demanded bill reference `KE/2026/018` (and
+   `MA/2026/09`) on bank-backed transactions, but the statement lines only
+   read "NEFT/…/KARNATAKA EMPORIUM/RCP" and the question text carried no
+   number — the reference existed nowhere the learner could see, so his
+   correct allocation against the open April invoices was
+   BILL_REFERENCE_WRONG and the coaching quoted the invisible number back.
+   New `checkBankStatementContent` in `lib/documents/generate-source-document.ts`
+   (mirrors `checkVendorInvoiceContent`): every key transaction must map to
+   exactly one statement line on the correct side (debit/credit derived from
+   the bank leg's direction), for the exact amount, on the transaction's own
+   date, whose narration contains the bill reference (annotations and the
+   "Against" prefix stripped). Violations feed the existing retry loop. The
+   statement prompt now states the reference-in-narration requirement.
+2. **Scenario text duplicating the transaction list.** The chat renders
+   scenario + structured transactions as a numbered list; Praveen's Level 3
+   scenario prose also contained the 12 numbered items ("Post all twelve…"),
+   so he saw them twice. New `stripDuplicateTransactionList` in
+   `lib/tutor/generate-exercise.ts` removes numbered scenario lines that
+   restate a transaction (prefix/equality match on normalised text), applied
+   after validation and before documents/insert; the adaptive prompt now says
+   the list lives ONLY in the `transactions` array.
+
+Regression tests added for both (`checkBankStatementContent`,
+`stripDuplicateTransactionList`). Praveen's already-scored Level 2 is left
+as is (99%, two unfair bill-reference flags explained to him); both Level 3
+statements were verified to carry their references, so no live exercise
+needed patching.
+
+Follow-up (same session): the new statement check's test caught an ordering
+bug shared with the morning's scorer fix — bill-reference annotations were
+split on commas BEFORE the parenthetical was stripped, so a key like
+`KE/2026/018 (part payment, ₹30,000 balance outstanding)` shredded into
+non-references. Both `billReferenceTokens` (documents) and
+`diffBillReference` (scorer) now strip parentheticals first, then split.
+Regression test added to the scorer suite.

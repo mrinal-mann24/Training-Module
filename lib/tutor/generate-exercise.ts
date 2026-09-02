@@ -510,6 +510,46 @@ export function checkBatchMonth(
 const RUPEE_AMOUNT_PATTERN = /(?:₹|\bRs\.?\s?)\s*[\d,]+/i;
 const PERCENTAGE_PATTERN = /\d+(?:\.\d+)?\s*%/;
 
+// The chat renders an exercise as the scenario text followed by the
+// structured transactions as a numbered list. When the model ALSO writes the
+// numbered list inside the scenario text, the learner sees the same 10-12
+// items twice (Praveen, Level 3, 2026-09-02: "post all twelve… then again 12
+// entries"). Numbered lines in the scenario that restate a transaction are
+// removed deterministically; prose and unrelated numbered lines stay.
+const NUMBERED_LINE_PATTERN = /^\s*\d{1,2}[.)]\s+(.*)$/;
+
+function normalizeForCompare(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function stripDuplicateTransactionList(
+  generated: GeneratedExercise,
+): GeneratedExercise {
+  const descriptions = generated.transactions.map((transaction) =>
+    normalizeForCompare(transaction.description),
+  );
+  const restatesTransaction = (text: string): boolean => {
+    const normalized = normalizeForCompare(text);
+    if (normalized.length === 0) {
+      return false;
+    }
+    const probe = normalized.slice(0, 60);
+    return descriptions.some(
+      (description) =>
+        description === normalized ||
+        description.startsWith(probe) ||
+        normalized.startsWith(description.slice(0, 60)),
+    );
+  };
+
+  const kept = generated.scenario.split(/\r?\n/).filter((line) => {
+    const match = NUMBERED_LINE_PATTERN.exec(line);
+    return !(match && restatesTransaction(match[1]));
+  });
+  const scenario = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return scenario === generated.scenario ? generated : { ...generated, scenario };
+}
+
 export function checkDocumentBackedDescriptions(
   generated: GeneratedExercise,
 ): string | null {
@@ -815,6 +855,8 @@ export async function generateAdaptiveExercise(
       `Adaptive exercise generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
     );
   }
+
+  generated = stripDuplicateTransactionList(generated);
 
   // Slow work (LLM + PDF render + upload) BEFORE the exercise row exists —
   // the chat's poll delivers the exercise as soon as the row appears, so

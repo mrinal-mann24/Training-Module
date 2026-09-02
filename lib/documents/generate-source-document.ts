@@ -1,4 +1,5 @@
 import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
+import type { BankStatementContent } from '@/lib/schemas/source-document';
 import {
   buildBankStatementBatchPrompt,
   buildBankStatementBatchRetryPrompt,
@@ -148,6 +149,97 @@ export async function generateVendorInvoiceDocument(
 // 2026-09-01). Same bounded validate-and-retry pattern as above; the result
 // is additionally checked to carry exactly one line per input transaction so
 // a statement that silently drops or invents lines is retried, not rendered.
+// The statement must carry what the answer key expects the learner to read
+// off it. Live 2026-09-02 (Praveen, Level 2): the key demanded bill reference
+// "KE/2026/018" on a receipt, but the statement line only said
+// "NEFT/N26050114/KARNATAKA EMPORIUM/RCP" — the number existed nowhere the
+// learner could see, so a correct posting was BILL_REFERENCE_WRONG and the
+// coaching quoted an invisible invoice back at him. Each key transaction must
+// map to exactly one statement line on the right side, for the right amount,
+// on its own date, whose narration contains the bill reference (annotations
+// like "(part payment, …)" and the "Against" prefix are not part of the ref).
+const BANK_LEDGER_PATTERN = /\b(bank|hdfc|icici|sbi|axis|kotak)\b/i;
+
+function normalizeToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function billReferenceTokens(billReference: string): string[] {
+  // Parentheticals are stripped BEFORE splitting: "KE/2026/018 (part payment,
+  // ₹30,000 balance outstanding)" carries a comma inside the annotation, and
+  // splitting first shredded it into non-references (caught by the test).
+  return billReference
+    .replace(/\([^)]*\)/g, '')
+    .split(/[,;]/)
+    .map((ref) => ref.replace(/^\s*against\s+/i, ''))
+    .map(normalizeToken)
+    .filter((ref) => ref.length > 0);
+}
+
+function statementSideFor(entry: BankStatementLineInput['entry']): 'debit' | 'credit' {
+  // Money direction from the bank's statement: bank leg Dr = money in
+  // (credit on the statement), bank leg Cr = money out (debit). The flagged
+  // entry may be the bank leg itself or its counter-leg.
+  const bankLegIsDebit = BANK_LEDGER_PATTERN.test(entry.correct_account)
+    ? entry.dr_cr === 'Dr'
+    : entry.dr_cr === 'Cr';
+  return bankLegIsDebit ? 'credit' : 'debit';
+}
+
+export function checkBankStatementContent(
+  content: BankStatementContent,
+  lines: BankStatementLineInput[],
+): string | null {
+  const violations: string[] = [];
+  const claimed = new Set<number>();
+
+  for (const line of lines) {
+    const side = statementSideFor(line.entry);
+    const index = content.transactions.findIndex((transaction, i) => {
+      if (claimed.has(i)) {
+        return false;
+      }
+      const amount = side === 'debit' ? transaction.debit : transaction.credit;
+      return amount !== null && Math.abs(amount - line.entry.amount) < AMOUNT_TOLERANCE;
+    });
+    if (index === -1) {
+      violations.push(
+        `Exercise item ${line.entry.sequence} needs a statement line with ${side} exactly ${line.entry.amount} (and the other column null), but none was found.`,
+      );
+      continue;
+    }
+    claimed.add(index);
+    const transaction = content.transactions[index];
+
+    const expectedDate = extractTransactionDate(line.transactionDescription);
+    if (expectedDate) {
+      const printed = extractTransactionDate(transaction.date) ?? isoDate(transaction.date);
+      if (
+        !printed ||
+        printed.year !== expectedDate.year ||
+        printed.monthIndex !== expectedDate.monthIndex ||
+        printed.day !== expectedDate.day
+      ) {
+        violations.push(
+          `Exercise item ${line.entry.sequence}'s statement line is dated "${transaction.date}" but must be dated exactly "${formatInvoiceDate(expectedDate)}" (the transaction's own date).`,
+        );
+      }
+    }
+
+    if (line.entry.bill_reference) {
+      const narration = normalizeToken(transaction.narration);
+      const missing = billReferenceTokens(line.entry.bill_reference).filter((ref) => !narration.includes(ref));
+      if (missing.length > 0) {
+        violations.push(
+          `Exercise item ${line.entry.sequence}'s narration "${transaction.narration}" must contain the bill reference "${line.entry.bill_reference}" verbatim (the learner can only allocate against a reference they can see).`,
+        );
+      }
+    }
+  }
+
+  return violations.length === 0 ? null : violations.join(' ');
+}
+
 export async function generateBankStatementDocument(
   learnerId: string,
   lines: BankStatementLineInput[],
@@ -189,6 +281,11 @@ export async function generateBankStatementDocument(
       }
       if (parsed.data.content.transactions.length !== lines.length) {
         lastError = `The statement has ${parsed.data.content.transactions.length} line(s) but ${lines.length} transaction(s) were provided — produce exactly one statement line per listed transaction.`;
+        continue;
+      }
+      const contentError = checkBankStatementContent(parsed.data.content, lines);
+      if (contentError) {
+        lastError = contentError;
         continue;
       }
       return parsed.data;

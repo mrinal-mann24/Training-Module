@@ -1031,3 +1031,43 @@ describe('multi-rate invoices: consolidated vs split GST lines (Garima Level 3 T
     expect(result.per_voucher_diffs.some((d) => d.error_code === 'GST_MISSING' || d.error_code === 'ACCOUNT_WRONG')).toBe(true);
   });
 });
+
+describe('bill reference with a comma inside the annotation (Praveen Level 2 key format)', () => {
+  it('matches KE/2026/018 when the key says "KE/2026/018 (part payment, Rs 30,000 balance outstanding)"', () => {
+    const answerKey = {
+      entries: [
+        {
+          sequence: 1,
+          correct_account: 'Karnataka Emporium',
+          dr_cr: 'Cr' as const,
+          amount: 45000,
+          voucher_type: 'Receipt',
+          gst_head: null,
+          gst_rate: null,
+          tds_section: null,
+          tds_rate: null,
+          tds_base: null,
+          bill_reference: 'KE/2026/018 (part payment, ₹30,000 balance outstanding)',
+          narration: null,
+          concept_tags: ['bill_by_bill_referencing' as const],
+          requires_source_document: true,
+          source_document_type: 'bank_statement' as const,
+        },
+      ],
+    };
+    const dayBook = {
+      vouchers: [
+        {
+          voucherType: 'Receipt',
+          date: '20260514',
+          narration: 'NEFT/N26050114/KARNATAKA EMPORIUM/KE/2026/018 - Karnataka Emporium',
+          ledgerEntries: [
+            { ledgerName: 'Karnataka Emporium', amount: 45000, drOrCr: 'Cr' as const, billAllocations: [{ name: 'KE/2026/018', amount: 45000 }] },
+          ],
+        },
+      ],
+    };
+    const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
+    expect(result.per_voucher_diffs.find((d) => d.field === 'bill_reference')?.is_correct).toBe(true);
+  });
+});

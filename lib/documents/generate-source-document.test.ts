@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { checkVendorInvoiceContent } from './generate-source-document';
+import { checkBankStatementContent, checkVendorInvoiceContent } from './generate-source-document';
+import type { BankStatementLineInput } from '@/lib/llm/prompts/source-document';
 import {
   deriveInvoiceFigures,
   extractTransactionDate,
@@ -189,5 +190,92 @@ describe('extractTransactionDate', () => {
 
   it('returns null when no date is present', () => {
     expect(extractTransactionDate('Early in the month, goods arrived.')).toBeNull();
+  });
+});
+
+describe('checkBankStatementContent (Praveen Level 2 invisible bill reference, 2026-09-02)', () => {
+  const entry = (
+    sequence: number,
+    account: string,
+    drCr: 'Dr' | 'Cr',
+    amount: number,
+    voucherType: 'Receipt' | 'Payment' | 'Contra',
+    billReference: string | null,
+  ): BankStatementLineInput['entry'] => ({
+    sequence,
+    correct_account: account,
+    dr_cr: drCr,
+    amount,
+    voucher_type: voucherType,
+    gst_head: null,
+    gst_rate: null,
+    tds_section: null,
+    tds_rate: null,
+    tds_base: null,
+    bill_reference: billReference,
+    narration: null,
+    concept_tags: ['bill_by_bill_referencing'],
+    requires_source_document: true,
+    source_document_type: 'bank_statement',
+  });
+  const lines: BankStatementLineInput[] = [
+    {
+      entry: entry(7, 'Karnataka Emporium', 'Cr', 45000, 'Receipt', 'KE/2026/018 (part payment, ₹30,000 balance outstanding)'),
+      partyAccounts: ['Karnataka Emporium'],
+      transactionDescription: 'On 14-May-2026, a receipt from Karnataka Emporium landed in the bank: post it from the bank statement.',
+    },
+    {
+      entry: entry(8, 'Mehta & Associates', 'Dr', 35000, 'Payment', 'Against MA/2026/09'),
+      partyAccounts: ['Mehta & Associates'],
+      transactionDescription: 'On 16-May-2026, a payment to Mehta & Associates went out from the bank: post it from the bank statement.',
+    },
+  ];
+  const statement = (narrations: [string, string]) => ({
+    accountHolderName: 'Blossom Retail Pvt Ltd',
+    period: '14-May-2026 to 16-May-2026',
+    transactions: [
+      { date: '14-May-2026', narration: narrations[0], debit: null, credit: 45000, balance: 145000 },
+      { date: '16-May-2026', narration: narrations[1], debit: 35000, credit: null, balance: 110000 },
+    ],
+  });
+
+  it('accepts a statement whose narrations carry the bill references', () => {
+    expect(
+      checkBankStatementContent(
+        statement(['NEFT/N26050114/KARNATAKA EMPORIUM/KE/2026/018', 'NEFT/N26050116/MEHTA & ASSOCIATES/MA/2026/09']),
+        lines,
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects the live failure: the reference the key demands is nowhere on the statement', () => {
+    const error = checkBankStatementContent(
+      statement(['NEFT/N26050114/KARNATAKA EMPORIUM/RCP', 'NEFT/N26050116/MEHTA & ASSOCIATES/PMT']),
+      lines,
+    );
+    expect(error).toContain('KE/2026/018');
+    expect(error).toContain('MA/2026/09');
+  });
+
+  it('rejects a line on the wrong side or for the wrong amount', () => {
+    const wrongSide = {
+      ...statement(['NEFT/KE/2026/018', 'NEFT/MA/2026/09']),
+      transactions: [
+        { date: '14-May-2026', narration: 'NEFT/KE/2026/018', debit: 45000, credit: null, balance: 100000 },
+        { date: '16-May-2026', narration: 'NEFT/MA/2026/09', debit: 35000, credit: null, balance: 65000 },
+      ],
+    };
+    expect(checkBankStatementContent(wrongSide, lines)).toContain('Exercise item 7 needs a statement line with credit exactly 45000');
+  });
+
+  it('rejects a line dated on a different day than the transaction', () => {
+    const wrongDate = {
+      ...statement(['NEFT/KE/2026/018', 'NEFT/MA/2026/09']),
+      transactions: [
+        { date: '15-May-2026', narration: 'NEFT/KE/2026/018', debit: null, credit: 45000, balance: 145000 },
+        { date: '16-May-2026', narration: 'NEFT/MA/2026/09', debit: 35000, credit: null, balance: 110000 },
+      ],
+    };
+    expect(checkBankStatementContent(wrongDate, lines)).toContain('must be dated exactly "14-May-2026"');
   });
 });

@@ -568,3 +568,46 @@ describe('checkCashFeasibility with an overdrawn till (2026-09-02, live learners
     expect(checkCashFeasibility(batch, overdrawn)).toBeNull();
   });
 });
+
+import { stripDuplicateTransactionList } from './generate-exercise';
+
+describe('stripDuplicateTransactionList (Praveen Level 3 saw the 12 items twice, 2026-09-02)', () => {
+  const transactions = [
+    { sequence: 1, description: 'On 01-Jun-2026, withdraw Rs 50,000 from HDFC Bank — 1234 to Cash-in-Hand, to clear the overdrawn till and set a working float for the month.' },
+    { sequence: 2, description: 'On 02-Jun-2026, sell furnishings to Kolkata Emporium (West Bengal) on credit under Invoice INV-2201: base value Rs 78,000 plus IGST @18% Rs 14,040, total Rs 92,040.' },
+  ];
+  const base = {
+    scenario: '',
+    transactions,
+    answer_key: { entries: [] },
+    difficulty_level: 'L1',
+    variant: 'A',
+  } as unknown as GeneratedExercise;
+
+  it('removes numbered lines that restate the structured transactions, keeping the prose', () => {
+    const scenario = [
+      'Batch: same company, continuing. The till needs fixing first.',
+      '',
+      '1. On 01-Jun-2026, withdraw Rs 50,000 from HDFC Bank — 1234 to Cash-in-Hand, to clear the overdrawn till and set a working float for the month.',
+      '2. On 02-Jun-2026, sell furnishings to Kolkata Emporium (West Bengal) on credit under Invoice INV-2201: base value Rs 78,000 plus IGST @18% Rs 14,040, total Rs 92,040.',
+      '',
+      'Post all twelve into Blossom Retail Pvt Ltd, then export ONE Tally Day Book plus the Trial Balance.',
+    ].join('\n');
+    const result = stripDuplicateTransactionList({ ...base, scenario });
+    expect(result.scenario).toBe(
+      'Batch: same company, continuing. The till needs fixing first.\n\nPost all twelve into Blossom Retail Pvt Ltd, then export ONE Tally Day Book plus the Trial Balance.',
+    );
+    expect(result.transactions).toBe(transactions);
+  });
+
+  it('leaves a scenario without an inline list untouched (Garima Level 3)', () => {
+    const scenario = 'Batch: same company, continuing. Your sales vouchers have been strong. Deliverables: post everything below.';
+    const input = { ...base, scenario };
+    expect(stripDuplicateTransactionList(input)).toBe(input);
+  });
+
+  it('keeps numbered lines that are not transactions', () => {
+    const scenario = 'Two reminders:\n1. Export the Day Book in XML.\n2. Narrations carry the bank reference verbatim.';
+    expect(stripDuplicateTransactionList({ ...base, scenario }).scenario).toBe(scenario);
+  });
+});

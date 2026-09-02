@@ -453,9 +453,12 @@ function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRe
   // "BR-205" never matched (Garima's Level 2: 7 false BILL_REFERENCE_WRONGs,
   // 2026-09-02). Only the reference itself is compared: parentheticals and
   // the "Against" prefix are annotations, not part of the ref.
+  // Parentheticals are stripped BEFORE splitting: an annotation such as
+  // "(part payment, ₹30,000 balance outstanding)" carries its own comma.
   const expectedRefs = expected.bill_reference
+    .replace(/\([^)]*\)/g, '')
     .split(/[,;]/)
-    .map((ref) => ref.replace(/\([^)]*\)/g, '').replace(/^\s*against\s+/i, ''))
+    .map((ref) => ref.replace(/^\s*against\s+/i, ''))
     .map((ref) => normalizeAccountName(ref))
     .filter((ref) => ref.length > 0);
   const referenceCorrect = actualReferences.some((actual) => {

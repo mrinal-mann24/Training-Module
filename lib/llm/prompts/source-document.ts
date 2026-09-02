@@ -297,6 +297,11 @@ Hard requirements:
 - The account holder is EXACTLY "${companyName}" — never an invented company
   name; the period covers the span of the listed dates.
 - Line amounts must equal each transaction's stated amount exactly.
+- When a transaction lists a bill reference, that reference MUST appear
+  verbatim inside that line's narration (e.g. "NEFT/N26050114/KARNATAKA
+  EMPORIUM/INV KE-305"): the learner allocates the receipt or payment against
+  the bill number they read on the statement, and can never know a number the
+  statement does not show.
 
 ${transactionBlocks}
 

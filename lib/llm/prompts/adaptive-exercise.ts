@@ -110,7 +110,10 @@ their next set (this is the exact format proven in the pilot programme):
   learner's recently strong areas listed below when any are given; when none
   are, open with the frame and the target alone. Address the learner directly
   ("you"), never "the learner".
-- Then the transactions as a numbered list, each with a date, explicit parties with
+- The transactions themselves go ONLY in the structured "transactions" array: the
+  app renders that array as the numbered list directly under the scenario text,
+  so the scenario text must NOT repeat the numbered transactions (a learner saw
+  the same 12 items twice). Each array item has a date, explicit parties with
   their STATE where GST matters, explicit amounts (base plus GST stated separately
   where applicable), and any bill/invoice numbers — concrete and postable, never
   vague ("some goods", "a customer").
