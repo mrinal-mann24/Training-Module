@@ -771,6 +771,46 @@ export function stampOpeningPosition(
 // never seen, so the retry lists the party's real open bills.
 const FULL_SETTLEMENT_PATTERN = /full (?:and final )?(?:settlement|payment)|settl(?:es|ed|ing) in full|in full settlement|clears? the (?:bill|invoice) in full/i;
 
+// The model sometimes names a bill in the transaction text ("bill DT-2301",
+// "against bill INV-016") but leaves bill_reference null in the key
+// (Garima's Level 4, 2026-09-03: five purchases and one receipt). Then the
+// scorer never checks the allocation, the open-bills state never learns
+// the bill exists, and the settlement check never sees the reference. The
+// key is filled from the text BEFORE the checks run, so what the learner is
+// told and what the books track are the same thing.
+const BILL_IN_TEXT_PATTERN =
+  /\b(?:against\s+)?(?:bill|invoice|inv\.?)\s*(?:no\.?\s*)?([A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)\b/i;
+
+export function fillBillReferencesFromText(generated: GeneratedExercise): GeneratedExercise {
+  const descriptionBySequence = new Map<number, string>();
+  for (const transaction of generated.transactions) {
+    descriptionBySequence.set(transaction.sequence, transaction.description);
+  }
+  const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
+  for (const entry of generated.answer_key.entries) {
+    const legs = bySequence.get(entry.sequence) ?? [];
+    legs.push(entry);
+    bySequence.set(entry.sequence, legs);
+  }
+  const fill = new Map<number, string>();
+  for (const [sequence, legs] of bySequence) {
+    if (legs.some((leg) => leg.bill_reference)) continue;
+    if (!/^(sales|purchase|receipt|payment)$/i.test(legs[0].voucher_type)) continue;
+    const match = BILL_IN_TEXT_PATTERN.exec(descriptionBySequence.get(sequence) ?? "");
+    if (match) fill.set(sequence, match[1]);
+  }
+  if (fill.size === 0) return generated;
+  return {
+    ...generated,
+    answer_key: {
+      ...generated.answer_key,
+      entries: generated.answer_key.entries.map((entry) =>
+        fill.has(entry.sequence) ? { ...entry, bill_reference: fill.get(entry.sequence) ?? null } : entry,
+      ),
+    },
+  };
+}
+
 export function checkSettlementReferences(
   generated: GeneratedExercise,
   openBills: OpenBill[],
@@ -979,7 +1019,10 @@ export async function generateAdaptiveExercise(
       },
     });
 
-    const parsed = GeneratedExerciseSchema.safeParse(raw);
+    const parsedRaw = GeneratedExerciseSchema.safeParse(raw);
+    const parsed = parsedRaw.success
+      ? { success: true as const, data: fillBillReferencesFromText(parsedRaw.data) }
+      : parsedRaw;
 
     if (parsed.success) {
       // Composition, month, document-pointer, and cash-feasibility

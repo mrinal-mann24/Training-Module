@@ -244,9 +244,20 @@ export function ChatShell({
         current.includes(result.submission.id) ? current : [...current, result.submission.id],
       );
 
-      // Text sent alongside the files is a genuine question — answer it too,
-      // GPT-style, rather than silently dropping it.
-      if (text.length > 0 && !textPartType) {
+      // Text sent alongside the files: on an explain/review exercise it IS
+      // the typed part (Garima typed her Level 3 explanation in the same
+      // message as the two XMLs and the job waited 45 minutes for a part
+      // that had already been sent — 2026-09-03), so file it against the
+      // submission the upload just opened; otherwise it's a genuine
+      // question — answer it, GPT-style, rather than silently dropping it.
+      if (text.length > 0 && textPartType) {
+        const textResult = await submitTextPart(text);
+        if (textResult.status === 'error') {
+          appendTutorNote(
+            `Your files are in, but I couldn't record the explanation: ${textResult.error} Please send the explanation again as its own message.`,
+          );
+        }
+      } else if (text.length > 0) {
         handleAskQuestion(text);
       }
     });

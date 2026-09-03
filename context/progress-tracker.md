@@ -1072,3 +1072,36 @@ confirmed the entry was right. Names of 14+ characters now allow 3 edits;
 different long party names stay apart (tests). The coaching prose over-read
 a name mismatch as a classification error — a known limit of error-code-
 only coaching; the fix removes the false flag at the source. Tests: 256.
+
+### 2026-09-03 — Explanation typed with the files is now recorded; key refs filled from text
+
+Garima sent her Level 3 explanation in the SAME message as the two XMLs.
+`handleSend` only asked the text as a question when the exercise had no
+typed part, and silently dropped it when it did — so the job waited the full
+45-minute window and scored without it (98%, qualitative null). ChatShell
+now calls `submitTextPart` right after a successful `submitFiles` on an
+explain/review exercise (it joins the submission the upload opened), with a
+tutor note if that fails. Her Level 4 generated correctly (July, 12 tx,
+openings/statement/invoices verified).
+
+Also: the model sometimes names a bill in the text but leaves
+bill_reference null in the key (five purchases + a receipt in her Level 4).
+`fillBillReferencesFromText` copies "bill X" / "against bill X" from the
+description into the key before the checks run, so scoring, open-bills
+tracking and the settlement check all see it. Live fix for her Level 4:
+`Downloads/patch-garima-level4-refs.sql`. Tests: 259.
+
+Praveen: Level 5 scored 100%; escalation cleared; five concepts mastered;
+Level 6 (explain, L2, September) verified — openings, TDS purchase with
+194J, code-built statement, MS/778 settlement against a real open bill.
+
+### 2026-09-03 — TDS purchase invoices name the vendor; statement lines name the expense
+
+Praveen's Level 6 legal-fee invoice (SL-551) was rendered with "TDS Payable
+— u/s 194J" as the vendor and a total of 2,000: `deriveInvoiceFigures` took
+the first credited non-GST leg as the party, and on a TDS purchase that is
+the TDS leg. TDS legs are now excluded from party/base selection and the
+printed total is the vendor's net plus the TDS withheld (the gross fee the
+vendor actually bills). The code-built statement now names the expense
+(BANK CHARGES, TDS PAYABLE…) instead of "PARTY" on payments with no
+counterparty. Praveen's Level 6 to be regenerated via the admin script.

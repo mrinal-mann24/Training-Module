@@ -88,7 +88,12 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
     if (!date) {
       continue;
     }
-    const party = partyLegOf(legs.filter((leg) => !CASH_LEDGER_PATTERN.test(leg.correct_account)), legs[0].voucher_type);
+    const nonCashLegs = legs.filter((leg) => !CASH_LEDGER_PATTERN.test(leg.correct_account));
+    // An expense payment (bank charges, a TDS remittance) has no party; the
+    // statement still names what the line was for rather than "PARTY".
+    const party =
+      partyLegOf(nonCashLegs, legs[0].voucher_type) ??
+      nonCashLegs.find((leg) => !isBankLedger(leg.correct_account));
     const reference = legs[0].bill_reference;
     movements.push({
       sequence,

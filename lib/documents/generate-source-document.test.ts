@@ -279,3 +279,17 @@ describe('checkBankStatementContent (Praveen Level 2 invisible bill reference, 2
     expect(checkBankStatementContent(wrongDate, lines)).toContain('must be dated exactly "14-May-2026"');
   });
 });
+
+describe('deriveInvoiceFigures on a TDS purchase (Praveen Level 6 legal fee, 2026-09-03)', () => {
+  it('names the vendor, not TDS Payable, and prints the gross fee as the total', () => {
+    const figures = deriveInvoiceFigures([
+      leg({ correct_account: 'Legal & Professional Charges', dr_cr: 'Dr', amount: 20000, tds_section: '194J', tds_rate: 10, tds_base: 20000 }),
+      leg({ correct_account: 'TDS Payable — u/s 194J', dr_cr: 'Cr', amount: 2000, tds_section: '194J', tds_rate: 10, tds_base: 20000 }),
+      leg({ correct_account: 'Sharma Legal', dr_cr: 'Cr', amount: 18000, tds_section: '194J', tds_rate: 10, tds_base: 20000 }),
+    ]);
+    expect(figures.vendorAccount).toBe('Sharma Legal');
+    expect(figures.total).toBe(20000);
+    expect(figures.base).toBe(20000);
+    expect(figures.igst).toBeNull();
+  });
+});

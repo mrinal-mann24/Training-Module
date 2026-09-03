@@ -728,3 +728,33 @@ describe('checkSettlementReferences: an expense debited against a settled bill i
     expect(error).toContain('Rent');
   });
 });
+
+import { fillBillReferencesFromText } from './generate-exercise';
+
+describe('fillBillReferencesFromText (Garima Level 4: bills named in text, null in key — 2026-09-03)', () => {
+  const base = (description: string, voucherType: string, ref: string | null) => ({
+    scenario: '', difficulty_level: 'L1', variant: 'A',
+    transactions: [{ sequence: 1, description }],
+    answer_key: { entries: [
+      { ...entry(1, ['purchase_voucher_basics'], voucherType), bill_reference: ref },
+      { ...entry(1, ['purchase_voucher_basics'], voucherType), correct_account: 'HDFC Bank — 1234', bill_reference: ref },
+    ] },
+  }) as unknown as GeneratedExercise;
+
+  it('copies "bill DT-2301" from a purchase pointer into every leg of that sequence', () => {
+    const filled = fillBillReferencesFromText(base('On 02-Jul-2026, an invoice arrived from Deccan Traders, bill DT-2301: post it from the attached invoice.', 'Purchase', null));
+    expect(filled.answer_key.entries.map((e) => e.bill_reference)).toEqual(['DT-2301', 'DT-2301']);
+  });
+
+  it('copies "against bill INV-016" from a receipt pointer', () => {
+    const filled = fillBillReferencesFromText(base('On 14-Jul-2026, a receipt from Karnataka Emporium against bill INV-016 lands in the bank.', 'Receipt', null));
+    expect(filled.answer_key.entries[0].bill_reference).toBe('INV-016');
+  });
+
+  it('leaves an existing reference and non-bill vouchers alone', () => {
+    const kept = fillBillReferencesFromText(base('bill DT-2301', 'Purchase', 'DT-2301 (New Ref)'));
+    expect(kept.answer_key.entries[0].bill_reference).toBe('DT-2301 (New Ref)');
+    const contra = fillBillReferencesFromText(base('cash deposit, slip CD-2026/07', 'Contra', null));
+    expect(contra.answer_key.entries[0].bill_reference).toBeNull();
+  });
+});
