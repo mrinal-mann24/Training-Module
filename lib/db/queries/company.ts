@@ -352,3 +352,36 @@ export async function appendCompanyTransactionLog(
     throw error;
   }
 }
+
+// Everything the batch generator knows about the learner's company, read in
+// ONE place (2026-09-03). The prompt and the deterministic checks both
+// consume this object, so a fact cannot be given to the model and forgotten
+// by the checks (or vice versa) — every hallucination so far was a fact
+// that existed in the books but was missing from, or wrong in, what the
+// model was told.
+export type CompanyState = {
+  companyName: string | null;
+  ledgerRegistry: CompanyLedgerRegistryEntry[];
+  recentTransactionLog: CompanyTransactionLogEntry[];
+  cashPosition: CompanyCashPosition;
+  openingBalances: OpeningBalance[];
+  openBills: OpenBill[];
+};
+
+export async function getCompanyState(supabase: SupabaseClient, learnerId: string): Promise<CompanyState> {
+  const [keys, ledgerRegistry, recentTransactionLog, companyName] = await Promise.all([
+    loadAnswerKeys(supabase, learnerId),
+    getCompanyLedgerRegistry(supabase, learnerId),
+    getRecentCompanyTransactionLog(supabase, learnerId),
+    getCompanyName(supabase, learnerId),
+  ]);
+  const net = netAnswerKeys(keys);
+  return {
+    companyName,
+    ledgerRegistry,
+    recentTransactionLog,
+    cashPosition: cashPositionFromNet(net),
+    openingBalances: openingBalancesFromNet(net),
+    openBills: openBillsFromKeys(keys),
+  };
+}

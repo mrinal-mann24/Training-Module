@@ -970,3 +970,23 @@ an amount above the balance, or a "full settlement" that doesn't equal it.
 Tests: 242. Live data: `Downloads/patch-settlement-refs.sql` (Praveen Tx 1
 → DT/334 69,620; Yeshas Tx 7 → INV-022 part payment accepting the printed
 BR/S/098 too; Tx 8 reworded as an advance New Ref).
+
+### 2026-09-03 — Company state in one read; bank statement built by code
+
+`getCompanyState` (company.ts) now returns company name, ledger registry,
+recent log, cash position, opening balances and open bills from ONE read of
+the answer keys; the adaptive generator consumes that object for both the
+prompt and every deterministic check, so a fact can no longer be handed to
+the model and skipped by the checks (or vice versa).
+
+The bank statement is no longer model-written. `lib/documents/build-bank-
+statement.ts` builds it from the answer key: one line per bank-side leg in
+date order, debit/credit from the leg's side, a running balance walked from
+the company's real opening bank balance, and a bank-shaped reference
+(NEFT/N<yymmdd><seq>/<PARTY>/<bill>, CASH DEPOSIT/CD…, CASH WITHDRAWAL/CW…)
+generated once and written into both the statement line and the key's
+narration (`applyBankReferences`). `prepareSourceDocuments` renders the
+supplied content; the LLM statement path (`generateBankStatementDocument`)
+is no longer called. Applies to adaptive/explain batches and the legacy
+generated diagnostic. Verified: both PDF templates render the code-built
+content. Tests: 246.

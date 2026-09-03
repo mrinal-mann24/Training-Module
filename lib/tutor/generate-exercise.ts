@@ -19,23 +19,20 @@ import {
 } from "@/lib/schemas/exercise";
 import { insertExercise } from "@/lib/db/queries/exercises";
 import {
-  getCompanyLedgerRegistry,
-  getRecentCompanyTransactionLog,
-  getCompanyName,
-  getExpectedCashPosition,
-  getExpectedOpeningBalances,
+  getCompanyState,
+  isBankLedger,
   registerCompanyLedgers,
   appendCompanyTransactionLog,
-  getOpenBills,
   normalizeBillReference,
   splitBillReferences,
   partyLegOf,
   type OpenBill,
 } from "@/lib/db/queries/company";
+import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/build-bank-statement";
+import type { BankStatementContent } from "@/lib/schemas/source-document";
 import { insertSourceDocument } from "@/lib/db/queries/source-documents";
 import {
   generateVendorInvoiceDocument,
-  generateBankStatementDocument,
 } from "@/lib/documents/generate-source-document";
 import { renderSourceDocumentPdf } from "@/lib/documents/render-source-document";
 import type {
@@ -151,6 +148,10 @@ async function prepareSourceDocuments(
   // invented a company ("Bank Statement — ABC Trading Co.", observed live
   // 2026-09-01).
   companyName: string,
+  // The bank statement is built by code from the answer key (see
+  // build-bank-statement.ts); null when the batch has no statement-backed
+  // bank lines. companyName is still used for the invoices' buyer block.
+  statement: BankStatementContent | null,
 ): Promise<PreparedSourceDocument[]> {
   const plan = planSourceDocuments(generatedExercise);
   // Storage folder + format-rotation seed base. Pre-generated (not the
@@ -195,11 +196,8 @@ async function prepareSourceDocuments(
   );
 
   const statementPromise =
-    plan.bankLines.length > 0
-      ? generateBankStatementDocument(learnerId, plan.bankLines, companyName).then(
-          (generated) =>
-            renderAndUpload(generated, "bank_statement", `${batchId}:bank-statement`),
-        )
+    plan.bankLines.length > 0 && statement
+      ? renderAndUpload({ doc_type: "bank_statement", content: statement }, "bank_statement", `${batchId}:bank-statement`)
       : null;
 
   const prepared = await Promise.all(
@@ -264,17 +262,34 @@ export async function generateDiagnosticExercise(
       // Documents first, exercise row last — see prepareSourceDocuments'
       // race note. The legacy generated diagnostic has no company registry
       // yet, so the product's one live company is pinned directly.
+      // Statement built by code from the key; the legacy diagnostic's bank
+      // opening is whatever its own opening_balances say (0 if none).
+      const openingBank = (parsed.data.answer_key.opening_balances ?? [])
+        .filter((opening) => isBankLedger(opening.account))
+        .reduce((sum, opening) => sum + (opening.dr_cr === "Dr" ? opening.amount : -opening.amount), 0);
+      const diagnosticStatement =
+        planSourceDocuments(parsed.data).bankLines.length > 0
+          ? buildBankStatementContent({
+              companyName: "Blossom Retail Pvt Ltd",
+              openingBankBalance: openingBank,
+              generated: parsed.data,
+            })
+          : null;
+      const diagnosticExercise = diagnosticStatement
+        ? applyBankReferences(parsed.data, diagnosticStatement.referenceBySequence)
+        : parsed.data;
       const documents = await prepareSourceDocuments(
         supabase,
         learnerId,
-        parsed.data,
+        diagnosticExercise,
         "Blossom Retail Pvt Ltd",
+        diagnosticStatement?.content ?? null,
       );
       const { id } = await insertExercise(
         supabase,
         learnerId,
         "diagnostic",
-        parsed.data,
+        diagnosticExercise,
       );
       await attachSourceDocuments(supabase, id, documents);
       return { id };
@@ -903,15 +918,16 @@ export async function generateAdaptiveExercise(
     : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition, openingBalances, openBills] =
-    await Promise.all([
-      getCompanyLedgerRegistry(supabase, learnerId),
-      getRecentCompanyTransactionLog(supabase, learnerId),
-      getCompanyName(supabase, learnerId),
-      getExpectedCashPosition(supabase, learnerId),
-      getExpectedOpeningBalances(supabase, learnerId),
-      getOpenBills(supabase, learnerId),
-    ]);
+  // One read of the company's state feeds BOTH the prompt and every
+  // deterministic check below (getCompanyState, 2026-09-03).
+  const {
+    ledgerRegistry: companyLedgerRegistry,
+    recentTransactionLog: recentCompanyTransactionLog,
+    companyName,
+    cashPosition,
+    openingBalances,
+    openBills,
+  } = await getCompanyState(supabase, learnerId);
 
   const promptParams = {
     targetConceptTag: target.conceptTag,
@@ -1033,14 +1049,31 @@ export async function generateAdaptiveExercise(
     answer_key: { ...generated.answer_key, opening_balances: openingBalances },
   };
 
+  // Statement lines, running balance and reference numbers come from the
+  // key and the real opening bank balance; the same references are written
+  // into the key's narrations so "copy the bank reference verbatim" is
+  // satisfiable (2026-09-03).
+  const statement =
+    planSourceDocuments(generatedWithOpenings).bankLines.length > 0
+      ? buildBankStatementContent({
+          companyName: companyName ?? "Blossom Retail Pvt Ltd",
+          openingBankBalance: cashPosition.bank,
+          generated: generatedWithOpenings,
+        })
+      : null;
+  const finalExercise = statement
+    ? applyBankReferences(generatedWithOpenings, statement.referenceBySequence)
+    : generatedWithOpenings;
+
   const documents = await prepareSourceDocuments(
     supabase,
     learnerId,
-    generatedWithOpenings,
+    finalExercise,
     companyName ?? "Blossom Retail Pvt Ltd",
+    statement?.content ?? null,
   );
 
-  const { id } = await insertExercise(supabase, learnerId, kind, generatedWithOpenings);
+  const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
 
   await attachSourceDocuments(supabase, id, documents);
 
