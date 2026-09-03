@@ -1158,3 +1158,57 @@ treatment from the keys, the prompt carries a PARTY STATES block, and
 `checkPartyTaxConsistency` rejects (hard) any sale/purchase that changes a
 known party's treatment. His Level 3 is left as generated (invoice and key
 agree; the learner posts what the invoice shows).
+
+### 2026-09-03 — Night surface: landing frame, sign in / sign up, onboarding
+
+The landing page and the whole auth shell moved to a scoped dark surface,
+built from a Vesper.ai reference the user supplied as inspiration only:
+structure and material language borrowed, every word, mark, claim and icon
+rewritten as AIA Academy's. The product surfaces (dashboard, chat, progress)
+are untouched and stay white — `.night` is a token block on a wrapper, not a
+second global theme and not dark mode.
+
+New: `Wordmark`/`SparkMark`, `Stats`, `landing-motion.ts` (one shared
+entrance timeline), `MotionPreference`. Rewritten: `page.tsx` (three-row
+single-viewport frame), `Navbar` (liquid-metal pills, phone menu),
+`Hero` (bottom-anchored, masked two-line headline), `VideoBackdrop`,
+`(auth)/layout.tsx`, `login/page.tsx`, `AuthForm` (both modes now carry
+their own heading and copy), `onboarding/page.tsx`, `OnboardingForm`.
+
+Three things the reference could not tell us, decided here:
+
+- **The hero clip is bright.** The spec says video at 100% opacity with no
+  overlay, which assumes a dark clip; ours is a pale, high-key illustration
+  and white type on it is unreadable. `VideoBackdrop` now ships with
+  `.night-scrim`, grading from a light wash at the top to solid black behind
+  the copy. The artwork still reads; the type is legible.
+- **No invented numbers.** The reference closes on adoption stats
+  ("4.2M+ workflows", "180+ teams"). There are none to quote, so the three
+  stats state product mechanics from `project-overview.md` instead: voucher
+  level scoring, the five-rung hint ladder, mastery at three clean runs
+  above 90%.
+- **Dead nav.** Benefits/Pricing/FAQ sections do not exist. The nav items and
+  "See how it works" stay `<button>`s rather than `#anchors` that go nowhere.
+
+Two real bugs found and fixed in the browser, not by reading:
+
+- With the nav `display: none` on phones, grid auto-placement pulled the
+  header CTA into the centre track and squeezed the wordmark until it
+  wrapped to two lines. Every header child is now pinned with an explicit
+  `col-start-*`.
+- `backdrop-filter` authored in `globals.css` is silently dropped by the
+  Tailwind v4 build (the rest of the same rule applies). All three frosted
+  surfaces now use `backdrop-blur-*` utilities; noted in `code-standards.md`
+  §28a and `ui-context.md` so it is not "fixed" back later.
+
+Verified at 1512x860 (zero page scroll, glass blur 16px), at 375x812
+(wordmark on one line, hero stacked, CTAs full-width, stats a column), the
+phone menu (opens, blurs, closes on Escape with body scroll restored and
+`aria-expanded` correct), and both auth modes. `tsc --noEmit` and `eslint`
+clean; 265/266 tests pass, the one failure being the pre-existing
+`tmp-verify/praveen.test.ts`, which reads an XML file from `Downloads` that
+is not on this machine.
+
+Left alone, flagged: `app/components/DashboardPreview.tsx` is now referenced
+by nothing (it was already unmounted before this work) and
+`app/components/ui/button.tsx` is no longer used by any night surface.

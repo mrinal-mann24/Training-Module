@@ -1,16 +1,19 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { cn } from '@/lib/cn';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
-import { Button } from '@/app/components/ui/button';
 import { submitOnboarding } from './actions';
 import { initialOnboardingFormState } from './onboarding-form-state';
 
 const DEFAULT_BOOKS_BEGIN_DATE = '2026-04-01';
 
-const INPUT_CLASSES =
-  'w-full rounded-lg border border-border bg-background px-4 py-2.5 font-body text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring';
+const INPUT_CLASSES = 'night-input w-full rounded-lg px-4 py-3 font-body text-sm';
+
+const CHOICE_CLASSES =
+  'night-choice cursor-pointer rounded-lg px-4 py-3 text-left text-sm font-medium';
+
+const SUBMIT_CLASSES =
+  'night-btn night-btn-solid inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-md font-body text-sm font-medium tracking-tight disabled:cursor-not-allowed';
 
 export function OnboardingForm() {
   const [state, formAction, isPending] = useActionState(
@@ -25,8 +28,8 @@ export function OnboardingForm() {
   return (
     <form action={formAction} className="flex flex-col gap-6 font-body">
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-foreground">Your name</legend>
-        <p className="text-sm leading-relaxed text-muted-foreground">
+        <legend className="text-sm font-medium text-white">Your name</legend>
+        <p className="night-muted text-sm leading-relaxed">
           Your tutor will address you by this name.
         </p>
         <input
@@ -40,37 +43,29 @@ export function OnboardingForm() {
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-foreground">Tally license mode</legend>
+        <legend className="text-sm font-medium text-white">Tally license mode</legend>
 
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => setLicenseMode('licensed')}
-            className={cn(
-              'cursor-pointer rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors',
-              licenseMode === 'licensed'
-                ? 'border-accent bg-accent/5 text-foreground ring-1 ring-ring'
-                : 'border-border bg-background text-muted-foreground hover:bg-secondary',
-            )}
+            aria-pressed={licenseMode === 'licensed'}
+            className={CHOICE_CLASSES}
           >
             Licensed Tally
           </button>
           <button
             type="button"
             onClick={() => setLicenseMode('educational')}
-            className={cn(
-              'cursor-pointer rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors',
-              licenseMode === 'educational'
-                ? 'border-accent bg-accent/5 text-foreground ring-1 ring-ring'
-                : 'border-border bg-background text-muted-foreground hover:bg-secondary',
-            )}
+            aria-pressed={licenseMode === 'educational'}
+            className={CHOICE_CLASSES}
           >
             Educational Mode
           </button>
         </div>
 
         {licenseMode === 'educational' && (
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p className="night-muted text-sm leading-relaxed">
             In Educational Mode, Tally restricts voucher entry to the 1st, 2nd, and last day of
             any month.
           </p>
@@ -80,7 +75,7 @@ export function OnboardingForm() {
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-foreground">Books Begin Date</legend>
+        <legend className="text-sm font-medium text-white">Books Begin Date</legend>
 
         <label htmlFor="books_begin_date" className="sr-only">
           Books Begin Date
@@ -96,11 +91,11 @@ export function OnboardingForm() {
         />
       </fieldset>
 
-      {state.error && <p className="text-sm text-status-error">{state.error}</p>}
+      {state.error && <p className="night-error text-sm">{state.error}</p>}
 
-      <Button type="submit" disabled={!canContinue || isPending} className="w-full">
+      <button type="submit" disabled={!canContinue || isPending} className={SUBMIT_CLASSES}>
         {isPending ? 'Continuing…' : 'Continue'}
-      </Button>
+      </button>
     </form>
   );
 }

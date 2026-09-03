@@ -48,6 +48,7 @@ This document exists so unit 5 and unit 20 look like they were written by the sa
 26. Shared design tokens (colors, spacing, type scale) are defined once in `tailwind.config.ts`. No hard-coded hex colors or pixel values scattered in component files.
 27. Class ordering is left to Prettier's Tailwind plugin — run it, don't hand-order classes for "style."
 28. Conditional classes use a `cn()` helper (clsx + tailwind-merge), never manual string concatenation or template-literal class building.
+28a. **Signature surface treatments may be authored CSS classes** (added 2026-09-03 with the night surface; see `ui-context.md`). A treatment qualifies only when it is (a) a multi-layer gradient, pseudo-element highlight, or fluid `clamp()` type ramp that utilities express badly, and (b) reused across more than one component. It is defined once in `globals.css` under a scoped token block, named `.<surface>-<role>`, and never re-stated inline. Ordinary layout, spacing, colour and state remain Tailwind utilities in the JSX — this is not a licence to write component CSS. Rule 26 still binds: the values live in one place. `backdrop-filter` is the known exception in the other direction — the Tailwind v4 build strips it from authored CSS, so it must be applied with `backdrop-blur-*` in the JSX.
 
 ## 6. Component Patterns
 

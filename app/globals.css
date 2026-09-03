@@ -47,3 +47,373 @@ body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }
+
+/*
+ * ── Night surface ─────────────────────────────────────────────────────────
+ *
+ * Scoped dark theme for the two marketing/auth surfaces only: the landing
+ * frame (`app/page.tsx`) and the auth shell (`app/(auth)/layout.tsx`). The
+ * product itself — dashboard, chat, progress — stays on the white theme
+ * defined above. `.night` is a token block on a wrapper element, NOT a
+ * second global theme and NOT dark mode: nothing inside the app inherits it.
+ *
+ * The signature treatments (liquid-metal pills, liquid-glass buttons, the
+ * frosted card, film grain) live here as classes rather than as utilities in
+ * JSX because each is a multi-layer gradient plus a swept highlight pseudo-
+ * element, reused across the header, hero and auth card. Per code-standards
+ * §26 the values are defined once, here, and never repeated in a component.
+ *
+ * Type sizes are fluid `clamp()` ramps rather than a stack of breakpoint
+ * blocks: one rule per role, continuous from a 360px phone to a 2560px
+ * display. Entrance animation is framer-motion (see `landing-motion.ts`),
+ * matching the convention that framer-motion owns animation in this app.
+ */
+.night {
+  /* Native controls (the onboarding date picker, scrollbars, autofill) render
+     from this, not from our tokens. Without it they arrive light on black. */
+  color-scheme: dark;
+
+  --night-muted: #9a9a9a;
+  --night-stat: #d8d8d8;
+  --night-line: rgb(255 255 255 / 16%);
+
+  background-color: #000;
+  color: #fff;
+}
+
+/* Three-row frame: header / hero / stats. Exactly one viewport, no scroll,
+   from the lg breakpoint up; free-flowing below it so phones can scroll. */
+.night-page {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100svh;
+}
+
+@media (min-width: 1024px) {
+  .night-page {
+    height: 100svh;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+/* Film grain, above every layer, inert to pointer events. */
+.night-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Type roles ─────────────────────────────────────────────────────────── */
+
+.night-headline {
+  font-size: clamp(2.125rem, 0.04rem + 3.92vw, 5.5rem);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+}
+
+/* The one serif moment on the page: a single emphasised phrase per line, set
+   in Instrument Serif italic and held back to muted grey on purpose so the
+   white sans reads as the primary voice. */
+.night-headline em {
+  font-family: var(--font-display);
+  font-size: 1.08em;
+  font-style: italic;
+  letter-spacing: -0.03em;
+  color: var(--night-muted);
+}
+
+.night-lede {
+  font-size: clamp(0.96875rem, 0.72rem + 0.47vw, 1.375rem);
+  line-height: 1.55;
+  letter-spacing: -0.015em;
+  color: var(--night-muted);
+}
+
+.night-stat {
+  font-size: clamp(0.78125rem, 0.65rem + 0.25vw, 1rem);
+  letter-spacing: -0.015em;
+  color: var(--night-stat);
+}
+
+/* Card-scale heading: same voice as the hero, sized for a form. */
+.night-title {
+  font-size: clamp(1.75rem, 1.4rem + 1.1vw, 2.25rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+
+.night-title em {
+  font-family: var(--font-display);
+  font-size: 1.1em;
+  font-style: italic;
+  letter-spacing: -0.03em;
+  color: var(--night-muted);
+}
+
+/* Secondary ink on the night surface. */
+.night-muted {
+  color: var(--night-muted);
+}
+
+/* The app's `--status-error` (#D0342C) is tuned for white and falls below
+   readable contrast on black, so the night surface carries its own. */
+.night-error {
+  color: #ff9a8f;
+}
+
+/* ── Liquid-metal pill (nav) ────────────────────────────────────────────── */
+
+.night-pill {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(198 198 198 / 55%);
+  background: linear-gradient(105deg, #050505 0%, #2a2a2a 48%, #4a4a4a 100%);
+  color: #f3f3f3;
+  transition:
+    background 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.night-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgb(255 255 255 / 16%) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.6s ease;
+}
+
+.night-pill:hover {
+  border-color: rgb(235 235 235 / 90%);
+  background: linear-gradient(105deg, #111 0%, #3a3a3a 45%, #6a6a6a 100%);
+  box-shadow: 0 0 18px rgb(200 210 230 / 18%);
+}
+
+.night-pill:hover::before {
+  transform: translateX(120%);
+}
+
+/*
+ * NOTE ON BLUR: `backdrop-filter` declared in plain CSS here is dropped by
+ * the Tailwind v4 build (verified in the browser: the rest of the same rule
+ * applies, that one declaration does not). The frosted surfaces therefore
+ * carry Tailwind's `backdrop-blur-*` utility in the JSX instead —
+ * `.night-btn-glass` -> backdrop-blur-lg, `.night-card` and
+ * `.night-menu-backdrop` -> backdrop-blur-xl. Do not move it back here.
+ */
+
+/* ── Liquid-glass buttons ───────────────────────────────────────────────── */
+
+/* `isolation: isolate` scopes the stacking context so the swept highlight
+   (`::after`, z-index -1) paints over the button's own gradient but under
+   its label. */
+.night-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    background 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    color 0.35s ease;
+}
+
+.night-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    115deg,
+    transparent 20%,
+    rgb(255 255 255 / 45%) 48%,
+    transparent 76%
+  );
+  transform: translateX(-130%);
+  transition: transform 0.65s ease;
+}
+
+.night-btn:hover::after {
+  transform: translateX(130%);
+}
+
+.night-btn-solid {
+  border: 1px solid #fff;
+  background: linear-gradient(180deg, #fff 0%, #e7e7e7 48%, #cfcfcf 100%);
+  color: #111;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 95%);
+}
+
+.night-btn-solid:hover {
+  border-color: #f2f6ff;
+  background: linear-gradient(180deg, #fff 0%, #f3f6ff 42%, #d5def2 100%);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 26px rgb(186 208 255 / 40%),
+    0 8px 18px rgb(255 255 255 / 14%);
+}
+
+.night-btn-glass {
+  border: 1px solid rgb(198 198 198 / 55%);
+  background: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 12%),
+    rgb(0 0 0 / 50%) 46%,
+    rgb(150 170 200 / 10%)
+  );
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+.night-btn-glass:hover {
+  border-color: rgb(220 230 255 / 80%);
+  background: linear-gradient(
+    135deg,
+    rgb(210 225 255 / 18%),
+    rgb(0 0 0 / 35%) 48%,
+    rgb(180 195 220 / 16%)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    0 0 24px rgb(170 200 255 / 28%);
+}
+
+.night-btn-solid:disabled,
+.night-btn-glass:disabled {
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* ── Badge ─────────────────────────────────────────────────────────────── */
+
+.night-badge {
+  background: linear-gradient(90deg, #7d7d7d 0%, #2a2a2a 52%, #0a0a0a 100%);
+  color: #f2f2f2;
+  font-size: clamp(0.78125rem, 0.72rem + 0.12vw, 0.90625rem);
+  letter-spacing: -0.01em;
+}
+
+/* ── Frosted card + form controls (auth) ───────────────────────────────── */
+
+.night-card {
+  border: 1px solid var(--night-line);
+  background: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 8%),
+    rgb(0 0 0 / 55%) 52%,
+    rgb(150 170 200 / 6%)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    0 30px 90px -20px rgb(0 0 0 / 80%);
+}
+
+.night-input {
+  border: 1px solid var(--night-line);
+  background: rgb(255 255 255 / 4%);
+  color: #fff;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.night-input::placeholder {
+  color: #6f6f6f;
+}
+
+.night-input:focus {
+  outline: none;
+  border-color: rgb(220 230 255 / 70%);
+  background: rgb(255 255 255 / 6%);
+  box-shadow: 0 0 0 3px rgb(170 200 255 / 12%);
+}
+
+/* Chrome paints autofilled fields with its own near-white background, which
+   is unreadable here; the inset shadow is the only way to override it. */
+.night-input:-webkit-autofill,
+.night-input:-webkit-autofill:hover,
+.night-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  box-shadow: inset 0 0 0 1000px #101010;
+  caret-color: #fff;
+}
+
+/* Segmented choice (onboarding). Selection is carried by `aria-pressed`, so
+   the accessible state and the visual state cannot drift apart. */
+.night-choice {
+  border: 1px solid var(--night-line);
+  background: rgb(255 255 255 / 4%);
+  color: var(--night-muted);
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.night-choice:hover {
+  background: rgb(255 255 255 / 7%);
+  color: #fff;
+}
+
+.night-choice[aria-pressed="true"] {
+  border-color: rgb(220 230 255 / 70%);
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+/* ── Ambient video backdrop ─────────────────────────────────────────────── */
+
+/*
+ * The hero clip is a bright, high-key illustration (pale sky, sunlit stone),
+ * so white type sitting directly on it is unreadable. This scrim grades it
+ * from a light wash at the top — where the artwork should still read — down
+ * to solid black behind the hero copy and the stats row, which is what makes
+ * the bottom-anchored composition hold together.
+ */
+.night-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 60%) 0%,
+    rgb(0 0 0 / 42%) 20%,
+    rgb(0 0 0 / 72%) 46%,
+    rgb(0 0 0 / 92%) 72%,
+    #000 100%
+  );
+}
+
+/* ── Phone menu ────────────────────────────────────────────────────────── */
+
+.night-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(8 8 8 / 42%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .night-pill,
+  .night-pill::before,
+  .night-btn,
+  .night-btn::after,
+  .night-input,
+  .night-choice {
+    transition: none;
+  }
+}

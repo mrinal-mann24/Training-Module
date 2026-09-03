@@ -1,14 +1,57 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Button } from '@/app/components/ui/button';
 import { logIn, signUp } from './actions';
 import { initialAuthFormState } from './auth-form-state';
 
 type Mode = 'log-in' | 'sign-up';
 
+/**
+ * Sign in and sign up are one form in two modes. Everything that differs
+ * between them — heading, blurb, submit label, the link to the other mode —
+ * is declared here rather than branched inline, so neither mode can quietly
+ * inherit the other's copy.
+ */
+const COPY: Record<
+  Mode,
+  {
+    heading: React.ReactNode;
+    blurb: string;
+    submit: string;
+    pending: string;
+    switchTo: string;
+  }
+> = {
+  'log-in': {
+    heading: (
+      <>
+        Welcome <em>back</em>
+      </>
+    ),
+    blurb: 'Sign in to pick up your next batch where you left it.',
+    submit: 'Sign in',
+    pending: 'Signing in…',
+    switchTo: 'New here? Create an account',
+  },
+  'sign-up': {
+    heading: (
+      <>
+        Start your <em>first</em> batch
+      </>
+    ),
+    blurb:
+      'Create an account and your diagnostic exercise is ready to work in Tally.',
+    submit: 'Create account',
+    pending: 'Creating account…',
+    switchTo: 'Already have an account? Sign in',
+  },
+};
+
 const INPUT_CLASSES =
-  'w-full rounded-lg border border-border bg-background px-4 py-2.5 font-body text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring';
+  'night-input w-full rounded-lg px-4 py-3 font-body text-sm';
+
+const SUBMIT_CLASSES =
+  'night-btn night-btn-solid mt-1 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-md font-body text-sm font-medium tracking-tight disabled:cursor-not-allowed';
 
 export function AuthForm() {
   const [mode, setMode] = useState<Mode>('log-in');
@@ -24,20 +67,29 @@ export function AuthForm() {
 
   if (state.confirmEmailSent) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background/80 px-6 py-8 text-center">
-        <p className="font-body text-base font-medium text-foreground">Check your email</p>
-        <p className="font-body text-sm leading-relaxed text-muted-foreground">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h1 className="night-title font-body text-white">
+          Check your <em>email</em>
+        </h1>
+        <p className="night-muted font-body text-sm leading-relaxed">
           Confirm your account by clicking the link we sent you.
         </p>
       </div>
     );
   }
 
+  const copy = COPY[mode];
+
   return (
     <div className="flex flex-col gap-5">
+      <div className="text-center">
+        <h1 className="night-title font-body text-white">{copy.heading}</h1>
+        <p className="night-muted mt-2 font-body text-sm leading-relaxed">{copy.blurb}</p>
+      </div>
+
       {state.accountCreated && (
-        <p className="rounded-lg border border-border bg-accent/5 px-4 py-3 font-body text-sm leading-relaxed text-foreground">
-          Account created. Log in below with the email and password you just chose.
+        <p className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 font-body text-sm leading-relaxed text-white">
+          Account created. Sign in below with the email and password you just chose.
         </p>
       )}
 
@@ -51,6 +103,7 @@ export function AuthForm() {
           type="email"
           required
           placeholder="you@example.com"
+          autoComplete="email"
           className={INPUT_CLASSES}
         />
 
@@ -68,27 +121,21 @@ export function AuthForm() {
           className={INPUT_CLASSES}
         />
 
-        {state.error && <p className="font-body text-sm text-status-error">{state.error}</p>}
+        {state.error && (
+          <p className="night-error font-body text-sm">{state.error}</p>
+        )}
 
-        <Button type="submit" disabled={isPending} className="mt-1 w-full">
-          {isPending
-            ? mode === 'log-in'
-              ? 'Logging in…'
-              : 'Signing up…'
-            : mode === 'log-in'
-              ? 'Log in'
-              : 'Sign up'}
-        </Button>
+        <button type="submit" disabled={isPending} className={SUBMIT_CLASSES}>
+          {isPending ? copy.pending : copy.submit}
+        </button>
       </form>
 
       <button
         type="button"
         onClick={() => setMode(mode === 'log-in' ? 'sign-up' : 'log-in')}
-        className="cursor-pointer font-body text-sm font-medium text-accent transition-opacity hover:opacity-70"
+        className="cursor-pointer font-body text-sm font-medium text-white transition-opacity hover:opacity-70"
       >
-        {mode === 'log-in'
-          ? "Don't have an account? Sign up"
-          : 'Already have an account? Log in'}
+        {copy.switchTo}
       </button>
     </div>
   );

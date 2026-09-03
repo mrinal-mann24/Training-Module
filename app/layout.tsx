@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AIA Academy — The Future of Smarter Bookkeeping",
+  title: "AIA Academy — Practical bookkeeping, graded by AI",
   description:
-    "Chat-based training that turns Tally exports into mastery, one exercise at a time.",
+    "Post the work in Tally, upload your Day Book and Trial Balance exports, and get every voucher scored with coaching aimed at the concepts you are weakest at.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
