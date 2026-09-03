@@ -784,7 +784,7 @@ export function checkSettlementReferences(
   const raisedInBatch = new Set<string>();
   for (const legs of bySequence.values()) {
     if (!/^(sales|purchase)$/i.test(legs[0].voucher_type)) continue;
-    const party = partyLegOf(legs);
+    const party = partyLegOf(legs, legs[0].voucher_type);
     if (!party || !legs[0].bill_reference) continue;
     for (const ref of splitBillReferences(legs[0].bill_reference)) {
       raisedInBatch.add(`${party.correct_account}|${normalizeBillReference(ref)}`);
@@ -794,7 +794,7 @@ export function checkSettlementReferences(
   const violations: string[] = [];
   for (const [sequence, legs] of bySequence) {
     if (!/^(receipt|payment)$/i.test(legs[0].voucher_type)) continue;
-    const party = partyLegOf(legs);
+    const party = partyLegOf(legs, legs[0].voucher_type);
     const reference = legs[0].bill_reference;
     if (!party || !reference) continue;
     const amount = legs
@@ -952,10 +952,13 @@ export async function generateAdaptiveExercise(
 
   let lastError: string | null = null;
   let generated: GeneratedExercise | null = null;
-  // Schema-valid but composition-violating batches are kept as a fallback:
-  // if the model never complies within MAX_ATTEMPTS, an unbalanced batch
-  // still beats delivering nothing (same philosophy as the review-kind
-  // fallback in run-scoring).
+  // Only SOFT violations (batch composition, an opening figure quoted in
+  // the prose) may fall back to the last attempt when the model never
+  // complies within MAX_ATTEMPTS. HARD violations — wrong month, figures in
+  // document-backed lines, single-leg entries, cash going negative, a
+  // settlement against a bill that does not exist — are never delivered:
+  // a wrong batch costs the learner far more than a delayed one (the job
+  // step retries), and a delivered fallback silently defeats every guard.
   let unbalancedFallback: GeneratedExercise | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -996,6 +999,9 @@ export async function generateAdaptiveExercise(
       const cashError = checkCashFeasibility(parsed.data, cashPosition);
       const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
       const settlementError = checkSettlementReferences(parsed.data, openBills);
+      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError]
+        .filter(Boolean)
+        .join(" ");
       const batchError = [
         compositionError,
         monthError,
@@ -1011,7 +1017,9 @@ export async function generateAdaptiveExercise(
         generated = parsed.data;
         break;
       }
-      unbalancedFallback = parsed.data;
+      if (hardError === "") {
+        unbalancedFallback = parsed.data;
+      }
       lastError = batchError;
       continue;
     }

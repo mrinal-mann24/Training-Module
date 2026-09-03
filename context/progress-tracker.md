@@ -1032,3 +1032,20 @@ is rebuilt from real answer-key transactions with code-injected anomalies.
 via `generateNextExercise`; `--replace-latest` first deletes the newest
 exercise only if it post-dates the last scored submission and has no
 submissions (all dependents cascade). Used to replace Praveen's Level 5.
+
+### 2026-09-03 — Party detection by voucher side; hard violations never fall back
+
+Praveen's regenerated Level 5 settled DT-115 / SL-018 / HR-118 — April
+bills already paid — with expense/asset ledgers as the "party". Cause: my
+own `partyLegOf` took the first non-tax/non-bank leg, which on the pack's
+expense-first purchases is the expense/asset, so the OPEN BILLS block told
+the model "Office Equipment: DT-115 outstanding" and the settlement check
+agreed. `partyLegOf(legs, voucherType)` now picks the party by side
+(customer Dr on sales / Cr on receipts; supplier Cr on purchases / Dr on
+payments), used by the open-bills derivation, the settlement check and the
+statement builder. Praveen's real open bills are now 21 receivables/
+payables with no expense heads. The generator's last-attempt fallback is
+restricted to SOFT violations (composition, opening figure in prose); wrong
+month, figures in doc-backed lines, single-leg entries, negative cash or an
+invented settlement are never delivered — the step fails and retries.
+Tests: 252. Praveen's Level 5 to be replaced again via the admin script.

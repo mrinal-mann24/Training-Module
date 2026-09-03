@@ -165,8 +165,31 @@ export function splitBillReferences(ref: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-export function partyLegOf<T extends { correct_account: string }>(legs: T[]): T | undefined {
-  return legs.find((leg) => !NON_PARTY_ACCOUNT_PATTERN.test(leg.correct_account));
+// The party on a voucher sits on a known side: the customer is DEBITED on a
+// sale / credited on a receipt or credit note; the supplier is CREDITED on a
+// purchase / debited on a payment or debit note. Picking "the first
+// non-tax, non-bank leg" instead took the expense/asset leg of an April
+// purchase ("Dr Office Equipment … Cr Deccan Traders", ref DT-115) as the
+// party, so the open-bills list told the model "Office Equipment: DT-115
+// outstanding" while Deccan Traders' settlement of DT-115 netted against
+// nothing — and Praveen's Level 5 was generated around three bills that
+// were paid in April (2026-09-03). Side first, name pattern second.
+const PARTY_SIDE_BY_VOUCHER_TYPE: Record<string, 'Dr' | 'Cr'> = {
+  sales: 'Dr',
+  'credit note': 'Cr',
+  receipt: 'Cr',
+  purchase: 'Cr',
+  'debit note': 'Dr',
+  payment: 'Dr',
+};
+
+export function partyLegOf<T extends { correct_account: string; dr_cr?: 'Dr' | 'Cr' }>(
+  legs: T[],
+  voucherType?: string,
+): T | undefined {
+  const side = voucherType ? PARTY_SIDE_BY_VOUCHER_TYPE[voucherType.trim().toLowerCase()] : undefined;
+  const candidates = side ? legs.filter((leg) => leg.dr_cr === side) : legs;
+  return candidates.find((leg) => !NON_PARTY_ACCOUNT_PATTERN.test(leg.correct_account));
 }
 
 export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
@@ -179,7 +202,7 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
       bySequence.set(entry.sequence, legs);
     }
     for (const legs of bySequence.values()) {
-      const party = partyLegOf(legs);
+      const party = partyLegOf(legs, legs[0]?.voucher_type);
       const reference = legs[0]?.bill_reference;
       if (!party || !reference) {
         continue;

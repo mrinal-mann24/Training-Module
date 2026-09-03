@@ -710,3 +710,21 @@ describe('checkSettlementReferences (invented bill numbers: DT-2216, BR/S/098, C
     expect(checkSettlementReferences(settlement('Rent', 28000, null as unknown as string, 'pays office rent'), openBills)).toBeNull();
   });
 });
+
+describe('checkSettlementReferences: an expense debited against a settled bill is rejected', () => {
+  it('flags "pays Rent against HR-118" when HR-118 is not an open bill of Rent', () => {
+    const generated = {
+      scenario: '',
+      transactions: [{ sequence: 1, description: 'pays Rent Rs 40,000 in full settlement of bill HR-118' }],
+      difficulty_level: 'L1',
+      variant: 'A',
+      answer_key: { entries: [
+        { ...entry(1, ['payment_voucher_basics'], 'Payment'), correct_account: 'Rent', dr_cr: 'Dr', amount: 40000, bill_reference: 'HR-118 (full settlement)' },
+        { ...entry(1, ['payment_voucher_basics'], 'Payment'), correct_account: 'HDFC Bank — 1234', dr_cr: 'Cr', amount: 40000, bill_reference: 'HR-118 (full settlement)' },
+      ] },
+    } as unknown as GeneratedExercise;
+    const error = checkSettlementReferences(generated, [{ party: 'Delhi Bazaar', ref: 'INV-022', open: 112100, side: 'receivable' }]);
+    expect(error).toContain('HR-118');
+    expect(error).toContain('Rent');
+  });
+});

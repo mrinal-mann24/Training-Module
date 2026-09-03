@@ -69,10 +69,13 @@ async function main(): Promise<void> {
 
   const { data: scoredExercise, error: scoredError } = await supabase
     .from('exercises')
-    .select('id, kind, difficulty_level, created_at')
+    .select('id, kind, scenario, created_at')
     .eq('id', lastScored.exercise_id)
     .single();
   if (scoredError || !scoredExercise) throw scoredError ?? new Error('scored exercise missing');
+  // difficulty_level lives inside the scenario JSON, not as a column.
+  const scoredScenario = scoredExercise.scenario as { difficulty_level?: string };
+  const previousDifficultyLevel = (scoredScenario.difficulty_level ?? 'L1') as Parameters<typeof generateNextExercise>[1]['previousDifficultyLevel'];
 
   const { data: newest, error: newestError } = await supabase
     .from('exercises')
@@ -84,7 +87,7 @@ async function main(): Promise<void> {
   const latest = newest?.[0];
 
   console.log(`learner ${email}`);
-  console.log(`last scored: ${scoredExercise.kind} (${scoredExercise.difficulty_level}) submitted ${lastScored.created_at}`);
+  console.log(`last scored: ${scoredExercise.kind} (${previousDifficultyLevel}) submitted ${lastScored.created_at}`);
   console.log(`newest exercise: ${latest ? `${latest.kind} created ${latest.created_at}` : '(none)'}`);
 
   if (replaceLatest && latest && latest.created_at > lastScored.created_at) {
@@ -102,7 +105,7 @@ async function main(): Promise<void> {
 
   const outcome = await generateNextExercise(supabase, {
     learnerId,
-    previousDifficultyLevel: scoredExercise.difficulty_level,
+    previousDifficultyLevel,
     licenseMode: profile.license_mode,
     afterIso: lastScored.created_at,
   });

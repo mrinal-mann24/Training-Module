@@ -88,7 +88,7 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
     if (!date) {
       continue;
     }
-    const party = partyLegOf(legs.filter((leg) => !CASH_LEDGER_PATTERN.test(leg.correct_account)));
+    const party = partyLegOf(legs.filter((leg) => !CASH_LEDGER_PATTERN.test(leg.correct_account)), legs[0].voucher_type);
     const reference = legs[0].bill_reference;
     movements.push({
       sequence,

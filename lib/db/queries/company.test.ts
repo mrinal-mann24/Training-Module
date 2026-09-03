@@ -136,3 +136,27 @@ describe('openBillsFromKeys (bill-by-bill state from the answer keys, 2026-09-03
     expect(bills.some((bill) => bill.party === 'Chennai Suppliers')).toBe(false);
   });
 });
+
+describe('openBillsFromKeys: party is found by voucher side (Praveen Level 5, 2026-09-03)', () => {
+  const entry = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, ref: string | null): AnswerKey['entries'][number] => ({
+    ...leg(sequence, account, drCr, amount),
+    voucher_type: voucherType,
+    bill_reference: ref,
+  });
+  it('an asset purchase listed expense-first still nets against the supplier payment', () => {
+    const april: AnswerKey = {
+      entries: [
+        // April pack shape: expense/asset leg first, supplier last.
+        entry(1, 'Office Equipment', 'Dr', 80000, 'Purchase', 'DT-115'),
+        entry(1, 'Input CGST', 'Dr', 7200, 'Purchase', 'DT-115'),
+        entry(1, 'Input SGST', 'Dr', 7200, 'Purchase', 'DT-115'),
+        entry(1, 'Deccan Traders', 'Cr', 94400, 'Purchase', 'DT-115'),
+        entry(2, 'Deccan Traders', 'Dr', 94400, 'Payment', 'DT-115'),
+        entry(2, 'HDFC Bank — 1234', 'Cr', 94400, 'Payment', 'DT-115'),
+      ],
+    };
+    const bills = openBillsFromKeys([april]);
+    expect(bills.some((bill) => bill.party === 'Office Equipment')).toBe(false);
+    expect(bills.some((bill) => bill.ref === 'DT-115')).toBe(false);
+  });
+});
