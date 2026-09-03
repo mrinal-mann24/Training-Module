@@ -1122,3 +1122,16 @@ carry every voucher leg — multi-leg output had been habit, not instruction.
 An ANSWER KEY SHAPE block now states it with examples (sale/purchase/TDS/
 payment/receipt/contra), and `DEBUG_GENERATION=1` writes each rejected
 attempt (output + violation) under the OS temp dir for inspection.
+
+### 2026-09-03 — Bill reference read from any leg; Praveen Level 6 regenerated and verified
+
+Praveen's regenerated Level 6 (explain, L2, September, 11 tx) verified:
+openings, both TDS bills (gross fee, TDS, net vendor), invoices naming the
+real vendors, code-built statement, part payments against real open bills.
+The model placed each bill_reference on the party leg only; the scorer,
+open-bills derivation, settlement check and statement builder all read
+legs[0] and saw null. Every reader now takes the reference from whichever
+leg carries it, `fillBillReferencesFromText` propagates it to all legs (and
+also reads "bill ref X"), and `Downloads/patch-praveen-level6-refs.sql`
+propagates it in his stored key. The earlier three single-leg attempts are
+addressed by the ANSWER KEY SHAPE prompt block.

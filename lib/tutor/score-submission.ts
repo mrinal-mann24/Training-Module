@@ -348,7 +348,19 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   // transaction's expectation is whichever leg states one.
   const gstLeg = expectedLegs.find((leg) => leg.gst_head !== null) ?? expectedLegs[0];
   const tdsLeg = expectedLegs.find((leg) => leg.tds_section !== null) ?? expectedLegs[0];
-  const expected = { ...expectedLegs[0], gst_head: gstLeg.gst_head, gst_rate: gstLeg.gst_rate, tds_section: tdsLeg.tds_section, tds_rate: tdsLeg.tds_rate, tds_base: tdsLeg.tds_base };
+  // Likewise the bill reference: generated keys often carry it on the
+  // party leg only (Praveen's Level 6: "Mumbai Suppliers" MS/812, first
+  // leg Purchases null — 2026-09-03), so reading legs[0] skipped the check.
+  const referenceLeg = expectedLegs.find((leg) => leg.bill_reference !== null) ?? expectedLegs[0];
+  const expected = {
+    ...expectedLegs[0],
+    gst_head: gstLeg.gst_head,
+    gst_rate: gstLeg.gst_rate,
+    tds_section: tdsLeg.tds_section,
+    tds_rate: tdsLeg.tds_rate,
+    tds_base: tdsLeg.tds_base,
+    bill_reference: referenceLeg.bill_reference,
+  };
 
   const voucherTypeCorrect = voucher.voucherType.trim().toLowerCase() === expected.voucher_type.trim().toLowerCase();
   diffs.push({

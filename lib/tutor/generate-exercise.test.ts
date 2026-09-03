@@ -758,3 +758,25 @@ describe('fillBillReferencesFromText (Garima Level 4: bills named in text, null 
     expect(contra.answer_key.entries[0].bill_reference).toBeNull();
   });
 });
+
+describe('fillBillReferencesFromText: propagates a party-leg reference to every leg; reads "bill ref X"', () => {
+  it('copies MS/812 from the party leg onto the Purchases leg', () => {
+    const generated = {
+      scenario: '', difficulty_level: 'L1', variant: 'A',
+      transactions: [{ sequence: 1, description: 'an invoice arrived from Mumbai Suppliers, bill ref MS/812: post it' }],
+      answer_key: { entries: [
+        { ...entry(1, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Purchases', dr_cr: 'Dr', bill_reference: null },
+        { ...entry(1, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', bill_reference: 'MS/812' },
+      ] },
+    } as unknown as GeneratedExercise;
+    expect(fillBillReferencesFromText(generated).answer_key.entries.map((e) => e.bill_reference)).toEqual(['MS/812', 'MS/812']);
+  });
+  it('reads "bill ref MA/205" when no leg has a reference', () => {
+    const generated = {
+      scenario: '', difficulty_level: 'L1', variant: 'A',
+      transactions: [{ sequence: 1, description: 'an invoice arrived from Mehta & Associates, bill ref MA/205: post it' }],
+      answer_key: { entries: [{ ...entry(1, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Mehta & Associates', dr_cr: 'Cr', bill_reference: null }] },
+    } as unknown as GeneratedExercise;
+    expect(fillBillReferencesFromText(generated).answer_key.entries[0].bill_reference).toBe('MA/205');
+  });
+});

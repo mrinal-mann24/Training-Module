@@ -19,7 +19,12 @@ export type ValidityGateResult =
 // distinguishes "group" from "ledger" rows structurally, so a minimum count
 // is the only available structural signal. Revisit this threshold once a
 // real ledger-level sample is available to calibrate against.
-const MIN_TRIAL_BALANCE_LEDGER_ROWS = 3;
+// A group-wise Trial Balance export (Capital Account, Current Liabilities,
+// Sales Accounts…) has 9-10 rows; even the smallest ledger-wise export of
+// this company has 35+. The old floor of 3 let group-wise files through
+// (Yeshas's May, 2026-09-03) and the tie-out then matched nothing. 15 keeps
+// every real ledger-wise export and rejects every group-wise one seen.
+const MIN_TRIAL_BALANCE_LEDGER_ROWS = 15;
 
 // Runs after both files have parsed successfully. Checks are structural only —
 // nothing here reads exercise.answer_key, since scoring doesn't exist until Unit 06.

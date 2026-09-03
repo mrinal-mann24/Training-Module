@@ -94,7 +94,7 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
     const party =
       partyLegOf(nonCashLegs, legs[0].voucher_type) ??
       nonCashLegs.find((leg) => !isBankLedger(leg.correct_account));
-    const reference = legs[0].bill_reference;
+    const reference = legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
     movements.push({
       sequence,
       date,

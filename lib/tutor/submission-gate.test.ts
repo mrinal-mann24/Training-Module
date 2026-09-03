@@ -46,6 +46,8 @@ describe('runValidityGate', () => {
     const dayBook = parseDayBookXml(readFileSync(sampleDayBookPath));
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'Material purchase', closingDebit: 423000, closingCredit: 0 },
         { ledgerName: 'IGST Payable', closingDebit: 0, closingCredit: 21150 },
         { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 444150 },
@@ -62,6 +64,8 @@ describe('runValidityGate', () => {
     const dayBook = parseDayBookXml(readFileSync(sampleDayBookPath)); // 1 voucher
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'Material purchase', closingDebit: 423000, closingCredit: 0 },
         { ledgerName: 'IGST Payable', closingDebit: 0, closingCredit: 21150 },
         { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 444150 },
@@ -103,6 +107,8 @@ describe('runValidityGate', () => {
     };
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'A', closingDebit: 1, closingCredit: 0 },
         { ledgerName: 'B', closingDebit: 0, closingCredit: 1 },
         { ledgerName: 'C', closingDebit: 0, closingCredit: 0 },
@@ -124,6 +130,8 @@ describe('runValidityGate', () => {
     const dayBook = parseDayBookXml(readFileSync(sampleDayBookPath));
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'Material purchase', closingDebit: 423000, closingCredit: 0 },
         { ledgerName: 'IGST Payable', closingDebit: 0, closingCredit: 21150 },
         { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 444150 },
@@ -143,6 +151,8 @@ describe('runValidityGate', () => {
     const dayBook = parseDayBookXml(readFileSync(sampleDayBookPath));
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'Material purchase', closingDebit: 423000, closingCredit: 0 },
         { ledgerName: 'IGST Payable', closingDebit: 0, closingCredit: 21150 },
         { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 444150 },
@@ -176,6 +186,8 @@ describe('no month-day rule (Phase 3, spec 15)', () => {
     };
     const richTrialBalance = {
       ledgers: [
+        // A real ledger-wise export has 35+ rows; the gate floor is 15.
+        ...Array.from({ length: 12 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })),
         { ledgerName: 'Some Vendor', closingDebit: 100, closingCredit: 0 },
         { ledgerName: 'HDFC Bank', closingDebit: 0, closingCredit: 100 },
         { ledgerName: 'Cash', closingDebit: 500, closingCredit: 0 },

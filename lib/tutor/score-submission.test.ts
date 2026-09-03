@@ -1131,3 +1131,22 @@ describe('ledger name typo tolerance on long names (Praveen Level 3 "Office Main
     expect(accountOk('Chennai Home Store', 'Chennai Suppliers')).toBe(false);
   });
 });
+
+describe('bill reference carried on the party leg only (Praveen Level 6, 2026-09-03)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, ref: string | null): AnswerKey['entries'][number] => ({
+    sequence: 1, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Purchase',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: ref, narration: null, concept_tags: ['purchase_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key = { entries: [leg('Purchases', 'Dr', 40000, null), leg('Mumbai Suppliers', 'Cr', 40000, 'MS/812')] };
+  const voucher = (billName: string) => ({ vouchers: [{ voucherType: 'Purchase', date: '20260902', narration: 'Purchase from Mumbai Suppliers',
+    ledgerEntries: [
+      { ledgerName: 'Purchases', amount: 40000, drOrCr: 'Dr' as const, billAllocations: [] },
+      { ledgerName: 'Mumbai Suppliers', amount: 40000, drOrCr: 'Cr' as const, billAllocations: [{ name: billName, amount: 40000 }] },
+    ] }] });
+  it('checks the allocation even though the first leg has no reference', () => {
+    expect(scoreSubmission(voucher('MS/812'), { ledgers: [] }, key).per_voucher_diffs.find((d) => d.field === 'bill_reference')?.is_correct).toBe(true);
+    expect(scoreSubmission(voucher('MS/999'), { ledgers: [] }, key).per_voucher_diffs.find((d) => d.field === 'bill_reference')?.error_code).toBe('BILL_REFERENCE_WRONG');
+  });
+});

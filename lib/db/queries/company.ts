@@ -225,7 +225,8 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
     }
     for (const legs of bySequence.values()) {
       const party = partyLegOf(legs, legs[0]?.voucher_type);
-      const reference = legs[0]?.bill_reference;
+      // The reference may sit on any leg (often only the party leg).
+      const reference = legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
       if (!party || !reference) {
         continue;
       }

@@ -782,7 +782,7 @@ const FULL_SETTLEMENT_PATTERN = /full (?:and final )?(?:settlement|payment)|sett
 // key is filled from the text BEFORE the checks run, so what the learner is
 // told and what the books track are the same thing.
 const BILL_IN_TEXT_PATTERN =
-  /\b(?:against\s+)?(?:bill|invoice|inv\.?)\s*(?:no\.?\s*)?([A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)\b/i;
+  /\b(?:against\s+)?(?:bill|invoice|inv\.?)\s*(?:(?:ref|no)\.?\s*)?([A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)\b/i;
 
 export function fillBillReferencesFromText(generated: GeneratedExercise): GeneratedExercise {
   const descriptionBySequence = new Map<number, string>();
@@ -797,7 +797,13 @@ export function fillBillReferencesFromText(generated: GeneratedExercise): Genera
   }
   const fill = new Map<number, string>();
   for (const [sequence, legs] of bySequence) {
-    if (legs.some((leg) => leg.bill_reference)) continue;
+    // A reference already on ANY leg is propagated to every leg of the
+    // sequence, so no reader has to guess which leg carries it.
+    const existing = legs.find((leg) => leg.bill_reference)?.bill_reference;
+    if (existing) {
+      if (legs.some((leg) => leg.bill_reference !== existing)) fill.set(sequence, existing);
+      continue;
+    }
     if (!/^(sales|purchase|receipt|payment)$/i.test(legs[0].voucher_type)) continue;
     const match = BILL_IN_TEXT_PATTERN.exec(descriptionBySequence.get(sequence) ?? "");
     if (match) fill.set(sequence, match[1]);
@@ -828,8 +834,9 @@ export function checkSettlementReferences(
   for (const legs of bySequence.values()) {
     if (!/^(sales|purchase)$/i.test(legs[0].voucher_type)) continue;
     const party = partyLegOf(legs, legs[0].voucher_type);
-    if (!party || !legs[0].bill_reference) continue;
-    for (const ref of splitBillReferences(legs[0].bill_reference)) {
+    const raisedRef = legs.find((leg) => leg.bill_reference)?.bill_reference;
+    if (!party || !raisedRef) continue;
+    for (const ref of splitBillReferences(raisedRef)) {
       raisedInBatch.add(`${party.correct_account}|${normalizeBillReference(ref)}`);
     }
   }
@@ -838,7 +845,7 @@ export function checkSettlementReferences(
   for (const [sequence, legs] of bySequence) {
     if (!/^(receipt|payment)$/i.test(legs[0].voucher_type)) continue;
     const party = partyLegOf(legs, legs[0].voucher_type);
-    const reference = legs[0].bill_reference;
+    const reference = legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
     if (!party || !reference) continue;
     const amount = legs
       .filter((leg) => leg.correct_account === party.correct_account)
