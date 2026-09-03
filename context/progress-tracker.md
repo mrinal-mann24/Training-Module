@@ -990,3 +990,13 @@ supplied content; the LLM statement path (`generateBankStatementDocument`)
 is no longer called. Applies to adaptive/explain batches and the legacy
 generated diagnostic. Verified: both PDF templates render the code-built
 content. Tests: 246.
+
+### 2026-09-03 — Day Book parser reads item-invoice (stock item) vouchers
+
+Garima's Level 3 export used stock items on the four purchases. In that
+mode Tally puts the Purchases leg inside each inventory line
+(ALLINVENTORYENTRIES.LIST → ACCOUNTINGALLOCATIONS.LIST), not at voucher
+level, so `parseDayBookXml` dropped it and every purchase scored a false
+ACCOUNT_WRONG. Learners are told stock items are optional, so both modes
+now parse: inventory-line accounting allocations are appended to the
+voucher's ledger entries (INVENTORYENTRIES.LIST too). Unit test added.

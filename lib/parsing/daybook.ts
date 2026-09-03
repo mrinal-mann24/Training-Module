@@ -24,6 +24,9 @@ const parserOptions = {
     tagName === 'VOUCHER' ||
     tagName === 'LEDGERENTRIES.LIST' ||
     tagName === 'ALLLEDGERENTRIES.LIST' ||
+    tagName === 'ALLINVENTORYENTRIES.LIST' ||
+    tagName === 'INVENTORYENTRIES.LIST' ||
+    tagName === 'ACCOUNTINGALLOCATIONS.LIST' ||
     tagName === 'BILLALLOCATIONS.LIST',
 };
 
@@ -118,9 +121,24 @@ function normalizeVoucher(voucher: Record<string, unknown>): {
   // vouchers parsed half-empty. A voucher only ever uses one of the two.
   const rawInvoiceEntries = voucher['LEDGERENTRIES.LIST'];
   const rawAccountingEntries = voucher['ALLLEDGERENTRIES.LIST'];
+  // Item-invoice vouchers (stock items in use) carry the Sales/Purchases
+  // ledger leg INSIDE each inventory line, under ALLINVENTORYENTRIES.LIST →
+  // ACCOUNTINGALLOCATIONS.LIST, not at voucher level. Reading only the
+  // voucher-level lists dropped the Purchases leg of every item-mode
+  // purchase (Garima's Level 3, 2026-09-03: 4 false ACCOUNT_WRONGs) — and
+  // learners are told stock items are optional, so both modes must parse.
+  const rawInventoryEntries = [
+    ...(Array.isArray(voucher['ALLINVENTORYENTRIES.LIST']) ? (voucher['ALLINVENTORYENTRIES.LIST'] as unknown[]) : []),
+    ...(Array.isArray(voucher['INVENTORYENTRIES.LIST']) ? (voucher['INVENTORYENTRIES.LIST'] as unknown[]) : []),
+  ];
+  const inventoryAllocations = rawInventoryEntries.flatMap((item) => {
+    const allocations = (item as Record<string, unknown>)['ACCOUNTINGALLOCATIONS.LIST'];
+    return Array.isArray(allocations) ? allocations : [];
+  });
   const entries = [
     ...(Array.isArray(rawInvoiceEntries) ? rawInvoiceEntries : []),
     ...(Array.isArray(rawAccountingEntries) ? rawAccountingEntries : []),
+    ...inventoryAllocations,
   ];
 
   const ledgerEntries = entries.map((entry) => normalizeLedgerEntry(entry as Record<string, unknown>));
