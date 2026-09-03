@@ -7,6 +7,17 @@ import type { AnswerKey } from '@/lib/schemas/exercise';
 // answer key, only ledgers do.
 const CASH_ACCOUNT_PATTERN = /^cash\b|cash-in-hand/i;
 const BANK_ACCOUNT_PATTERN = /\bbank\b|hdfc/i;
+// "Bank Charges", "Bank Interest", "Bank Commission" are expense/income
+// ledgers, not the bank. Counting them as bank inflated the stated opening
+// by the charges balance (1,070.34): Yeshas's Level 2 prompt/prose said
+// 8,67,186 for a real 8,66,116, Praveen's Level 4 8,09,246 for 8,08,176
+// (2026-09-03). The answer keys were never affected — only the position
+// fed to the generator and printed for the learner.
+const NON_BANK_LEDGER_PATTERN = /charge|commission|interest|fee|penalt/i;
+
+export function isBankLedger(account: string): boolean {
+  return BANK_ACCOUNT_PATTERN.test(account) && !NON_BANK_LEDGER_PATTERN.test(account);
+}
 
 export type CompanyCashPosition = { cash: number; bank: number };
 
@@ -59,7 +70,7 @@ export function cashPositionFromNet(net: Map<string, number>): CompanyCashPositi
   for (const [account, signed] of net) {
     if (CASH_ACCOUNT_PATTERN.test(account)) {
       position.cash += signed;
-    } else if (BANK_ACCOUNT_PATTERN.test(account)) {
+    } else if (isBankLedger(account)) {
       position.bank += signed;
     }
   }

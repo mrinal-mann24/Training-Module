@@ -13,6 +13,13 @@ import { scoreSubmission, collectErrorCodes } from '@/lib/tutor/score-submission
 import { scoreQualitative, groundingFromAnswerKey, combineOverallResult } from '@/lib/tutor/score-qualitative';
 import { generateCoaching } from '@/lib/tutor/generate-coaching';
 import { insertScoringResult } from '@/lib/db/queries/scoring-results';
+import { recordSubmissionScore } from '@/lib/llm/tracing';
+import {
+  logAttemptsAndClassifyRectifications,
+  recomputeMasteryAndModuleProgress,
+  generateNextExercise,
+  describeRectification,
+} from '@/lib/jobs/advance-learner';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
 import type { ScoringResult } from '@/lib/schemas/scoring';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
@@ -238,6 +245,17 @@ export const waitForSubmission = inngest.createFunction(
 
     const overallResult = combineOverallResult(scoringResult?.overall_result ?? null, qualitativeScore);
 
+    // Concept attempts are logged before coaching so rectification can
+    // classify this exercise against its prior history (same order as
+    // run-scoring.ts). Only the Tally posting carries concept results; a
+    // text-only submission logs nothing.
+    const scoredResult = scoringResult;
+    const rectifications = scoredResult
+      ? await step.run('log-attempts-and-classify-rectification', async () => {
+          return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, scoredResult);
+        })
+      : [];
+
     const feedback = await step.run('generate-coaching', async () => {
       const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
       return generateCoaching(submission.learner_id, {
@@ -245,6 +263,7 @@ export const waitForSubmission = inngest.createFunction(
         scoringResult,
         qualitative: qualitativeScore,
         answerKey,
+        rectificationDescriptions: rectifications.map(describeRectification),
         missingPartDescriptions: stillMissing.map(describeMissingPart),
       });
     });
@@ -262,6 +281,33 @@ export const waitForSubmission = inngest.createFunction(
         feedback,
       });
       await updateSubmissionStatus(supabase, submissionId, 'scored', null);
+
+      if (scoringResult) {
+        recordSubmissionScore({
+          learnerId: submission.learner_id,
+          submissionId,
+          weightedScore: scoringResult.weighted_score,
+          overallResult: scoringResult.overall_result,
+          tbTieOut: scoringResult.tb_tie_out,
+        });
+      }
+    });
+
+    // The same post-scoring pipeline as run-scoring.ts (shared in
+    // advance-learner.ts): mastery/module progress, then the next batch.
+    // Missing before 2026-09-02, which left Praveen with a scored Level 3
+    // and no Level 4.
+    await step.run('recompute-mastery-and-module-progress', async () => {
+      await recomputeMasteryAndModuleProgress(supabase, submission.learner_id);
+    });
+
+    await step.run('generate-next-exercise', async () => {
+      await generateNextExercise(supabase, {
+        learnerId: submission.learner_id,
+        previousDifficultyLevel: exercise.difficulty_level,
+        licenseMode: profile.license_mode,
+        afterIso: submission.created_at,
+      });
     });
 
     return { status: 'scored', submissionId, missingParts: stillMissing };

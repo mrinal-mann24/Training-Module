@@ -1,8 +1,14 @@
 import { inngest } from '@/lib/jobs/client';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
-import { getExerciseById, getExerciseAnswerKey, countExercisesForLearner } from '@/lib/db/queries/exercises';
+import { getExerciseById, getExerciseAnswerKey } from '@/lib/db/queries/exercises';
 import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissions';
+import {
+  logAttemptsAndClassifyRectifications,
+  recomputeMasteryAndModuleProgress,
+  generateNextExercise,
+  describeRectification,
+} from '@/lib/jobs/advance-learner';
 import { parseDayBookXml, DayBookParseError } from '@/lib/parsing/daybook';
 import { parseTrialBalanceXml, TrialBalanceParseError } from '@/lib/parsing/trialbalance';
 import { runValidityGate, type ValidityError } from '@/lib/tutor/submission-gate';
@@ -10,18 +16,6 @@ import { scoreSubmission, collectErrorCodes } from '@/lib/tutor/score-submission
 import { adjudicateScoringResult } from '@/lib/tutor/adjudicate-findings';
 import { generateCoaching } from '@/lib/tutor/generate-coaching';
 import { insertScoringResult } from '@/lib/db/queries/scoring-results';
-import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
-import { insertConceptAttempts, getConceptAttempts, getConceptMasteryMap, applyStatePatch } from '@/lib/db/queries/mastery';
-import { recomputeMastery, selectWeakConcept } from '@/lib/tutor/mastery';
-import { generateAdaptiveExercise } from '@/lib/tutor/generate-exercise';
-import { generateReviewExercise } from '@/lib/tutor/generate-review-exercise';
-import { selectNextExerciseKind } from '@/lib/tutor/select-exercise-kind';
-import { selectBatchConcepts } from '@/lib/tutor/select-batch-concepts';
-import { getRecentCompanyTransactionLog } from '@/lib/db/queries/company';
-import { CONCEPT_TAGS, EXERCISE_DIFFICULTY_LEVELS, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
-import { getModuleProgress, upsertModuleProgress } from '@/lib/db/queries/module-progress';
-import { deriveNextModuleProgress } from '@/lib/tutor/module-progress';
-import { classifyRectificationsForExercise, type RectificationResult } from '@/lib/tutor/rectification';
 import { recordSubmissionScore } from '@/lib/llm/tracing';
 
 // Triggered by the submitFiles Server Action (lib/db/queries/submissions.ts's
@@ -143,18 +137,7 @@ export const runScoring = inngest.createFunction(
     // classification as input, so this step must precede generate-coaching,
     // ahead of where Unit 09 originally placed the equivalent logging.
     const rectifications = await step.run('log-attempts-and-classify-rectification', async () => {
-      const hintRungsUsed = await getHintDepthForExercise(supabase, submission.learner_id, exercise.id);
-
-      const attemptsThisExercise = scoringResult.concept_results.map((conceptResult) => ({
-        conceptTag: conceptResult.concept_tag,
-        result: conceptResult.result,
-        hintRungsUsed,
-      }));
-      await insertConceptAttempts(supabase, submission.learner_id, exercise.id, attemptsThisExercise);
-
-      const allAttempts = await getConceptAttempts(supabase, submission.learner_id);
-      const conceptTagsThisExercise = scoringResult.concept_results.map((result) => result.concept_tag);
-      return classifyRectificationsForExercise(conceptTagsThisExercise, allAttempts);
+      return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, scoringResult);
     });
 
     const feedback = await step.run('generate-coaching', async () => {
@@ -207,18 +190,7 @@ export const runScoring = inngest.createFunction(
     // respective tables, never written any other way (architecture.md
     // invariant 5).
     await step.run('recompute-mastery-and-module-progress', async () => {
-      const [allAttempts, currentMastery] = await Promise.all([
-        getConceptAttempts(supabase, submission.learner_id),
-        getConceptMasteryMap(supabase, submission.learner_id),
-      ]);
-
-      const patch = recomputeMastery({ attempts: allAttempts, currentMastery });
-      await applyStatePatch(supabase, submission.learner_id, patch);
-
-      const updatedMastery = await getConceptMasteryMap(supabase, submission.learner_id);
-      const currentModuleProgress = await getModuleProgress(supabase, submission.learner_id);
-      const nextModuleProgress = deriveNextModuleProgress(currentModuleProgress, updatedMastery);
-      await upsertModuleProgress(supabase, submission.learner_id, nextModuleProgress);
+      await recomputeMasteryAndModuleProgress(supabase, submission.learner_id);
     });
 
     // Next-exercise generation (Unit 09): triggers automatically once
@@ -227,92 +199,16 @@ export const runScoring = inngest.createFunction(
     // learner is now actually weakest at, factoring in the reinforcement/
     // escalation state the recompute step above just wrote.
     await step.run('generate-next-exercise', async () => {
-      const [allAttempts, currentMastery] = await Promise.all([
-        getConceptAttempts(supabase, submission.learner_id),
-        getConceptMasteryMap(supabase, submission.learner_id),
-      ]);
-
-      const target = selectWeakConcept(CONCEPT_TAGS, allAttempts, currentMastery);
-      if (!target) {
-        // Every concept mastered — no further adaptive exercise to generate.
-        // Unit 13/14 own what happens next (AIA transition, capstone).
-        return;
-      }
-
-      const baseDifficultyLevel = deriveBaseDifficultyLevel(exercise.difficulty_level);
-
-      // Unit 14R wiring: place explain/review batches in the cadence (see
-      // select-exercise-kind.ts's documented assumption). A review that
-      // cannot be built (no anomaly templates seeded yet, sparse company
-      // log) falls back to a plain adaptive batch rather than failing the
-      // job — the learner always gets SOMETHING next.
-      const [priorExerciseCount, recentLog] = await Promise.all([
-        countExercisesForLearner(supabase, submission.learner_id),
-        getRecentCompanyTransactionLog(supabase, submission.learner_id),
-      ]);
-      const nextKind = selectNextExerciseKind({
-        priorExerciseCount,
-        companyTransactionLogCount: recentLog.length,
+      await generateNextExercise(supabase, {
+        learnerId: submission.learner_id,
+        previousDifficultyLevel: exercise.difficulty_level,
+        licenseMode: profile.license_mode,
+        afterIso: submission.created_at,
       });
-
-      if (nextKind === 'review') {
-        try {
-          await generateReviewExercise(supabase, submission.learner_id, baseDifficultyLevel);
-          return;
-        } catch {
-          // Fall through to a normal adaptive batch below.
-        }
-      }
-      // Phase 2 (spec 14): the 50/50 batch plan — step-up concepts and
-      // reinforcement concepts, computed from the same state the target
-      // selection used.
-      const batchPlan = selectBatchConcepts(target, allAttempts, currentMastery);
-      // Phase 1: the batch intro names what the learner is strong at.
-      const recentStrengthDescriptions = batchPlan.strengths.map((tag) => tag.replace(/_/g, ' '));
-      // Month-per-batch (2026-09-01): the company's timeline advances one
-      // calendar month per exercise, anchored on the diagnostic pack's April
-      // 2026 — priorExerciseCount includes the diagnostic, so the first
-      // adaptive batch (count 1) lands in May, the next in June, and so on.
-      // Anchored to exercise count, not mastered-concept count, so the month
-      // always moves forward exactly once per batch regardless of how fast
-      // concepts are mastered.
-      await generateAdaptiveExercise(
-        supabase,
-        submission.learner_id,
-        target,
-        baseDifficultyLevel,
-        nextKind === 'explain' ? 'explain' : 'adaptive',
-        recentStrengthDescriptions,
-        batchPlan,
-        profile.license_mode,
-        priorExerciseCount + 1,
-      );
     });
 
     return { status: 'scored', submissionId };
   },
 );
 
-// The next exercise's starting difficulty before any reinforcement drop is
-// applied: one level up from whatever exercise was just scored, capped at
-// the highest defined level. generateAdaptiveExercise then drops it back
-// down a level if reinforcement is active for the target concept.
-function deriveBaseDifficultyLevel(previousLevel: ExerciseDifficultyLevel): ExerciseDifficultyLevel {
-  const index = EXERCISE_DIFFICULTY_LEVELS.indexOf(previousLevel);
-  const nextIndex = Math.min(index + 1, EXERCISE_DIFFICULTY_LEVELS.length - 1);
-  return EXERCISE_DIFFICULTY_LEVELS[nextIndex];
-}
 
-// Plain-language phrasing of a rectification classification, handed to the
-// coaching prompt as a fact to weave into prose (never a raw enum value) —
-// concept_tag is only ever surfaced as its own snake_case string today (no
-// human-readable label table exists for CONCEPT_TAGS elsewhere), so this
-// reads it plainly rather than inventing a labeling scheme this unit's spec
-// doesn't ask for.
-function describeRectification(result: RectificationResult): string {
-  const conceptLabel = result.conceptTag.replace(/_/g, ' ');
-  if (result.classification === 'FIXED') {
-    return `${conceptLabel} was failing before and is now fixed`;
-  }
-  return `${conceptLabel} failed again, same as last time: still failing`;
-}

@@ -885,3 +885,60 @@ accounting mode is fine, evaluation checks ledgers/amounts/GST/bill
 references). Both message builders (`build-timeline.ts` server timeline and
 `ChatShell.tsx` live append) use it, so the text cannot drift. Deterministic
 UI text, not a prompt change — applies to every exercise including the pack.
+
+### 2026-09-02 (session 9) — Opening figures in the prose are now code-written
+
+Yeshas's Level 2 prose said "Rs 8,67,186 in HDFC Bank" for a carried-forward
+balance of 8,66,116 (the model mistyped a digit; scoring never reads the
+prose, but the learner does). Three deterministic layers in
+`lib/tutor/generate-exercise.ts`: `checkOpeningFigures` (a rupee figure in a
+sentence about cash/bank/till/opening that isn't the real cash or bank figure
+feeds the combined retry message), `scrubOpeningFigureSentences` (drops any
+such sentence that survives via the fallback path) and `stampOpeningPosition`
+(appends "Opening position for this batch (system-computed from your
+books): Cash-in-Hand Rs …; HDFC Bank — 1234 Rs …", with "(overdrawn)" when
+negative). The prompt now tells the model not to quote the figures. Live
+fix: `Downloads/patch-yeshas-level2-prose.sql` corrects his stored prose.
+
+Praveen's Level 3 export previewed against his patched key: 12 June
+vouchers, 60-row TB, gate valid, 98% partial — the one flag is his own
+"Office Maintanece" ledger spelling; Cash closes at 11,400 exactly as the
+key expects (petty cash merged).
+
+### 2026-09-03 — Multi-part scoring job never advanced the learner (no Level 4 after an explain batch)
+
+Praveen's Level 3 (explain kind: Day Book + Trial Balance + explanation) was
+scored 98% by `wait-for-submission.ts`, but that job persisted the score and
+returned. Only `run-scoring.ts` (two-file path) logged concept attempts,
+recomputed mastery/module progress and generated the next exercise — so the
+first learner through an explain batch got feedback and then nothing.
+
+Fix: the post-scoring pipeline now lives in `lib/jobs/advance-learner.ts`
+(`logAttemptsAndClassifyRectifications`, `recomputeMasteryAndModuleProgress`,
+`generateNextExercise`, plus `deriveBaseDifficultyLevel` /
+`describeRectification`) and both jobs call it inside their own steps.
+`generateNextExercise` is idempotent on the scored submission's created_at:
+if any exercise newer than that already exists for the learner it returns
+'already-exists', so a rerun or manual re-trigger can never issue two
+batches for one submission. The multi-part job also now feeds rectification
+descriptions into coaching and records the Langfuse submission score, same
+as the two-file job. Praveen's stranded Level 3 is advanced by a one-off run
+of the same three helpers against his submission.
+
+### 2026-09-03 — Praveen advanced to Level 4; "Bank Charges" counted as the bank
+
+One-off run of the shared helpers for Praveen's Level 3 submission: attempts
+logged (payment_voucher_basics STILL_FAILING → escalation), mastery
+recomputed (sales_voucher_basics mastered; module 2), Level 4 generated —
+a 4-payment July drill, which is the escalation path by design (single
+concept, exact count), not a 10–12 batch. Verified: 39 openings all correct
+(Cash 11,400, HDFC 8,08,176), balanced, cash never negative, no inline list.
+
+Root cause of the "8,67,186" figure finally found: `BANK_ACCOUNT_PATTERN`
+(/\bbank\b|hdfc/) matched the "Bank Charges" expense ledger, so the bank
+position fed to the prompt and stamped in the prose was inflated by
+1,070.34 (Yeshas 8,66,116 → 8,67,186; Praveen 8,09,246 for 8,08,176). The
+model had copied our number faithfully — the session-9 note blaming a
+mistyped digit was wrong. `isBankLedger` now excludes charge/commission/
+interest/fee/penalty ledgers. Answer keys were never affected. Live fix for
+Praveen's stamped line: `Downloads/patch-praveen-level4-prose.sql`.

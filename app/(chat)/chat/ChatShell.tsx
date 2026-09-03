@@ -35,7 +35,7 @@ function exerciseToMessages(
       id: `exercise-${exercise.id}`,
       role: 'assistant',
       kind: 'exercise',
-      content: formatExerciseContent(exercise.scenario, itemLines),
+      content: formatExerciseContent(exercise.scenario, itemLines, exercise.requiredParts),
       // Small inline progress label, existing token styles only — no new
       // screen (Unit 09's design note; the full progress view is Unit 12).
       progressLabel: `Module ${moduleNumber} · Level ${exercise.difficulty_level.replace('L', '')}`,

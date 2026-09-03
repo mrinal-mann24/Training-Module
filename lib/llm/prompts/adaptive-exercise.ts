@@ -168,7 +168,11 @@ Difficulty level: ${params.difficultyLevel}.
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
 Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and
-Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank.${
+Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank. Do NOT
+quote these opening figures in the scenario prose: the system prints the
+opening position itself, and any rupee figure you write in a sentence about
+cash, the bank or the till is checked digit-for-digit against the real
+position. You may say the till is overdrawn without stating the amount.${
     params.cashPosition.cash < 0
       ? `
 THE TILL IS OVERDRAWN by Rs ${Math.abs(Math.round(params.cashPosition.cash)).toLocaleString('en-IN')}

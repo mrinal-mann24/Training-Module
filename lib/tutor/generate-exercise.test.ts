@@ -611,3 +611,51 @@ describe('stripDuplicateTransactionList (Praveen Level 3 saw the 12 items twice,
     expect(stripDuplicateTransactionList({ ...base, scenario }).scenario).toBe(scenario);
   });
 });
+
+import { checkOpeningFigures, scrubOpeningFigureSentences, stampOpeningPosition } from './generate-exercise';
+
+describe('opening figures in the scenario prose (Yeshas Level 2 said 8,67,186 for an 8,66,116 bank balance, 2026-09-02)', () => {
+  const position = { cash: 19900, bank: 866116 };
+  const base = {
+    scenario: '',
+    transactions: [],
+    answer_key: { entries: [] },
+    difficulty_level: 'L1',
+    variant: 'A',
+  } as unknown as GeneratedExercise;
+
+  it('flags a mistyped opening figure for retry', () => {
+    const error = checkOpeningFigures(
+      { ...base, scenario: 'Batch: same company. Opening this batch you are holding Rs 19,900 in Cash-in-Hand and Rs 8,67,186 in HDFC Bank - 1234.' },
+      position,
+    );
+    expect(error).toContain('Rs 8,67,186');
+    expect(error).toContain('Rs 8,66,116');
+  });
+
+  it('accepts the true figures and prose with no figures at all', () => {
+    expect(checkOpeningFigures({ ...base, scenario: 'You hold Rs 19,900 in Cash-in-Hand and Rs 8,66,116 in the bank.' }, position)).toBeNull();
+    expect(checkOpeningFigures({ ...base, scenario: 'Batch: same company, continuing. The till is overdrawn, so fix it first.' }, position)).toBeNull();
+  });
+
+  it('accepts the overdrawn amount as a figure when cash is negative', () => {
+    expect(checkOpeningFigures({ ...base, scenario: 'The till is sitting at minus Rs 55,100, so fix it first.' }, { cash: -55100, bank: 951116 })).toBeNull();
+  });
+
+  it('scrubs a surviving wrong-figure sentence and stamps the true position', () => {
+    const scrubbed = scrubOpeningFigureSentences(
+      { ...base, scenario: 'Batch: same company, continuing. Opening this batch you hold Rs 8,67,186 in HDFC Bank - 1234. Work in date order.' },
+      position,
+    );
+    expect(scrubbed.scenario).toBe('Batch: same company, continuing. Work in date order.');
+    const stamped = stampOpeningPosition(scrubbed, position, [{ account: 'HDFC Bank — 1234' }, { account: 'Cash' }]);
+    expect(stamped.scenario).toBe(
+      'Batch: same company, continuing. Work in date order.\n\nOpening position for this batch (system-computed from your books): Cash-in-Hand Rs 19,900; HDFC Bank — 1234 Rs 8,66,116.',
+    );
+  });
+
+  it('marks an overdrawn till in the stamped line', () => {
+    const stamped = stampOpeningPosition(base, { cash: -20100, bank: 926116 }, [{ account: 'HDFC Bank — 1234' }]);
+    expect(stamped.scenario).toContain('Cash-in-Hand Rs 20,100 (overdrawn)');
+  });
+});

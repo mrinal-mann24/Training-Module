@@ -86,3 +86,20 @@ describe('netAnswerKeys (cumulative openings must RESET, not accumulate)', () =>
     expect(openingBalancesFromNet(netAnswerKeys([withTax]))).toEqual([{ account: 'Cash', dr_cr: 'Dr', amount: 100 }]);
   });
 });
+
+import { isBankLedger } from './company';
+
+describe('bank ledger recognition (Bank Charges is an expense, not the bank — 2026-09-03)', () => {
+  it('keeps expense/income ledgers named after the bank out of the bank position', () => {
+    expect(isBankLedger('HDFC Bank — 1234')).toBe(true);
+    expect(isBankLedger('Bank Accounts')).toBe(true);
+    expect(isBankLedger('Bank Charges')).toBe(false);
+    expect(isBankLedger('Bank Interest')).toBe(false);
+    expect(isBankLedger('Cash')).toBe(false);
+  });
+
+  it('does not inflate the bank position by the charges balance', () => {
+    const net = new Map<string, number>([['HDFC Bank — 1234', 808176], ['Bank Charges', 1070.34], ['Cash', 11400]]);
+    expect(cashPositionFromNet(net)).toEqual({ cash: 11400, bank: 808176 });
+  });
+});

@@ -661,6 +661,88 @@ const CASH_LEDGER_PATTERN = /^cash\b|cash-in-hand/i;
 const BANK_LEDGER_PATTERN = /\bbank\b|hdfc/i;
 const OVERDRAW_TOLERANCE = 0.005;
 
+// The scenario prose may mention the company's opening Cash/Bank position,
+// and the model can mistype it: Yeshas's Level 2 said "Rs 8,67,186 in HDFC
+// Bank" when the carried-forward balance was 8,66,116 (2026-09-02). Scoring
+// never reads the prose, but the learner does. Three deterministic layers:
+// checkOpeningFigures feeds a retry when a figure in an opening-context
+// sentence isn't the real cash/bank figure; scrubOpeningFigureSentences
+// drops any such sentence that survives (the fallback path keeps the last
+// attempt); stampOpeningPosition appends the true position, written by code.
+const OPENING_CONTEXT_PATTERN = /cash|bank|till|hdfc|holding|opening|overdrawn|float/i;
+const RUPEE_FIGURE_PATTERN = /(?:₹|\bRs\.?\s?)\s*([\d,]+(?:\.\d+)?)/gi;
+
+function allowedOpeningFigures(cashPosition: { cash: number; bank: number }): Set<number> {
+  return new Set([Math.abs(Math.round(cashPosition.cash)), Math.abs(Math.round(cashPosition.bank))]);
+}
+
+function splitSentences(prose: string): string[] {
+  return prose.split(/(?<=[.!?])\s+|\n+/);
+}
+
+function wrongOpeningFigures(sentence: string, allowed: Set<number>): string[] {
+  if (!OPENING_CONTEXT_PATTERN.test(sentence)) {
+    return [];
+  }
+  const wrong: string[] = [];
+  for (const match of sentence.matchAll(RUPEE_FIGURE_PATTERN)) {
+    const value = Math.round(Number(match[1].replace(/,/g, "")));
+    if (Number.isFinite(value) && !allowed.has(value)) {
+      wrong.push(match[0].trim());
+    }
+  }
+  return wrong;
+}
+
+export function checkOpeningFigures(
+  generated: GeneratedExercise,
+  cashPosition: { cash: number; bank: number },
+): string | null {
+  const allowed = allowedOpeningFigures(cashPosition);
+  const offenders = splitSentences(generated.scenario).flatMap((sentence) =>
+    wrongOpeningFigures(sentence, allowed),
+  );
+  if (offenders.length === 0) {
+    return null;
+  }
+  return `Opening figures violated: the scenario prose states ${offenders.join(", ")} in a sentence about cash, bank or the till, but the company's real position is Cash ${formatRupees(cashPosition.cash)} and Bank ${formatRupees(cashPosition.bank)}. Do not quote opening figures in the prose at all (the system prints the opening position itself); transaction amounts belong only in the numbered transaction lines.`;
+}
+
+export function scrubOpeningFigureSentences(
+  generated: GeneratedExercise,
+  cashPosition: { cash: number; bank: number },
+): GeneratedExercise {
+  const allowed = allowedOpeningFigures(cashPosition);
+  const scenario = generated.scenario
+    .split(/\n/)
+    .map((line) =>
+      line
+        .split(/(?<=[.!?])\s+/)
+        .filter((sentence) => wrongOpeningFigures(sentence, allowed).length === 0)
+        .join(" "),
+    )
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return scenario === generated.scenario ? generated : { ...generated, scenario };
+}
+
+function formatRupees(value: number): string {
+  const rounded = Math.round(value);
+  return `Rs ${Math.abs(rounded).toLocaleString("en-IN")}${rounded < 0 ? " (overdrawn)" : ""}`;
+}
+
+export function stampOpeningPosition(
+  generated: GeneratedExercise,
+  cashPosition: { cash: number; bank: number },
+  openingBalances: { account: string }[],
+): GeneratedExercise {
+  const bankLabel =
+    openingBalances.find((opening) => /\bbank\b|hdfc/i.test(opening.account))?.account ?? "Bank";
+  const line = `Opening position for this batch (system-computed from your books): Cash-in-Hand ${formatRupees(cashPosition.cash)}; ${bankLabel} ${formatRupees(cashPosition.bank)}.`;
+  return { ...generated, scenario: `${generated.scenario.trim()}\n\n${line}` };
+}
+
 export function checkCashFeasibility(
   generated: GeneratedExercise,
   opening: { cash: number; bank: number },
@@ -825,12 +907,14 @@ export async function generateAdaptiveExercise(
       // is what lets the cash check see the movements at all.
       const doubleEntryError = checkDoubleEntry(parsed.data);
       const cashError = checkCashFeasibility(parsed.data, cashPosition);
+      const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
       const batchError = [
         compositionError,
         monthError,
         documentTextError,
         doubleEntryError,
         cashError,
+        openingFigureError,
       ]
         .filter(Boolean)
         .join(" ");
@@ -856,7 +940,11 @@ export async function generateAdaptiveExercise(
     );
   }
 
-  generated = stripDuplicateTransactionList(generated);
+  generated = stampOpeningPosition(
+    scrubOpeningFigureSentences(stripDuplicateTransactionList(generated), cashPosition),
+    cashPosition,
+    openingBalances,
+  );
 
   // Slow work (LLM + PDF render + upload) BEFORE the exercise row exists —
   // the chat's poll delivers the exercise as soon as the row appears, so

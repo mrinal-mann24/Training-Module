@@ -11,3 +11,21 @@ describe('formatExerciseContent', () => {
     expect(formatExerciseContent('Post the April pack.', '')).toBe(`Post the April pack.\n\n${STOCK_ITEMS_NOTE}`);
   });
 });
+
+import { EXPLAIN_PART_NOTE, REVIEW_PART_NOTE } from './exercise-content';
+
+describe('formatExerciseContent: typed-part notes', () => {
+  it('tells an explain exercise learner that a written explanation is required', () => {
+    const content = formatExerciseContent('Batch.', '1. Buy.', ['daybook_xml', 'trialbalance_xml', 'explain_text']);
+    expect(content.endsWith(`${STOCK_ITEMS_NOTE}\n\n${EXPLAIN_PART_NOTE}`)).toBe(true);
+  });
+
+  it('tells a review exercise learner that a written review is required', () => {
+    expect(formatExerciseContent('Batch.', '', ['daybook_xml', 'trialbalance_xml', 'review_text'])).toContain(REVIEW_PART_NOTE);
+  });
+
+  it('adds no typed-part note for a plain two-file exercise', () => {
+    const content = formatExerciseContent('Batch.', '1. Buy.', ['daybook_xml', 'trialbalance_xml']);
+    expect(content).not.toContain('THREE parts');
+  });
+});

@@ -50,7 +50,7 @@ export function assembleTimeline(rows: {
         id: `exercise-${exercise.id}`,
         role: 'assistant',
         kind: 'exercise',
-        content: formatExerciseContent(exercise.scenario, itemLines),
+        content: formatExerciseContent(exercise.scenario, itemLines, exercise.requiredParts),
         // Historical module numbers aren't stored (module is a derived
         // progress value); the current number is a close-enough label for
         // history and exact for the latest exercise.
