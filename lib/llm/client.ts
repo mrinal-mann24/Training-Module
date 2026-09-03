@@ -71,35 +71,15 @@ export async function getStructuredCompletion(
     },
   ];
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: messagesWithSchema,
-      // OpenRouter usage accounting: include the actual charged cost (USD)
-      // in the response's usage block, alongside token counts.
-      usage: { include: true },
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: params.jsonSchema.name,
-          strict: true,
-          schema: params.jsonSchema.schema,
-        },
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`OpenRouter request failed (${response.status}): ${body}`);
-  }
-
-  const data = (await response.json()) as {
+  // Transient failures — an empty message (seen live 2026-09-03 regenerating
+  // Praveen's Level 6: "OpenRouter response contained no message content"
+  // on the first and only attempt), a 429/5xx, a dropped connection — are
+  // retried a few times with a short backoff before the caller's own
+  // validation retries or the job step fails. Non-transient errors (4xx
+  // other than 429, invalid JSON) surface immediately.
+  const TRANSIENT_ATTEMPTS = 3;
+  let lastTransient: Error | null = null;
+  type OpenRouterResponse = {
     model?: string;
     choices: Array<{ message: { content: string } }>;
     usage?: {
@@ -109,10 +89,62 @@ export async function getStructuredCompletion(
       cost?: number;
     };
   };
+  let data: OpenRouterResponse | null = null;
+  let content: string | undefined;
 
-  const content = data.choices[0]?.message.content;
-  if (!content) {
-    throw new Error('OpenRouter response contained no message content.');
+  for (let attempt = 1; attempt <= TRANSIENT_ATTEMPTS; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: messagesWithSchema,
+          // OpenRouter usage accounting: include the actual charged cost (USD)
+          // in the response's usage block, alongside token counts.
+          usage: { include: true },
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: params.jsonSchema.name,
+              strict: true,
+              schema: params.jsonSchema.schema,
+            },
+          },
+        }),
+      });
+    } catch (error) {
+      lastTransient = error instanceof Error ? error : new Error(String(error));
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+      continue;
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      const transient = response.status === 429 || response.status >= 500;
+      if (!transient) {
+        throw new Error(`OpenRouter request failed (${response.status}): ${body}`);
+      }
+      lastTransient = new Error(`OpenRouter request failed (${response.status}): ${body.slice(0, 300)}`);
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+      continue;
+    }
+
+    data = (await response.json()) as OpenRouterResponse;
+    content = data?.choices[0]?.message.content;
+    if (content) {
+      break;
+    }
+    lastTransient = new Error('OpenRouter response contained no message content.');
+    await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+  }
+
+  if (!content || !data) {
+    throw lastTransient ?? new Error('OpenRouter response contained no message content.');
   }
 
   return {

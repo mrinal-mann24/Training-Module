@@ -1105,3 +1105,11 @@ printed total is the vendor's net plus the TDS withheld (the gross fee the
 vendor actually bills). The code-built statement now names the expense
 (BANK CHARGES, TDS PAYABLE…) instead of "PARTY" on payments with no
 counterparty. Praveen's Level 6 to be regenerated via the admin script.
+
+### 2026-09-03 — LLM client retries transient failures
+
+Regenerating Praveen's Level 6 died on its only attempt with "OpenRouter
+response contained no message content" (after the old exercise had been
+deleted). `getStructuredCompletion` now retries an empty message, a 429/5xx
+or a dropped connection up to 3 times with a short backoff; other 4xx and
+invalid JSON still surface immediately.
