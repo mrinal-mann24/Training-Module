@@ -376,26 +376,35 @@ body {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
 }
 
-/* ── Ambient video backdrop ─────────────────────────────────────────────── */
+/* ── Ambient video backdrop ─────────────────────────────────── */
 
 /*
- * The hero clip is a bright, high-key illustration (pale sky, sunlit stone),
- * so white type sitting directly on it is unreadable. This scrim grades it
- * from a light wash at the top — where the artwork should still read — down
- * to solid black behind the hero copy and the stats row, which is what makes
- * the bottom-anchored composition hold together.
+ * The hero clip plays at full opacity with no overlay, as specified. That
+ * holds on landscape viewports, where the crop keeps the bright ribbon in
+ * the upper third and the copy sits on near-black.
+ *
+ * It does not hold in portrait: `object-cover` on a tall viewport zooms the
+ * 16:9 clip so far in that the ribbon sweeps right across the headline and
+ * lede, and white type disappears into it for part of the loop (seen at
+ * 375x812). Below `lg` only, a bottom-weighted scrim holds the copy up
+ * while leaving the top band of artwork visible.
  */
 .night-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgb(0 0 0 / 60%) 0%,
-    rgb(0 0 0 / 42%) 20%,
-    rgb(0 0 0 / 72%) 46%,
-    rgb(0 0 0 / 92%) 72%,
-    #000 100%
-  );
+}
+
+@media (max-width: 1023px) {
+  .night-scrim {
+    background: linear-gradient(
+      180deg,
+      rgb(0 0 0 / 20%) 0%,
+      rgb(0 0 0 / 40%) 25%,
+      rgb(0 0 0 / 72%) 45%,
+      rgb(0 0 0 / 88%) 65%,
+      rgb(0 0 0 / 94%) 100%
+    );
+  }
 }
 
 /* ── Phone menu ────────────────────────────────────────────────────────── */

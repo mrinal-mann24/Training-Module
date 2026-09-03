@@ -1177,11 +1177,7 @@ their own heading and copy), `onboarding/page.tsx`, `OnboardingForm`.
 
 Three things the reference could not tell us, decided here:
 
-- **The hero clip is bright.** The spec says video at 100% opacity with no
-  overlay, which assumes a dark clip; ours is a pale, high-key illustration
-  and white type on it is unreadable. `VideoBackdrop` now ships with
-  `.night-scrim`, grading from a light wash at the top to solid black behind
-  the copy. The artwork still reads; the type is legible.
+- **The hero clip.** Superseded same day, see the entry below.
 - **No invented numbers.** The reference closes on adoption stats
   ("4.2M+ workflows", "180+ teams"). There are none to quote, so the three
   stats state product mechanics from `project-overview.md` instead: voucher
@@ -1212,3 +1208,37 @@ is not on this machine.
 Left alone, flagged: `app/components/DashboardPreview.tsx` is now referenced
 by nothing (it was already unmounted before this work) and
 `app/components/ui/button.tsx` is no longer used by any night surface.
+
+### 2026-09-03 — Gate date window follows the exercise month
+
+The exercise timeline advances a month per batch and has outrun the wall
+clock: Praveen's September Level 6 export (dated to 21-Sep-2026) was
+rejected on 3-Sep-2026 as "dated in the future". The window now ends at the
+later of today and the end of the latest month named in the exercise's
+transactions; a voucher beyond that (wrong year) is still rejected.
+Praveen's accidental text-only Level 6 submission (Enter pressed
+mid-explanation) was deleted so he can resubmit cleanly.
+
+### 2026-09-03 — Night surface uses the supplied CloudFront hero clip
+
+Correction to the entry above. The night surface shipped with the old local
+`/videos/hero-bg.*` clip (the pale "ledgers to AI city" illustration from the
+white theme) because it was already in `public/`. The user's reference had
+named a CloudFront URL for the hero video, and that is the clip the design
+was actually drawn around: a near-black field with a soft grey particle
+ribbon. `VideoBackdrop` now points at it directly (~9.5 MB, `Cache-Control:
+immutable`, confirmed 200 from CloudFront). The local pair is left in
+`public/videos` untouched, no longer referenced.
+
+That changes the scrim decision. Against a dark clip the reference's "100%
+opacity, no overlay" is correct, so the scrim is gone on landscape — verified
+across the loop at 1512x860, the ribbon stays in the upper third and the
+headline, lede and stats all sit on near-black.
+
+It is **not** correct in portrait. `object-cover` on a 375x812 viewport zooms
+the 16:9 clip far enough that the ribbon sweeps straight through the copy;
+for part of the loop the lede and the italic "real client" were close to
+invisible. `.night-scrim` now paints only below `lg`, bottom-weighted so the
+top band of artwork still reads. Confirmed at 1512px its computed background
+is `none`, and confirmed readable at 375x812 across several points in the
+loop.
