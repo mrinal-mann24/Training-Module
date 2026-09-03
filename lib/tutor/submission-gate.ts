@@ -1,5 +1,6 @@
 import type { ParsedDayBook, ParsedTrialBalance } from '@/lib/schemas/voucher';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
+import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
 
 export type ValidityError = {
   code: string;
@@ -44,7 +45,7 @@ export function runValidityGate(
     });
   }
 
-  const voucherDateError = checkVoucherDatesInPeriod(dayBook, booksBeginDate);
+  const voucherDateError = checkVoucherDatesInPeriod(dayBook, booksBeginDate, exercise);
   if (voucherDateError) {
     errors.push(voucherDateError);
   }
@@ -70,12 +71,30 @@ function parseTallyDate(value: string): Date | null {
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
 }
 
+// The exercise timeline runs one calendar month per batch, so it outruns the
+// wall clock: Praveen's Level 6 is dated September 2026 and was exported on
+// 3 September 2026 — the old "never in the future" rule rejected it
+// (2026-09-03). The window now ends at the later of today and the end of
+// the latest month the exercise's own transactions name; wrong years are
+// still caught.
+function exercisePeriodEnd(exercise: ExerciseForLearner): Date {
+  let end = new Date();
+  for (const transaction of exercise.transactions) {
+    const date = extractTransactionDate(transaction.description);
+    if (!date) continue;
+    const monthEnd = new Date(Date.UTC(date.year, date.monthIndex + 1, 0, 23, 59, 59));
+    if (monthEnd > end) end = monthEnd;
+  }
+  return end;
+}
+
 function checkVoucherDatesInPeriod(
   dayBook: ParsedDayBook,
   booksBeginDate: string,
+  exercise: ExerciseForLearner,
 ): ValidityError | null {
   const periodStart = new Date(booksBeginDate);
-  const periodEnd = new Date();
+  const periodEnd = exercisePeriodEnd(exercise);
 
   const outOfRange = dayBook.vouchers.some((voucher) => {
     const voucherDate = parseTallyDate(voucher.date);

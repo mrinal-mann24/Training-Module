@@ -199,3 +199,18 @@ describe('no month-day rule (Phase 3, spec 15)', () => {
     expect(result.status).toBe('valid');
   });
 });
+
+describe('voucher dates may run ahead of the wall clock when the exercise month does (2026-09-03)', () => {
+  const futureExercise = { ...makeExercise(1), transactions: [{ sequence: 1, description: 'On 15-Dec-2030, pay office rent by bank transfer.' }] };
+  const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
+  const dayBookOn = (date: string) => ({ vouchers: [{ voucherType: 'Payment', date, narration: 'rent', ledgerEntries: [] }] });
+
+  it('accepts a voucher inside the exercise month even though it is in the future', () => {
+    expect(runValidityGate(dayBookOn('20301221'), trialBalance, futureExercise, '2026-04-01').status).toBe('valid');
+  });
+
+  it('still rejects a voucher beyond the exercise month', () => {
+    const result = runValidityGate(dayBookOn('20310105'), trialBalance, futureExercise, '2026-04-01');
+    expect(result.status).toBe('invalid');
+  });
+});
