@@ -189,6 +189,19 @@ Recently strong areas (for the opening line): ${
 
 Difficulty level: ${params.difficultyLevel}.
 
+ANSWER KEY SHAPE (hard requirement): answer_key.entries holds EVERY ledger leg
+of every transaction's Tally voucher, one entry per leg, all sharing that
+transaction's sequence — never a single summary entry per transaction. At
+least one Dr leg AND at least one Cr leg per transaction, and the debits must
+equal the credits. Examples of the required shape:
+- Sale on credit with IGST: Dr customer (total) / Cr Sales (base) / Cr Output IGST.
+- Purchase with CGST+SGST: Dr Purchases (base) / Dr Input CGST / Dr Input SGST / Cr supplier (total).
+- Purchase with TDS: Dr expense (gross) / Cr TDS Payable / Cr vendor (net).
+- Payment: Dr party or expense / Cr the bank. Receipt: Dr the bank / Cr customer.
+- Contra: Dr the bank / Cr Cash, or the reverse.
+GST and TDS are real ledger legs ("Output IGST", "Input CGST", "TDS Payable — u/s 194J"),
+not just metadata; gst_head/tds_section on the tax leg say which head.
+
 ${buildOpenBillsBlock(params.openBills)}
 
 OPENING BALANCES (hard requirement): entering this batch the company holds

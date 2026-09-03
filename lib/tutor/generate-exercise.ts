@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTracedStructuredCompletion } from "@/lib/llm/tracing";
@@ -925,6 +928,24 @@ function dropOneLevel(
 // the exercise, then registers any new ledgers and appends the transaction
 // summary to the company log — this is what keeps the registry accurate for
 // the *next* generation call.
+// Diagnostics for a generation that keeps failing validation: with
+// DEBUG_GENERATION set, every rejected attempt (the model's output plus the
+// violation text) is written under the OS temp dir so the actual output can
+// be inspected instead of guessed at (2026-09-03: three consecutive
+// single-leg batches for Praveen's Level 6 regeneration).
+function dumpFailedAttempt(learnerId: string, attempt: number, error: string, output: unknown): void {
+  if (!process.env.DEBUG_GENERATION) return;
+  try {
+    const dir = path.join(os.tmpdir(), "aia-generation-debug");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${learnerId.slice(0, 8)}-${Date.now()}-attempt${attempt}.json`);
+    fs.writeFileSync(file, JSON.stringify({ error, output }, null, 2));
+    console.error(`[generation] attempt ${attempt} rejected — dumped to ${file}`);
+  } catch {
+    // diagnostics must never break generation
+  }
+}
+
 export async function generateAdaptiveExercise(
   supabase: SupabaseClient,
   learnerId: string,
@@ -1064,10 +1085,12 @@ export async function generateAdaptiveExercise(
         unbalancedFallback = parsed.data;
       }
       lastError = batchError;
+      dumpFailedAttempt(learnerId, attempt, batchError, parsed.data);
       continue;
     }
 
     lastError = parsed.error.message;
+    dumpFailedAttempt(learnerId, attempt, lastError, raw);
   }
 
   if (!generated && unbalancedFallback) {

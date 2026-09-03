@@ -1113,3 +1113,12 @@ response contained no message content" (after the old exercise had been
 deleted). `getStructuredCompletion` now retries an empty message, a 429/5xx
 or a dropped connection up to 3 times with a short backoff; other 4xx and
 invalid JSON still surface immediately.
+
+### 2026-09-03 — Answer-key shape stated in the prompt; failed attempts dumpable
+
+Regenerating Praveen's Level 6 failed three times with every transaction
+single-legged. The prompt never actually said that answer_key.entries must
+carry every voucher leg — multi-leg output had been habit, not instruction.
+An ANSWER KEY SHAPE block now states it with examples (sale/purchase/TDS/
+payment/receipt/contra), and `DEBUG_GENERATION=1` writes each rejected
+attempt (output + violation) under the OS temp dir for inspection.
