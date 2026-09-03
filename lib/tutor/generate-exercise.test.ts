@@ -659,3 +659,54 @@ describe('opening figures in the scenario prose (Yeshas Level 2 said 8,67,186 fo
     expect(stamped.scenario).toContain('Cash-in-Hand Rs 20,100 (overdrawn)');
   });
 });
+
+import { checkSettlementReferences } from './generate-exercise';
+
+describe('checkSettlementReferences (invented bill numbers: DT-2216, BR/S/098, CS/612 — 2026-09-03)', () => {
+  const openBills = [
+    { party: 'Deccan Traders', ref: 'DT/334', open: 69620, side: 'payable' as const },
+    { party: 'Delhi Bazaar', ref: 'INV-003', open: 22000, side: 'receivable' as const },
+  ];
+  const settlement = (party: string, amount: number, ref: string, description: string, extra: GeneratedExercise['answer_key']['entries'] = []) =>
+    ({
+      scenario: '',
+      transactions: [{ sequence: 1, description }],
+      difficulty_level: 'L1',
+      variant: 'A',
+      answer_key: {
+        entries: [
+          { ...entry(1, ['payment_voucher_basics'], 'Payment'), correct_account: party, dr_cr: 'Dr', amount, bill_reference: ref },
+          { ...entry(1, ['payment_voucher_basics'], 'Payment'), correct_account: 'HDFC Bank — 1234', dr_cr: 'Cr', amount, bill_reference: ref },
+          ...extra,
+        ],
+      },
+    }) as unknown as GeneratedExercise;
+
+  it('rejects a settlement against a bill that does not exist and lists the real ones', () => {
+    const error = checkSettlementReferences(settlement('Deccan Traders', 42500, 'DT-2216', 'pays Deccan Traders Rs 42,500 in full settlement of DT-2216'), openBills);
+    expect(error).toContain('DT-2216');
+    expect(error).toContain('DT/334');
+  });
+
+  it('rejects a "full settlement" that does not match the outstanding balance', () => {
+    const error = checkSettlementReferences(settlement('Deccan Traders', 42500, 'DT/334', 'pays Deccan Traders Rs 42,500 in full settlement of DT/334'), openBills);
+    expect(error).toContain('full settlement');
+  });
+
+  it('accepts a part payment within the balance and an exact full settlement', () => {
+    expect(checkSettlementReferences(settlement('Deccan Traders', 42500, 'DT/334', 'part payment against DT/334'), openBills)).toBeNull();
+    expect(checkSettlementReferences(settlement('Deccan Traders', 69620, 'Against DT/334 (full)', 'full settlement of DT/334'), openBills)).toBeNull();
+  });
+
+  it('accepts settling a bill raised earlier in the same batch', () => {
+    const raised = [
+      { ...entry(2, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Vizag Vendors', dr_cr: 'Cr', amount: 17700, bill_reference: 'VV-556' },
+      { ...entry(2, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Purchases', dr_cr: 'Dr', amount: 17700, bill_reference: 'VV-556' },
+    ] as GeneratedExercise['answer_key']['entries'];
+    expect(checkSettlementReferences(settlement('Vizag Vendors', 17700, 'VV-556', 'full settlement of VV-556', raised), openBills)).toBeNull();
+  });
+
+  it('ignores receipts/payments with no bill reference (advances, expenses)', () => {
+    expect(checkSettlementReferences(settlement('Rent', 28000, null as unknown as string, 'pays office rent'), openBills)).toBeNull();
+  });
+});

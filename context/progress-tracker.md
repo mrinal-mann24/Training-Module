@@ -942,3 +942,31 @@ model had copied our number faithfully — the session-9 note blaming a
 mistyped digit was wrong. `isBankLedger` now excludes charge/commission/
 interest/fee/penalty ledgers. Answer keys were never affected. Live fix for
 Praveen's stamped line: `Downloads/patch-praveen-level4-prose.sql`.
+
+### 2026-09-03 — Explain/review exercises now say they need a typed part
+
+The exercise message never said an explain batch has a third, typed part;
+the only hint was the composer placeholder. `formatExerciseContent` now
+takes the exercise's requiredParts and appends a fixed "This level has THREE
+parts…" note for explain_text / review_text exercises (code-written, not a
+prompt instruction). Both message builders pass requiredParts. Tests: 236.
+
+### 2026-09-03 — Settlements must reference bills that exist (open-bills guard)
+
+Praveen's Level 4 Tx 1 said "full settlement of DT-2216 for 42,500" — no
+such bill; Deccan Traders' real open bill is DT/334 for 69,620. Yeshas's
+Level 2 Tx 7/8 settled BR/S/098 and CS/612, neither of which exists. Same
+class as the KE/2026/018 defect: a learner cannot allocate against a bill
+Tally has never seen.
+
+Fix: `openBillsFromKeys` / `getOpenBills` (company.ts) derive bill-by-bill
+state from the answer keys (raises less settlements per party+ref; only
+positive balances are open). The adaptive prompt now carries an OPEN BILLS
+block (the only bills a settlement may name, with balances, plus the
+advance/New Ref rule), and `checkSettlementReferences` (generate-exercise.ts)
+rejects — into the combined retry — any receipt/payment whose reference is
+neither an open bill of that party nor a bill raised earlier in the batch,
+an amount above the balance, or a "full settlement" that doesn't equal it.
+Tests: 242. Live data: `Downloads/patch-settlement-refs.sql` (Praveen Tx 1
+→ DT/334 69,620; Yeshas Tx 7 → INV-022 part payment accepting the printed
+BR/S/098 too; Tx 8 reworded as an advance New Ref).

@@ -26,6 +26,11 @@ import {
   getExpectedOpeningBalances,
   registerCompanyLedgers,
   appendCompanyTransactionLog,
+  getOpenBills,
+  normalizeBillReference,
+  splitBillReferences,
+  partyLegOf,
+  type OpenBill,
 } from "@/lib/db/queries/company";
 import { insertSourceDocument } from "@/lib/db/queries/source-documents";
 import {
@@ -743,6 +748,70 @@ export function stampOpeningPosition(
   return { ...generated, scenario: `${generated.scenario.trim()}\n\n${line}` };
 }
 
+// A receipt/payment "against" a bill must settle a bill that exists: one
+// open in the books (from the answer keys) or one raised earlier in this
+// batch, for the same party, within its balance — and "full settlement"
+// only when the amount equals it. The model invented DT-2216 / BR/S/098 /
+// CS/612 (2026-09-03); a learner cannot allocate against a bill Tally has
+// never seen, so the retry lists the party's real open bills.
+const FULL_SETTLEMENT_PATTERN = /full (?:and final )?(?:settlement|payment)|settl(?:es|ed|ing) in full|in full settlement|clears? the (?:bill|invoice) in full/i;
+
+export function checkSettlementReferences(
+  generated: GeneratedExercise,
+  openBills: OpenBill[],
+): string | null {
+  const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
+  for (const entry of generated.answer_key.entries) {
+    const legs = bySequence.get(entry.sequence) ?? [];
+    legs.push(entry);
+    bySequence.set(entry.sequence, legs);
+  }
+  const raisedInBatch = new Set<string>();
+  for (const legs of bySequence.values()) {
+    if (!/^(sales|purchase)$/i.test(legs[0].voucher_type)) continue;
+    const party = partyLegOf(legs);
+    if (!party || !legs[0].bill_reference) continue;
+    for (const ref of splitBillReferences(legs[0].bill_reference)) {
+      raisedInBatch.add(`${party.correct_account}|${normalizeBillReference(ref)}`);
+    }
+  }
+
+  const violations: string[] = [];
+  for (const [sequence, legs] of bySequence) {
+    if (!/^(receipt|payment)$/i.test(legs[0].voucher_type)) continue;
+    const party = partyLegOf(legs);
+    const reference = legs[0].bill_reference;
+    if (!party || !reference) continue;
+    const amount = legs
+      .filter((leg) => leg.correct_account === party.correct_account)
+      .reduce((sum, leg) => sum + leg.amount, 0);
+    const description = generated.transactions.find((t) => t.sequence === sequence)?.description ?? "";
+    const partyOpen = openBills.filter((bill) => bill.party === party.correct_account);
+    const listed = partyOpen.length === 0
+      ? "no open bills at all"
+      : partyOpen.map((bill) => `${bill.ref} (Rs ${Math.round(Math.abs(bill.open)).toLocaleString("en-IN")} outstanding)`).join(", ");
+    let openTotal = 0;
+    for (const ref of splitBillReferences(reference)) {
+      const id = `${party.correct_account}|${normalizeBillReference(ref)}`;
+      if (raisedInBatch.has(id)) { openTotal += Number.POSITIVE_INFINITY; continue; }
+      const bill = openBills.find((candidate) => `${candidate.party}|${normalizeBillReference(candidate.ref)}` === id);
+      if (!bill) {
+        violations.push(`transaction ${sequence} settles "${ref}" for ${party.correct_account}, but that bill does not exist — ${party.correct_account} has ${listed}. Either reference one of those (amount within its balance) or make the transaction an advance recorded as a New Ref and say so in its text.`);
+        continue;
+      }
+      openTotal += Math.abs(bill.open);
+    }
+    if (openTotal === 0 || openTotal === Number.POSITIVE_INFINITY) continue;
+    if (amount > openTotal + 0.5) {
+      violations.push(`transaction ${sequence} pays/receives ${Math.round(amount)} against ${reference} for ${party.correct_account}, but only ${Math.round(openTotal)} is outstanding on it.`);
+    } else if (FULL_SETTLEMENT_PATTERN.test(description) && Math.abs(amount - openTotal) > 0.5) {
+      violations.push(`transaction ${sequence} is described as a full settlement of ${reference} for ${party.correct_account}, but ${Math.round(openTotal)} is outstanding and the amount is ${Math.round(amount)}. Either settle the exact balance or call it a part payment.`);
+    }
+  }
+  if (violations.length === 0) return null;
+  return `Bill references violated: ${violations.join(" ")}`;
+}
+
 export function checkCashFeasibility(
   generated: GeneratedExercise,
   opening: { cash: number; bank: number },
@@ -834,13 +903,14 @@ export async function generateAdaptiveExercise(
     : baseDifficultyLevel;
   const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
 
-  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition, openingBalances] =
+  const [companyLedgerRegistry, recentCompanyTransactionLog, companyName, cashPosition, openingBalances, openBills] =
     await Promise.all([
       getCompanyLedgerRegistry(supabase, learnerId),
       getRecentCompanyTransactionLog(supabase, learnerId),
       getCompanyName(supabase, learnerId),
       getExpectedCashPosition(supabase, learnerId),
       getExpectedOpeningBalances(supabase, learnerId),
+      getOpenBills(supabase, learnerId),
     ]);
 
   const promptParams = {
@@ -861,6 +931,7 @@ export async function generateAdaptiveExercise(
     // company is Blossom Retail.
     companyName: companyName ?? "Blossom Retail Pvt Ltd",
     cashPosition,
+    openBills,
   };
 
   let lastError: string | null = null;
@@ -908,6 +979,7 @@ export async function generateAdaptiveExercise(
       const doubleEntryError = checkDoubleEntry(parsed.data);
       const cashError = checkCashFeasibility(parsed.data, cashPosition);
       const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
+      const settlementError = checkSettlementReferences(parsed.data, openBills);
       const batchError = [
         compositionError,
         monthError,
@@ -915,6 +987,7 @@ export async function generateAdaptiveExercise(
         doubleEntryError,
         cashError,
         openingFigureError,
+        settlementError,
       ]
         .filter(Boolean)
         .join(" ");

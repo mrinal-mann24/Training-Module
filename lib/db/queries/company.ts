@@ -136,6 +136,88 @@ export async function getExpectedOpeningBalances(
   return openingBalancesFromNet(netAnswerKeys(await loadAnswerKeys(supabase, learnerId)));
 }
 
+// Bill-by-bill state derived from the answer keys: every invoice/purchase
+// bill a party leg carries a reference for, less the receipts/payments
+// (and credit/debit notes) settled against it. Generated batches that say
+// "against Bill X" / "full settlement of X" must point at one of these —
+// the model invented DT-2216 (42,500) for Praveen's Level 4 when Deccan
+// Traders' real open bill was DT/334 (69,620), and BR/S/098 / CS/612 for
+// Yeshas's Level 2 with no such bills at all (2026-09-03). A learner
+// posting bill-by-bill in Tally cannot allocate against a bill that does
+// not exist, so the reference has to be real.
+export type OpenBill = { party: string; ref: string; open: number; side: 'receivable' | 'payable' };
+
+const NON_PARTY_ACCOUNT_PATTERN = /^(sales|purchases?|cash|sales returns?|purchase returns?)$|\bbank\b|hdfc|gst|tds/i;
+
+export function normalizeBillReference(ref: string): string {
+  return ref
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^\s*against\s+/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+export function splitBillReferences(ref: string): string[] {
+  return ref
+    .replace(/\([^)]*\)/g, '')
+    .split(/[,;]/)
+    .map((part) => part.replace(/^\s*against\s+/i, '').trim())
+    .filter((part) => part.length > 0);
+}
+
+export function partyLegOf<T extends { correct_account: string }>(legs: T[]): T | undefined {
+  return legs.find((leg) => !NON_PARTY_ACCOUNT_PATTERN.test(leg.correct_account));
+}
+
+export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
+  const bills = new Map<string, OpenBill>();
+  for (const key of keys) {
+    const bySequence = new Map<number, AnswerKey['entries']>();
+    for (const entry of key.entries ?? []) {
+      const legs = bySequence.get(entry.sequence) ?? [];
+      legs.push(entry);
+      bySequence.set(entry.sequence, legs);
+    }
+    for (const legs of bySequence.values()) {
+      const party = partyLegOf(legs);
+      const reference = legs[0]?.bill_reference;
+      if (!party || !reference) {
+        continue;
+      }
+      const type = legs[0].voucher_type;
+      const raises = /^(sales|purchase)$/i.test(type);
+      const settles = /^(receipt|payment|credit note|debit note)$/i.test(type);
+      if (!raises && !settles) {
+        continue;
+      }
+      const side: OpenBill['side'] = /^(sales|receipt|credit note)$/i.test(type) ? 'receivable' : 'payable';
+      const partyAmount = legs
+        .filter((leg) => leg.correct_account === party.correct_account)
+        .reduce((sum, leg) => sum + leg.amount, 0);
+      const refs = splitBillReferences(reference);
+      for (const ref of refs) {
+        const id = `${party.correct_account}|${normalizeBillReference(ref)}`;
+        const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
+        // A settlement split across several refs is applied to each in full
+        // only when it names a single ref; multi-ref settlements are
+        // approximated by splitting evenly (the exact split lives in Tally).
+        current.open += (raises ? 1 : -1) * partyAmount / refs.length;
+        bills.set(id, current);
+      }
+    }
+  }
+  return [...bills.values()]
+    // Only positive balances are open. A negative net is a receipt/payment
+    // against a bill carried in the OPENING balances (the pack's INV-M-102
+    // etc.), which the keys never raise — settled, not outstanding.
+    .filter((bill) => bill.open >= 0.5)
+    .map((bill) => ({ ...bill, open: Math.round(bill.open * 100) / 100 }));
+}
+
+export async function getOpenBills(supabase: SupabaseClient, learnerId: string): Promise<OpenBill[]> {
+  return openBillsFromKeys(await loadAnswerKeys(supabase, learnerId));
+}
+
 export type CompanyLedgerRegistryEntry = {
   ledger_name: string;
   ledger_type: string;

@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@/lib/llm/client';
 import { CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
-import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry } from '@/lib/db/queries/company';
+import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill } from '@/lib/db/queries/company';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
 
@@ -38,7 +38,30 @@ export type AdaptiveExerciseParams = {
   // cash movements the learner could not possibly post, e.g. a ₹45,000 cash
   // deposit against ₹19,900 of cash on hand.
   cashPosition: { cash: number; bank: number };
+  // Every bill still open in the books, derived from the answer keys
+  // (2026-09-03): settlements may only reference these or bills raised in
+  // the same batch — the model otherwise invents bill numbers.
+  openBills: OpenBill[];
 };
+
+function buildOpenBillsBlock(openBills: OpenBill[]): string {
+  const lines =
+    openBills.length === 0
+      ? '- (none: every earlier bill is fully settled)'
+      : openBills
+          .map((bill) => `- ${bill.party} (${bill.side}): ${bill.ref} — Rs ${Math.round(Math.abs(bill.open)).toLocaleString('en-IN')} outstanding`)
+          .join('\n');
+  return `OPEN BILLS (hard requirement): these are the ONLY bills currently open in the
+company's books, with the balance outstanding on each:
+${lines}
+A receipt or payment posted "against" a bill MUST name one of these bills, for
+that same party, and its amount can never exceed that bill's balance. Say
+"full settlement" only when the amount equals the balance exactly; otherwise
+call it a part payment. A bill raised earlier in THIS batch may also be
+settled later in the batch. Any other receipt or payment is an advance:
+record it as a New Ref and say so in its text. Never invent a bill number
+that is not listed here or raised in this batch.`;
+}
 
 function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
   const companyLine = `THE COMPANY IS: ${params.companyName} (home state Karnataka, GST state code 29).
@@ -165,6 +188,8 @@ Recently strong areas (for the opening line): ${
   }
 
 Difficulty level: ${params.difficultyLevel}.
+
+${buildOpenBillsBlock(params.openBills)}
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
 Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and

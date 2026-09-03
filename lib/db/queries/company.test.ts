@@ -103,3 +103,36 @@ describe('bank ledger recognition (Bank Charges is an expense, not the bank — 
     expect(cashPositionFromNet(net)).toEqual({ cash: 11400, bank: 808176 });
   });
 });
+
+import { openBillsFromKeys } from './company';
+
+describe('openBillsFromKeys (bill-by-bill state from the answer keys, 2026-09-03)', () => {
+  const entry = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, ref: string | null): AnswerKey['entries'][number] => ({
+    ...leg(sequence, account, drCr, amount),
+    voucher_type: voucherType,
+    bill_reference: ref,
+  });
+  const april: AnswerKey = {
+    entries: [
+      entry(1, 'Deccan Traders', 'Cr', 69620, 'Purchase', 'DT/334'),
+      entry(1, 'Purchases', 'Dr', 59000, 'Purchase', 'DT/334'),
+      entry(2, 'Delhi Bazaar', 'Dr', 177000, 'Sales', 'INV-003'),
+      entry(2, 'Sales', 'Cr', 150000, 'Sales', 'INV-003'),
+      entry(3, 'Delhi Bazaar', 'Cr', 155000, 'Receipt', 'Against INV-003 (part)'),
+      entry(3, 'HDFC Bank — 1234', 'Dr', 155000, 'Receipt', 'Against INV-003 (part)'),
+      entry(4, 'Chennai Suppliers', 'Cr', 106200, 'Purchase', 'CS-091'),
+      entry(5, 'Chennai Suppliers', 'Dr', 106200, 'Payment', 'CS-091'),
+    ],
+  };
+
+  it('nets raises against settlements per party and reference', () => {
+    const bills = openBillsFromKeys([april]);
+    expect(bills).toEqual(
+      expect.arrayContaining([
+        { party: 'Deccan Traders', ref: 'DT/334', open: 69620, side: 'payable' },
+        { party: 'Delhi Bazaar', ref: 'INV-003', open: 22000, side: 'receivable' },
+      ]),
+    );
+    expect(bills.some((bill) => bill.party === 'Chennai Suppliers')).toBe(false);
+  });
+});

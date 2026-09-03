@@ -15,6 +15,7 @@ function params(overrides: Partial<AdaptiveExerciseParams> = {}): AdaptiveExerci
     exerciseMonthLabel: 'May 2026',
     companyName: 'Blossom Retail Pvt Ltd',
     cashPosition: { cash: 19900, bank: 867186 },
+    openBills: [],
     ...overrides,
   };
 }
