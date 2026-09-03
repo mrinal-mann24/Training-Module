@@ -1135,3 +1135,12 @@ leg carries it, `fillBillReferencesFromText` propagates it to all legs (and
 also reads "bill ref X"), and `Downloads/patch-praveen-level6-refs.sql`
 propagates it in his stored key. The earlier three single-leg attempts are
 addressed by the ANSWER KEY SHAPE prompt block.
+
+### 2026-09-03 — Validity gate rejects group-wise Trial Balances
+
+Yeshas's May Trial Balance was a group-wise export (9 rows: Capital
+Account, Current Liabilities, Sales Accounts…) and the gate accepted it —
+the row floor was 3, so only an empty file failed. Every real ledger-wise
+export of this company has 35+ rows; the floor is now 15, which rejects
+every group-wise file seen with the existing "export ledger-level detail"
+message. Gate test fixtures padded accordingly.
