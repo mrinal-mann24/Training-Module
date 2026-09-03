@@ -449,6 +449,34 @@ export async function appendCompanyTransactionLog(
 // by the checks (or vice versa) — every hallucination so far was a fact
 // that existed in the books but was missing from, or wrong in, what the
 // model was told.
+// Whether a party is taxed intra-state (CGST+SGST) or inter-state (IGST),
+// derived from how the keys have taxed that party so far. A party's state
+// never changes, but the model gave Deccan Traders (Karnataka, CGST+SGST in
+// three earlier batches) IGST as "Telangana" in Yeshas's Level 3
+// (2026-09-03) — self-consistent within the batch, contradicting the books.
+export type PartyTaxClass = 'intra' | 'inter';
+
+export function partyTaxClassesFromKeys(keys: AnswerKey[]): Map<string, PartyTaxClass> {
+  const classes = new Map<string, PartyTaxClass>();
+  for (const key of keys) {
+    const bySequence = new Map<number, AnswerKey['entries']>();
+    for (const entry of key.entries ?? []) {
+      const legs = bySequence.get(entry.sequence) ?? [];
+      legs.push(entry);
+      bySequence.set(entry.sequence, legs);
+    }
+    for (const legs of bySequence.values()) {
+      if (!/^(sales|purchase)$/i.test(legs[0]?.voucher_type ?? '')) continue;
+      const party = partyLegOf(legs, legs[0].voucher_type);
+      if (!party || classes.has(party.correct_account)) continue;
+      const heads = new Set(legs.map((leg) => leg.gst_head).filter((head): head is 'CGST' | 'SGST' | 'IGST' => head !== null));
+      if (heads.has('IGST')) classes.set(party.correct_account, 'inter');
+      else if (heads.has('CGST') || heads.has('SGST')) classes.set(party.correct_account, 'intra');
+    }
+  }
+  return classes;
+}
+
 export type CompanyState = {
   companyName: string | null;
   ledgerRegistry: CompanyLedgerRegistryEntry[];
@@ -456,6 +484,7 @@ export type CompanyState = {
   cashPosition: CompanyCashPosition;
   openingBalances: OpeningBalance[];
   openBills: OpenBill[];
+  partyTaxClasses: Map<string, PartyTaxClass>;
 };
 
 export async function getCompanyState(supabase: SupabaseClient, learnerId: string): Promise<CompanyState> {
@@ -473,5 +502,6 @@ export async function getCompanyState(supabase: SupabaseClient, learnerId: strin
     cashPosition: cashPositionFromNet(net),
     openingBalances: openingBalancesFromNet(net),
     openBills: openBillsFromKeys(keys),
+    partyTaxClasses: partyTaxClassesFromKeys(keys),
   };
 }

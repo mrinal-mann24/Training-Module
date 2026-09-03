@@ -16,6 +16,7 @@ function params(overrides: Partial<AdaptiveExerciseParams> = {}): AdaptiveExerci
     companyName: 'Blossom Retail Pvt Ltd',
     cashPosition: { cash: 19900, bank: 867186 },
     openBills: [],
+    partyTaxClasses: new Map(),
     ...overrides,
   };
 }

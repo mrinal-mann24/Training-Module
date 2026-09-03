@@ -30,6 +30,7 @@ import {
   splitBillReferences,
   partyLegOf,
   type OpenBill,
+  type PartyTaxClass,
 } from "@/lib/db/queries/company";
 import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/build-bank-statement";
 import type { BankStatementContent } from "@/lib/schemas/source-document";
@@ -820,6 +821,41 @@ export function fillBillReferencesFromText(generated: GeneratedExercise): Genera
   };
 }
 
+// A known party keeps its GST treatment: CGST+SGST parties stay intra-state,
+// IGST parties stay inter-state. The model relocated Deccan Traders
+// (Karnataka in three earlier batches) to "Telangana" with IGST in Yeshas's
+// Level 3 (2026-09-03) — consistent inside the batch, contradicting the books
+// the learner has been keeping.
+export function checkPartyTaxConsistency(
+  generated: GeneratedExercise,
+  partyTaxClasses: Map<string, PartyTaxClass>,
+): string | null {
+  if (partyTaxClasses.size === 0) return null;
+  const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
+  for (const entry of generated.answer_key.entries) {
+    const legs = bySequence.get(entry.sequence) ?? [];
+    legs.push(entry);
+    bySequence.set(entry.sequence, legs);
+  }
+  const violations: string[] = [];
+  for (const [sequence, legs] of bySequence) {
+    if (!/^(sales|purchase)$/i.test(legs[0].voucher_type)) continue;
+    const party = partyLegOf(legs, legs[0].voucher_type);
+    if (!party) continue;
+    const known = partyTaxClasses.get(party.correct_account);
+    if (!known) continue;
+    const heads = new Set(legs.map((leg) => leg.gst_head).filter((head): head is 'CGST' | 'SGST' | 'IGST' => head !== null));
+    const actual: PartyTaxClass | null = heads.has("IGST") ? "inter" : heads.has("CGST") || heads.has("SGST") ? "intra" : null;
+    if (actual && actual !== known) {
+      violations.push(
+        `transaction ${sequence} taxes ${party.correct_account} as ${actual === "inter" ? "inter-state (IGST)" : "intra-state (CGST+SGST)"}, but this party is already ${known === "inter" ? "outside Karnataka (IGST)" : "in Karnataka (CGST+SGST)"} in the books`,
+      );
+    }
+  }
+  if (violations.length === 0) return null;
+  return `Party states violated: ${violations.join("; ")}. A party's state never changes — keep the GST treatment the books already use for that party, or use a different party.`;
+}
+
 export function checkSettlementReferences(
   generated: GeneratedExercise,
   openBills: OpenBill[],
@@ -995,6 +1031,7 @@ export async function generateAdaptiveExercise(
     cashPosition,
     openingBalances,
     openBills,
+    partyTaxClasses,
   } = await getCompanyState(supabase, learnerId);
 
   const promptParams = {
@@ -1016,6 +1053,7 @@ export async function generateAdaptiveExercise(
     companyName: companyName ?? "Blossom Retail Pvt Ltd",
     cashPosition,
     openBills,
+    partyTaxClasses,
   };
 
   let lastError: string | null = null;
@@ -1070,7 +1108,8 @@ export async function generateAdaptiveExercise(
       const cashError = checkCashFeasibility(parsed.data, cashPosition);
       const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
       const settlementError = checkSettlementReferences(parsed.data, openBills);
-      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError]
+      const partyTaxError = checkPartyTaxConsistency(parsed.data, partyTaxClasses);
+      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError]
         .filter(Boolean)
         .join(" ");
       const batchError = [
@@ -1081,6 +1120,7 @@ export async function generateAdaptiveExercise(
         cashError,
         openingFigureError,
         settlementError,
+        partyTaxError,
       ]
         .filter(Boolean)
         .join(" ");

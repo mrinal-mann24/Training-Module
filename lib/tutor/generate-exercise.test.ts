@@ -780,3 +780,31 @@ describe('fillBillReferencesFromText: propagates a party-leg reference to every 
     expect(fillBillReferencesFromText(generated).answer_key.entries[0].bill_reference).toBe('MA/205');
   });
 });
+
+import { checkPartyTaxConsistency } from './generate-exercise';
+
+describe('checkPartyTaxConsistency (Deccan Traders relocated to "Telangana", Yeshas Level 3 — 2026-09-03)', () => {
+  const purchase = (party: string, heads: ('IGST' | 'CGST' | 'SGST')[]) =>
+    ({
+      scenario: '', difficulty_level: 'L1', variant: 'A',
+      transactions: [{ sequence: 1, description: 'invoice from ' + party }],
+      answer_key: { entries: [
+        { ...entry(1, ['purchase_voucher_basics'], 'Purchase'), correct_account: 'Purchases', dr_cr: 'Dr', amount: 30000 },
+        ...heads.map((head) => ({ ...entry(1, ['gst_classification'], 'Purchase'), correct_account: `Input ${head}`, dr_cr: 'Dr', amount: 2700, gst_head: head })),
+        { ...entry(1, ['purchase_voucher_basics'], 'Purchase'), correct_account: party, dr_cr: 'Cr', amount: 35400 },
+      ] },
+    }) as unknown as GeneratedExercise;
+  const known = new Map<string, 'intra' | 'inter'>([['Deccan Traders', 'intra'], ['Mumbai Suppliers', 'inter']]);
+
+  it('rejects IGST on a party the books tax intra-state', () => {
+    const error = checkPartyTaxConsistency(purchase('Deccan Traders', ['IGST']), known);
+    expect(error).toContain('Deccan Traders');
+    expect(error).toContain('inter-state');
+  });
+
+  it('accepts the treatment the books already use, and any treatment for a new party', () => {
+    expect(checkPartyTaxConsistency(purchase('Deccan Traders', ['CGST', 'SGST']), known)).toBeNull();
+    expect(checkPartyTaxConsistency(purchase('Mumbai Suppliers', ['IGST']), known)).toBeNull();
+    expect(checkPartyTaxConsistency(purchase('Brand New Vendor', ['IGST']), known)).toBeNull();
+  });
+});

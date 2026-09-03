@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@/lib/llm/client';
 import { CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
-import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill } from '@/lib/db/queries/company';
+import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill, PartyTaxClass } from '@/lib/db/queries/company';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
 
@@ -42,7 +42,24 @@ export type AdaptiveExerciseParams = {
   // (2026-09-03): settlements may only reference these or bills raised in
   // the same batch — the model otherwise invents bill numbers.
   openBills: OpenBill[];
+  // How each known party has been taxed so far (2026-09-03): a party's
+  // state never changes, so its GST treatment cannot either.
+  partyTaxClasses: Map<string, PartyTaxClass>;
 };
+
+function buildPartyStatesBlock(classes: Map<string, PartyTaxClass>): string {
+  if (classes.size === 0) return '';
+  const lines = [...classes.entries()]
+    .map(([party, cls]) => `- ${party}: ${cls === 'intra' ? 'Karnataka (intra-state: CGST + SGST)' : 'outside Karnataka (inter-state: IGST)'}`)
+    .join('\n');
+  return `PARTY STATES (hard requirement): these parties already exist in the books with
+the GST treatment below. A party's state never changes, so every new sale
+to or purchase from them MUST use the same treatment; do not relocate a
+party to another state.
+${lines}
+
+`;
+}
 
 function buildOpenBillsBlock(openBills: OpenBill[]): string {
   const lines =
@@ -202,7 +219,7 @@ equal the credits. Examples of the required shape:
 GST and TDS are real ledger legs ("Output IGST", "Input CGST", "TDS Payable — u/s 194J"),
 not just metadata; gst_head/tds_section on the tax leg say which head.
 
-${buildOpenBillsBlock(params.openBills)}
+${buildPartyStatesBlock(params.partyTaxClasses)}${buildOpenBillsBlock(params.openBills)}
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
 Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and

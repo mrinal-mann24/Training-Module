@@ -1144,3 +1144,17 @@ the row floor was 3, so only an empty file failed. Every real ledger-wise
 export of this company has 35+ rows; the floor is now 15, which rejects
 every group-wise file seen with the existing "export ledger-level detail"
 message. Gate test fixtures padded accordingly.
+
+### 2026-09-03 — Party GST treatment is fixed by history; Yeshas Level 2/3 verified
+
+Yeshas's Level 2 scored 95% (partial; narration and one GST slip) and his
+Level 3 (explain, June, 12 tx) verified: openings, invoices, code-built
+statement, settlements against real open bills (INV-016, INV-013, MS-B3).
+One thing no guard covered: transaction 4 taxes Deccan Traders as
+"Telangana" with IGST while three earlier batches taxed the same party
+intra-state (CGST+SGST) — self-consistent within the batch, contradicting
+the books. `partyTaxClassesFromKeys` now derives each known party's
+treatment from the keys, the prompt carries a PARTY STATES block, and
+`checkPartyTaxConsistency` rejects (hard) any sale/purchase that changes a
+known party's treatment. His Level 3 is left as generated (invoice and key
+agree; the learner posts what the invoice shows).

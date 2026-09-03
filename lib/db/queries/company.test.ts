@@ -218,3 +218,25 @@ describe('openBillsFromKeys: a settlement of an opening-balance bill does not sp
     ]);
   });
 });
+
+import { partyTaxClassesFromKeys } from './company';
+
+describe('partyTaxClassesFromKeys (2026-09-03)', () => {
+  it('classifies parties by the GST heads the keys have used for them', () => {
+    const key: AnswerKey = {
+      entries: [
+        { ...leg(1, 'Purchases', 'Dr', 25000), voucher_type: 'Purchase' },
+        { ...leg(1, 'Input CGST', 'Dr', 2250), voucher_type: 'Purchase', gst_head: 'CGST' },
+        { ...leg(1, 'Input SGST', 'Dr', 2250), voucher_type: 'Purchase', gst_head: 'SGST' },
+        { ...leg(1, 'Deccan Traders', 'Cr', 29500), voucher_type: 'Purchase' },
+        { ...leg(2, 'Kolkata Emporium', 'Dr', 47200), voucher_type: 'Sales' },
+        { ...leg(2, 'Sales', 'Cr', 40000), voucher_type: 'Sales' },
+        { ...leg(2, 'Output IGST', 'Cr', 7200), voucher_type: 'Sales', gst_head: 'IGST' },
+      ],
+    };
+    const classes = partyTaxClassesFromKeys([key]);
+    expect(classes.get('Deccan Traders')).toBe('intra');
+    expect(classes.get('Kolkata Emporium')).toBe('inter');
+    expect(classes.has('Purchases')).toBe(false);
+  });
+});
