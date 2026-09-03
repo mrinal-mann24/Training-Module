@@ -69,6 +69,8 @@ export async function recomputeMasteryAndModuleProgress(
 
 export type NextExerciseOutcome = 'generated' | 'already-exists' | 'all-mastered';
 
+export const REVIEW_EXERCISES_ENABLED = false;
+
 // Generates the learner's next batch, targeting whatever they are now
 // weakest at. Idempotent on `afterIso` (the scored submission's created_at):
 // if any exercise already exists for the learner newer than that, nothing
@@ -121,7 +123,17 @@ export async function generateNextExercise(
     companyTransactionLogCount: recentLog.length,
   });
 
-  if (nextKind === 'review') {
+  // Review batches are OFF until the feature is grounded (2026-09-03). The
+  // first one delivered live (Praveen, Level 5) built its "ledger entries"
+  // from company_transaction_log rows — which are whole-batch summaries, so
+  // each item read as one sentence listing sixty ledgers — had zero real
+  // anomalies because anomaly_templates is unseeded, and named a party
+  // ("Deccan Traders & Associates") that does not exist. Nothing in it was
+  // derived from the books at transaction level. Re-enable only once the
+  // review packet is built from real answer-key transactions with
+  // deterministic, code-injected anomalies. generateReviewExercise stays
+  // importable for that rebuild.
+  if (nextKind === 'review' && REVIEW_EXERCISES_ENABLED) {
     try {
       await generateReviewExercise(supabase, params.learnerId, baseDifficultyLevel);
       return 'generated';

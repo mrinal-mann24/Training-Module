@@ -1014,3 +1014,21 @@ While there, a returns guard: a name with "return(s)" never matches one
 without (the old containment rule let "Sales Returns" pass as "Sales" on
 voucher legs). Previews: Praveen L4 83% → 100%; every other intern file
 unchanged.
+
+### 2026-09-03 — Review exercises disabled; admin script to regenerate a learner's next batch
+
+Praveen's Level 4 scored 100% (partial on the April tie-out); mastery and
+module progress updated through the shared pipeline; sales mastered. The
+scheduler then produced his Level 5 as a `review` exercise (every 5th
+batch) — the first one ever delivered — and it was not grounded: its "real
+entries" came from company_transaction_log rows, which are whole-batch
+summaries (one item listed ~60 ledgers), no anomalies existed because
+anomaly_templates is unseeded, and the prose named "Deccan Traders &
+Associates". `REVIEW_EXERCISES_ENABLED = false` in advance-learner.ts:
+the review slot falls through to a normal adaptive batch until the packet
+is rebuilt from real answer-key transactions with code-injected anomalies.
+
+`scripts/advance-learner.ts` (npx tsx) regenerates a learner's next batch
+via `generateNextExercise`; `--replace-latest` first deletes the newest
+exercise only if it post-dates the last scored submission and has no
+submissions (all dependents cascade). Used to replace Praveen's Level 5.
