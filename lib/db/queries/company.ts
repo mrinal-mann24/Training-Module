@@ -194,7 +194,29 @@ export function partyLegOf<T extends { correct_account: string; dr_cr?: 'Dr' | '
 
 export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
   const bills = new Map<string, OpenBill>();
+  // Per-party credits with no bill of their own — a debit note raised as a
+  // New Ref, an advance receipt — are applied to that party's open bills
+  // oldest-first at the end, so a party's listed balances add up to the
+  // ledger balance the learner actually sees.
+  const credits = new Map<string, number>();
+  const billId = (party: string, ref: string) => `${party}|${normalizeBillReference(ref)}`;
+  // The pack's opening balances are bills too — "Mumbai Suppliers Cr
+  // 1,20,000" is the March bill the April payment "against MS-M1" settles.
+  // Kept aside (not listed as open bills, since an asset opening like Office
+  // Equipment is not a bill) and consumed only when a settlement names a ref
+  // the keys never raised. Read once, from the first key that carries
+  // openings (the diagnostic); generated keys' openings are cumulative.
+  const openingRemaining = new Map<string, number>();
+  let openingsSeeded = false;
+
   for (const key of keys) {
+    if (!openingsSeeded && (key.opening_balances ?? []).length > 0) {
+      openingsSeeded = true;
+      for (const opening of key.opening_balances ?? []) {
+        if (NON_PARTY_ACCOUNT_PATTERN.test(opening.account)) continue;
+        openingRemaining.set(opening.account, opening.amount);
+      }
+    }
     const bySequence = new Map<number, AnswerKey['entries']>();
     for (const entry of key.entries ?? []) {
       const legs = bySequence.get(entry.sequence) ?? [];
@@ -218,21 +240,65 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
         .filter((leg) => leg.correct_account === party.correct_account)
         .reduce((sum, leg) => sum + leg.amount, 0);
       const refs = splitBillReferences(reference);
-      for (const ref of refs) {
-        const id = `${party.correct_account}|${normalizeBillReference(ref)}`;
-        const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
-        // A settlement split across several refs is applied to each in full
-        // only when it names a single ref; multi-ref settlements are
-        // approximated by splitting evenly (the exact split lives in Tally).
-        current.open += (raises ? 1 : -1) * partyAmount / refs.length;
-        bills.set(id, current);
+
+      if (raises) {
+        for (const ref of refs) {
+          const id = billId(party.correct_account, ref);
+          const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
+          current.open += partyAmount / refs.length;
+          bills.set(id, current);
+        }
+        continue;
       }
+
+      // A settlement naming several bills clears them IN ORDER — "MS-B1,
+      // MS-B2, MS-B3 (part)" pays B1 and B2 in full and the remainder off
+      // B3. Splitting evenly left MS-B1 "open" with 1,45,000 when it was
+      // fully paid in April (Praveen's Level 5, 2026-09-03). A settlement
+      // naming a ref nobody raised (a New Ref debit note, an advance) is a
+      // party credit, applied below.
+      let remaining = partyAmount;
+      refs.forEach((ref, index) => {
+        const id = billId(party.correct_account, ref);
+        const bill = bills.get(id);
+        if (!bill) {
+          if (index === refs.length - 1) {
+            // A ref nobody raised in the keys: first the party's opening-
+            // balance bill ("MS-M1", "INV-M-101" are the pack's March
+            // bills), then whatever is left becomes a party credit.
+            const openingLeft = openingRemaining.get(party.correct_account) ?? 0;
+            if (openingLeft > 0.5) {
+              const applied = Math.min(remaining, openingLeft);
+              openingRemaining.set(party.correct_account, openingLeft - applied);
+              remaining -= applied;
+            }
+            if (remaining > 0.005) {
+              credits.set(party.correct_account, (credits.get(party.correct_account) ?? 0) + remaining);
+            }
+            remaining = 0;
+          }
+          return;
+        }
+        const applied = index === refs.length - 1 ? remaining : Math.min(remaining, Math.max(bill.open, 0));
+        bill.open -= applied;
+        remaining -= applied;
+      });
     }
   }
+
+  for (const [party, credit] of credits) {
+    let left = credit;
+    for (const bill of bills.values()) {
+      if (left <= 0.005) break;
+      if (bill.party !== party || bill.open < 0.5) continue;
+      const applied = Math.min(left, bill.open);
+      bill.open -= applied;
+      left -= applied;
+    }
+  }
+
   return [...bills.values()]
-    // Only positive balances are open. A negative net is a receipt/payment
-    // against a bill carried in the OPENING balances (the pack's INV-M-102
-    // etc.), which the keys never raise — settled, not outstanding.
+    // Only positive balances are open; anything at or below zero is settled.
     .filter((bill) => bill.open >= 0.5)
     .map((bill) => ({ ...bill, open: Math.round(bill.open * 100) / 100 }));
 }

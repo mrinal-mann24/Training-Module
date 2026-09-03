@@ -160,3 +160,61 @@ describe('openBillsFromKeys: party is found by voucher side (Praveen Level 5, 20
     expect(bills.some((bill) => bill.ref === 'DT-115')).toBe(false);
   });
 });
+
+describe('openBillsFromKeys: multi-bill settlements clear bills in order; party credits apply oldest-first (Praveen Level 5, 2026-09-03)', () => {
+  const entry = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, ref: string | null): AnswerKey['entries'][number] => ({
+    ...leg(sequence, account, drCr, amount),
+    voucher_type: voucherType,
+    bill_reference: ref,
+  });
+  it('"MS-B1, MS-B2, MS-B3 (part)" for 4,50,000 pays B1 and B2 in full and the rest off B3; the debit note reduces B3', () => {
+    const april: AnswerKey = {
+      entries: [
+        entry(4, 'Mumbai Suppliers', 'Cr', 295000, 'Purchase', 'MS-B1'),
+        entry(5, 'Mumbai Suppliers', 'Cr', 94400, 'Purchase', 'MS-B3'),
+        entry(8, 'Mumbai Suppliers', 'Cr', 141600, 'Purchase', 'MS-B2'),
+        entry(41, 'Mumbai Suppliers', 'Dr', 450000, 'Payment', 'MS-B1, MS-B2, MS-B3 (part)'),
+        entry(41, 'HDFC Bank — 1234', 'Cr', 450000, 'Payment', 'MS-B1, MS-B2, MS-B3 (part)'),
+        entry(51, 'Mumbai Suppliers', 'Dr', 29500, 'Debit Note', 'DN-M1'),
+        entry(51, 'Purchase Returns', 'Cr', 25000, 'Debit Note', 'DN-M1'),
+      ],
+    };
+    const bills = openBillsFromKeys([april]).filter((bill) => bill.party === 'Mumbai Suppliers');
+    expect(bills).toEqual([{ party: 'Mumbai Suppliers', ref: 'MS-B3', open: 51500, side: 'payable' }]);
+  });
+});
+
+describe('openBillsFromKeys: a settlement of an opening-balance bill does not spill onto other bills', () => {
+  const entry = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, ref: string | null): AnswerKey['entries'][number] => ({
+    ...leg(sequence, account, drCr, amount),
+    voucher_type: voucherType,
+    bill_reference: ref,
+  });
+  it('MS-M1 (the March bill in the opening balance) absorbs the 1,20,000 payment; MS-B3 keeps 51,500', () => {
+    const april: AnswerKey = {
+      opening_balances: [
+        { account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 120000 },
+        { account: 'HDFC Bank — 1234', dr_cr: 'Dr', amount: 800000 },
+      ],
+      entries: [
+        entry(4, 'Mumbai Suppliers', 'Cr', 295000, 'Purchase', 'MS-B1'),
+        entry(5, 'Mumbai Suppliers', 'Cr', 94400, 'Purchase', 'MS-B3'),
+        entry(8, 'Mumbai Suppliers', 'Cr', 141600, 'Purchase', 'MS-B2'),
+        entry(11, 'Mumbai Suppliers', 'Dr', 120000, 'Payment', 'MS-M1'),
+        entry(11, 'HDFC Bank — 1234', 'Cr', 120000, 'Payment', 'MS-M1'),
+        entry(41, 'Mumbai Suppliers', 'Dr', 450000, 'Payment', 'MS-B1, MS-B2, MS-B3 (part)'),
+        entry(41, 'HDFC Bank — 1234', 'Cr', 450000, 'Payment', 'MS-B1, MS-B2, MS-B3 (part)'),
+        entry(51, 'Mumbai Suppliers', 'Dr', 29500, 'Debit Note', 'DN-M1'),
+      ],
+    };
+    const may: AnswerKey = {
+      opening_balances: [{ account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 51500 }],
+      entries: [entry(3, 'Mumbai Suppliers', 'Cr', 94400, 'Purchase', 'MS/778')],
+    };
+    const bills = openBillsFromKeys([april, may]).filter((bill) => bill.party === 'Mumbai Suppliers');
+    expect(bills).toEqual([
+      { party: 'Mumbai Suppliers', ref: 'MS-B3', open: 51500, side: 'payable' },
+      { party: 'Mumbai Suppliers', ref: 'MS/778', open: 94400, side: 'payable' },
+    ]);
+  });
+});

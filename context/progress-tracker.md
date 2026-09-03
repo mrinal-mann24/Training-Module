@@ -1049,3 +1049,16 @@ restricted to SOFT violations (composition, opening figure in prose); wrong
 month, figures in doc-backed lines, single-leg entries, negative cash or an
 invented settlement are never delivered — the step fails and retries.
 Tests: 252. Praveen's Level 5 to be replaced again via the admin script.
+
+### 2026-09-03 — Open bills: multi-bill settlements clear in order; party credits applied
+
+Praveen flagged that his Level 5 Tx 1 (part payment against MS-B1) named a
+bill already paid. The April key settles three bills with one payment
+("MS-B1, MS-B2, MS-B3 (part)" for 4,50,000); `openBillsFromKeys` split that
+evenly, leaving MS-B1 at 1,45,000 "open" when it was cleared. Settlements
+naming several refs now clear them IN ORDER (remainder to the last), and a
+party credit with no bill of its own (New Ref debit note, advance) is
+applied to that party's open bills oldest-first — so listed balances add up
+to the ledger balance the learner sees (Mumbai Suppliers: only MS-B3,
+51,500). Live fix: `Downloads/patch-praveen-level5-tx1.sql` makes Tx 1 a
+50,000 part payment against MS-B3.
