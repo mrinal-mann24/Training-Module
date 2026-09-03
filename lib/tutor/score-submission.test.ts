@@ -1105,3 +1105,29 @@ describe('ledger names: same head, different wording (Praveen Level 4, 2026-09-0
     expect(score('Kolkata Emporium', 'Karnataka Emporium')).toBe(false);
   });
 });
+
+describe('ledger name typo tolerance on long names (Praveen Level 3 "Office Maintanece", 2026-09-03)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number): AnswerKey['entries'][number] => ({
+    sequence: 1, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Payment',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['payment_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const accountOk = (posted: string, expected: string) => scoreSubmission(
+    { vouchers: [{ voucherType: 'Payment', date: '20260613', narration: 'paid in cash', ledgerEntries: [
+      { ledgerName: posted, amount: 3500, drOrCr: 'Dr' as const, billAllocations: [] },
+      { ledgerName: 'Cash', amount: 3500, drOrCr: 'Cr' as const, billAllocations: [] },
+    ] }] },
+    { ledgers: [] },
+    { entries: [leg(expected, 'Dr', 3500), leg('Cash', 'Cr', 3500)] },
+  ).per_voucher_diffs.filter((d) => d.field === 'account').every((d) => d.is_correct);
+
+  it('accepts a three-edit misspelling of a long ledger name', () => {
+    expect(accountOk('Office Maintanece', 'Office Maintenance')).toBe(true);
+  });
+
+  it('still rejects a different long party name', () => {
+    expect(accountOk('Kolkata Emporium', 'Karnataka Emporium')).toBe(false);
+    expect(accountOk('Chennai Home Store', 'Chennai Suppliers')).toBe(false);
+  });
+});

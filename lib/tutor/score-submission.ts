@@ -147,7 +147,12 @@ function accountNamesMatch(actual: string, expected: string): boolean {
   // allow 2 edits (a transposed pair costs 2 in plain Levenshtein and is the
   // most common real typo — "Purchsaes"), medium names 1, short names none
   // (too collision-prone).
-  const maxEdits = shorter.length >= 8 ? 2 : shorter.length >= 6 ? 1 : 0;
+  // Long names (14+ chars) allow 3 edits: "Office Maintanece" for "Office
+  // Maintenance" is 3 edits and was scored ACCOUNT_WRONG on a correct
+  // posting (Praveen's Level 3, 2026-09-03), and at that length a 3-edit
+  // collision between two genuinely different ledgers does not occur in
+  // the pack ("Karnataka Emporium" vs "Kolkata Emporium" is 4+).
+  const maxEdits = shorter.length >= 14 ? 3 : shorter.length >= 8 ? 2 : shorter.length >= 6 ? 1 : 0;
   return maxEdits > 0 && editDistanceAtMost(a, b, maxEdits);
 }
 

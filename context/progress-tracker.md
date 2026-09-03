@@ -1062,3 +1062,13 @@ applied to that party's open bills oldest-first — so listed balances add up
 to the ledger balance the learner sees (Mumbai Suppliers: only MS-B3,
 51,500). Live fix: `Downloads/patch-praveen-level5-tx1.sql` makes Tx 1 a
 50,000 part payment against MS-B3.
+
+### 2026-09-03 — Typo tolerance on long ledger names
+
+Praveen's Level 3 coaching told him to "take another look at the ledger
+account" for Office Maintenance; the only difference was the spelling
+"Office Maintanece" (3 edits), which the 2-edit cap rejected. A senior
+confirmed the entry was right. Names of 14+ characters now allow 3 edits;
+different long party names stay apart (tests). The coaching prose over-read
+a name mismatch as a classification error — a known limit of error-code-
+only coaching; the fix removes the false flag at the source. Tests: 256.
