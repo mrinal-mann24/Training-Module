@@ -1071,3 +1071,37 @@ describe('bill reference with a comma inside the annotation (Praveen Level 2 key
     expect(result.per_voucher_diffs.find((d) => d.field === 'bill_reference')?.is_correct).toBe(true);
   });
 });
+
+describe('ledger names: same head, different wording (Praveen Level 4, 2026-09-03)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number): AnswerKey['entries'][number] => ({
+    sequence: 1, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Payment',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['payment_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const score = (posted: string, expected: string) => {
+    const result = scoreSubmission(
+      { vouchers: [{ voucherType: 'Payment', date: '20260709', narration: 'NEFT UTR HDFC0N330421', ledgerEntries: [
+        { ledgerName: posted, amount: 28000, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'HDFC Bank - 1234', amount: 28000, drOrCr: 'Cr' as const, billAllocations: [] },
+      ] }] },
+      { ledgers: [] },
+      { entries: [leg(expected, 'Dr', 28000), leg('HDFC Bank — 1234', 'Cr', 28000)] },
+    );
+    return result.per_voucher_diffs.filter((d) => d.field === 'account').every((d) => d.is_correct);
+  };
+
+  it('accepts the learner\'s wording for the same expense head', () => {
+    expect(score('Office Rent', 'Rent')).toBe(true);
+    expect(score('Electricity Bill', 'Electricity Charges')).toBe(true);
+    expect(score('SALARY AC', 'Salaries')).toBe(true);
+    expect(score('Rent A/c', 'Rent')).toBe(true);
+  });
+
+  it('still rejects a genuinely different ledger', () => {
+    expect(score('Petty Cash', 'Cash')).toBe(false);
+    expect(score('Warehouse Rent AC', 'Office Rent')).toBe(false);
+    expect(score('Sales Returns', 'Sales')).toBe(false);
+    expect(score('Kolkata Emporium', 'Karnataka Emporium')).toBe(false);
+  });
+});

@@ -77,6 +77,46 @@ function gstHeadOf(name: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+// Ledger names are the learner's own. The same expense head is "Rent" in
+// the key, "Office Rent" in one learner's Tally and "Rent A/c" in another's;
+// "Salaries" vs "SALARY AC"; "Electricity Charges" vs "Electricity Bill".
+// Whole-name comparison flagged all three as ACCOUNT_WRONG on Praveen's
+// Level 4 (2026-09-03) for postings that were right. Names match when,
+// after dropping filler words (office, bill, charges, a/c, account,
+// expenses…) and plural endings, their remaining words are IDENTICAL —
+// equality, not overlap, so "Petty Cash" ≠ "Cash", "Sales Returns" ≠
+// "Sales", "Warehouse Rent" ≠ "Office Rent".
+const FILLER_TOKENS = new Set([
+  'a', 'ac', 'acc', 'account', 'accounts', 'ledger', 'office', 'bill', 'bills',
+  'charge', 'charges', 'expense', 'expenses', 'exp', 'payable', 'payables',
+  'the', 'of', 'and', 'for', 'to', 'general', 'misc', 'sundry',
+]);
+
+function stemToken(token: string): string {
+  if (token.length > 4 && token.endsWith('ies')) return token.slice(0, -3) + 'y';
+  if (token.length > 4 && token.endsWith('es') && !token.endsWith('ses')) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+function significantTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/a\/c/g, ' ac ')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 0 && !FILLER_TOKENS.has(token))
+    .map(stemToken)
+    .sort();
+}
+
+function significantTokensMatch(actual: string, expected: string): boolean {
+  const a = significantTokens(actual);
+  const b = significantTokens(expected);
+  return a.length > 0 && a.length === b.length && a.every((token, index) => token === b[index]);
+}
+
+const RETURNS_TOKEN = /\breturns?\b/i;
+
 function accountNamesMatch(actual: string, expected: string): boolean {
   const a = normalizeAccountName(actual);
   const b = normalizeAccountName(expected);
@@ -86,6 +126,17 @@ function accountNamesMatch(actual: string, expected: string): boolean {
   const actualHead = gstHeadOf(actual);
   if (actualHead !== null && actualHead === gstHeadOf(expected)) {
     return true;
+  }
+  if (significantTokensMatch(actual, expected)) {
+    return true;
+  }
+  // "Sales Returns" embeds "Sales" and "Purchase Returns" embeds
+  // "Purchases": containment/typo tolerance below must never equate a
+  // returns ledger with its base ledger (a credit note posted to Sales is
+  // exactly the error the key is trying to catch). Same rule the TB tie-out
+  // applies via exact-first matching.
+  if (RETURNS_TOKEN.test(actual) !== RETURNS_TOKEN.test(expected)) {
+    return false;
   }
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length <= b.length ? b : a;

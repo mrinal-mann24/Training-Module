@@ -1000,3 +1000,17 @@ level, so `parseDayBookXml` dropped it and every purchase scored a false
 ACCOUNT_WRONG. Learners are told stock items are optional, so both modes
 now parse: inventory-line accounting allocations are appended to the
 voucher's ledger entries (INVENTORYENTRIES.LIST too). Unit test added.
+
+### 2026-09-03 — Ledger names: same head, different wording
+
+Praveen's Level 4 posted to his own ledgers ("Office Rent", "Electricity
+Bill", "SALARY AC") where the key says "Rent", "Electricity Charges",
+"Salaries"; whole-name matching scored three false ACCOUNT_WRONGs on
+correct postings. `accountNamesMatch` now also accepts names whose
+significant tokens are identical after dropping filler words (office,
+bill, charges, a/c, account, expenses…) and plural endings — equality, not
+overlap, so "Petty Cash" ≠ "Cash" and "Warehouse Rent" ≠ "Office Rent".
+While there, a returns guard: a name with "return(s)" never matches one
+without (the old containment rule let "Sales Returns" pass as "Sales" on
+voucher legs). Previews: Praveen L4 83% → 100%; every other intern file
+unchanged.
