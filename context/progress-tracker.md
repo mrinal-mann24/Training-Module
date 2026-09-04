@@ -1242,3 +1242,16 @@ invisible. `.night-scrim` now paints only below `lg`, bottom-weighted so the
 top band of artwork still reads. Confirmed at 1512px its computed background
 is `none`, and confirmed readable at 375x812 across several points in the
 loop.
+
+### 2026-09-03 — Matcher: a missing voucher no longer cascades
+
+Garima's Level 4 export lacked transaction 7 (the Mumbai Suppliers payment).
+`matchVouchersToTransactions` applied its positional fallback inside the
+greedy pass, so the unmatched transaction 7 took voucher #7 positionally —
+the true voucher of transaction 8 — and every later transaction misaligned
+(preview 73% with five false voucher-type errors). The matcher is now two-
+pass: evidence matches first for every transaction, positional fallback
+only afterwards from the vouchers still unused. Her preview with the fix
+shows just the missing voucher plus her genuine bill-reference slips. The
+gate still rejects the 11-voucher file (12 expected) — she must post the
+missing payment.

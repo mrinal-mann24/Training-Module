@@ -1150,3 +1150,28 @@ describe('bill reference carried on the party leg only (Praveen Level 6, 2026-09
     expect(scoreSubmission(voucher('MS/999'), { ledgers: [] }, key).per_voucher_diffs.find((d) => d.field === 'bill_reference')?.error_code).toBe('BILL_REFERENCE_WRONG');
   });
 });
+
+describe('matcher: one missing voucher must not cascade (Garima Level 4, 2026-09-03)', () => {
+  const leg = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string): AnswerKey['entries'][number] => ({
+    sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: voucherType,
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['payment_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key = { entries: [
+    leg(1, 'Mumbai Suppliers', 'Dr', 50000, 'Payment'), leg(1, 'HDFC Bank — 1234', 'Cr', 50000, 'Payment'),
+    leg(2, 'HDFC Bank — 1234', 'Dr', 35100, 'Receipt'), leg(2, 'Karnataka Emporium', 'Cr', 35100, 'Receipt'),
+    leg(3, 'Chennai Suppliers', 'Dr', 20000, 'Payment'), leg(3, 'HDFC Bank — 1234', 'Cr', 20000, 'Payment'),
+  ] };
+  const voucher = (type: string, entries: [string, number, 'Dr' | 'Cr'][]) => ({ voucherType: type, date: '20260714', narration: 'ok', ledgerEntries: entries.map(([n, a, d]) => ({ ledgerName: n, amount: a, drOrCr: d, billAllocations: [] })) });
+  // Transaction 1 (Mumbai payment) was never posted.
+  const dayBook = { vouchers: [
+    voucher('Receipt', [['HDFC BANK', 35100, 'Dr'], ['Karnataka Emporium', 35100, 'Cr']]),
+    voucher('Payment', [['Chennai Suppliers', 20000, 'Dr'], ['HDFC BANK', 20000, 'Cr']]),
+  ] };
+  it('reports only the missing voucher; the others still match on evidence', () => {
+    const result = scoreSubmission(dayBook, { ledgers: [] }, key);
+    const wrong = result.per_voucher_diffs.filter((d) => !d.is_correct && d.error_code).map((d) => `${d.voucherRef}:${d.error_code}`);
+    expect(wrong).toEqual(['1:VOUCHER_MISSING']);
+  });
+});

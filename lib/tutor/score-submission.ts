@@ -919,7 +919,16 @@ export function matchVouchersToTransactions(
 
   const positionalFallbackAllowed = vouchers.length <= transactionGroups.length;
 
-  return transactionGroups.map((expectedLegs, index) => {
+  // Two passes. Pass 1 matches every transaction it can on evidence
+  // (accounts, amounts, type). Pass 2 hands the still-unmatched transactions
+  // a positional fallback from the vouchers still unused. Doing the fallback
+  // inside pass 1 let one MISSING voucher swallow the next transaction's
+  // true voucher positionally, which then cascaded down the whole batch:
+  // Garima's Level 4 export lacked transaction 7 and previewed at 73% with
+  // five voucher-type errors that were not hers (2026-09-03).
+  const assigned: (number | undefined)[] = transactionGroups.map(() => undefined);
+
+  transactionGroups.forEach((expectedLegs, index) => {
     let bestIndex = -1;
     let bestScore = MIN_MATCH_SCORE - 1;
     for (let i = 0; i < vouchers.length; i++) {
@@ -932,15 +941,23 @@ export function matchVouchersToTransactions(
         bestIndex = i;
       }
     }
-    if (bestIndex === -1 && positionalFallbackAllowed && index < vouchers.length && !used.has(index)) {
-      bestIndex = index; // positional fallback
+    if (bestIndex !== -1) {
+      used.add(bestIndex);
+      assigned[index] = bestIndex;
     }
-    if (bestIndex === -1) {
-      return undefined;
-    }
-    used.add(bestIndex);
-    return vouchers[bestIndex];
   });
+
+  if (positionalFallbackAllowed) {
+    transactionGroups.forEach((_, index) => {
+      if (assigned[index] !== undefined) return;
+      if (index < vouchers.length && !used.has(index)) {
+        used.add(index);
+        assigned[index] = index; // positional fallback
+      }
+    });
+  }
+
+  return assigned.map((voucherIndex) => (voucherIndex === undefined ? undefined : vouchers[voucherIndex]));
 }
 
 // Groups answer key entries by sequence: a transaction's answer key is real
