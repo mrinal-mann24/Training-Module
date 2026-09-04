@@ -1,6 +1,6 @@
 import { inngest } from '@/lib/jobs/client';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
-import { getExerciseById, getExerciseAnswerKey } from '@/lib/db/queries/exercises';
+import { getExerciseById, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
 import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissions';
 import { getSubmissionParts, missingParts, type SubmissionPart } from '@/lib/db/queries/submission-parts';
 import { getLedgerReviewItemsForExercise } from '@/lib/db/queries/ledger-review-items';
@@ -172,7 +172,7 @@ export const waitForSubmission = inngest.createFunction(
           gateErrors = gateResult.errors;
         } else {
           scoringResult = await step.run('score-submission', async () => {
-            const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+            const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
             if (!answerKey) {
               throw new Error(`Answer key for exercise ${exercise.id} not found.`);
             }
@@ -208,7 +208,7 @@ export const waitForSubmission = inngest.createFunction(
     if (textPart) {
       qualitativeScore = await step.run('score-qualitative', async () => {
         if (textPart.part_type === 'explain_text') {
-          const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+          const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
           if (!answerKey) {
             throw new Error(`Answer key for exercise ${exercise.id} not found.`);
           }
@@ -257,7 +257,7 @@ export const waitForSubmission = inngest.createFunction(
       : [];
 
     const feedback = await step.run('generate-coaching', async () => {
-      const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+      const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
       return generateCoaching(submission.learner_id, {
         overallResult,
         scoringResult,

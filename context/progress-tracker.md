@@ -1255,3 +1255,18 @@ only afterwards from the vouchers still unused. Her preview with the fix
 shows just the missing voucher plus her genuine bill-reference slips. The
 gate still rejects the 11-voucher file (12 expected) — she must post the
 missing payment.
+
+### 2026-09-04 — Scorer inherits account aliases across the learner's keys
+
+Praveen's September (Level 6) result flagged ACCOUNT_WRONG on the
+Legal & Professional Charges legs of MA/205 and SL/118. His ledgers are
+"Legal Services AC" and "Professional Services" — the same names the April
+pack accepted through its account_aliases. Generated keys carry no aliases,
+so the same ledgers failed in September. New `lib/tutor/answer-key-aliases.ts`
+(`inheritAccountAliases`) unions the aliases every key of the learner lists
+per canonical account; `getExerciseAnswerKeyForScoring` applies it and both
+scoring jobs (run-scoring, wait-for-submission) now load the key through it.
+The TDS_MISSING flags on MA/205 and SL/118 stand (the question said 194J
+applies; cumulative Sharma Legal fees for the year exceed the threshold).
+April's SL-018 GST slip (Output heads on a purchase) WAS flagged in April,
+grouped under "GST heads" in the coaching note.

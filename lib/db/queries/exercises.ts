@@ -9,6 +9,8 @@ import type {
   SubmissionPartType,
 } from '@/lib/schemas/exercise';
 import { REQUIRED_PARTS_BY_KIND } from '@/lib/schemas/exercise';
+import { loadAnswerKeys } from '@/lib/db/queries/company';
+import { inheritAccountAliases } from '@/lib/tutor/answer-key-aliases';
 
 export type { ExerciseKind };
 
@@ -310,4 +312,20 @@ export async function getExercisesForLearner(
   }
 
   return (data ?? []).map(toExerciseForLearner);
+}
+
+// The key the SCORER sees: the stored key plus every account alias any of
+// the learner's keys has listed for the same canonical account, so a ledger
+// name the April pack accepted ("Legal Services AC") is not flagged
+// ACCOUNT_WRONG by a generated key that carries no aliases (2026-09-04).
+export async function getExerciseAnswerKeyForScoring(
+  supabase: SupabaseClient,
+  exerciseId: string,
+  learnerId: string,
+): Promise<AnswerKey | null> {
+  const key = await getExerciseAnswerKey(supabase, exerciseId);
+  if (!key) {
+    return null;
+  }
+  return inheritAccountAliases(key, await loadAnswerKeys(supabase, learnerId));
 }

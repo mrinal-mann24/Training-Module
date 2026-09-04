@@ -77,7 +77,7 @@ export function cashPositionFromNet(net: Map<string, number>): CompanyCashPositi
   return position;
 }
 
-async function loadAnswerKeys(supabase: SupabaseClient, learnerId: string): Promise<AnswerKey[]> {
+export async function loadAnswerKeys(supabase: SupabaseClient, learnerId: string): Promise<AnswerKey[]> {
   const { data, error } = await supabase
     .from('exercises')
     .select('answer_key')

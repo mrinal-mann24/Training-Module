@@ -1,7 +1,7 @@
 import { inngest } from '@/lib/jobs/client';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
-import { getExerciseById, getExerciseAnswerKey } from '@/lib/db/queries/exercises';
+import { getExerciseById, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
 import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissions';
 import {
   logAttemptsAndClassifyRectifications,
@@ -111,7 +111,7 @@ export const runScoring = inngest.createFunction(
     });
 
     const engineResult = await step.run('score-submission', async () => {
-      const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+      const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
       if (!answerKey) {
         throw new Error(`Answer key for exercise ${exercise.id} not found.`);
       }
@@ -124,7 +124,7 @@ export const runScoring = inngest.createFunction(
     // adjudication failure the engine's verdicts stand unchanged, so this
     // step can only relax, never invent findings.
     const scoringResult = await step.run('adjudicate-findings', async () => {
-      const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+      const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
       if (!answerKey) {
         return engineResult;
       }
@@ -141,7 +141,7 @@ export const runScoring = inngest.createFunction(
     });
 
     const feedback = await step.run('generate-coaching', async () => {
-      const answerKey = await getExerciseAnswerKey(supabase, exercise.id);
+      const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
       return generateCoaching(submission.learner_id, {
         overallResult: scoringResult.overall_result,
         scoringResult,
