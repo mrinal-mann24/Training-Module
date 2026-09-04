@@ -815,17 +815,36 @@ function checkTrialBalanceTieOut(trialBalance: ParsedTrialBalance, answerKey: An
 // a single wrong application means the concept isn't reliably applied yet.
 const CONCEPT_PASS_RATIO = 0.9;
 
+const VOUCHER_STRUCTURE_FIELDS: ScoredField[] = ['account', 'dr_cr', 'amount', 'voucher_type'];
+
+const CONCEPT_FIELDS: Record<ConceptTag, ScoredField[]> = {
+  sales_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  purchase_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  payment_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  receipt_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  contra_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  journal_voucher_basics: VOUCHER_STRUCTURE_FIELDS,
+  gst_classification: ['gst'],
+  tds_classification: ['tds'],
+  bill_by_bill_referencing: ['bill_reference'],
+  narration_discipline: ['narration'],
+  trial_balance_tie_out: VOUCHER_STRUCTURE_FIELDS,
+};
+
 function computeConceptResults(
   diffs: VoucherDiff[],
   transactionGroups: AnswerKeyEntry[][],
 ): ConceptResult[] {
-  const transactionPassBySequence = new Map<number, boolean>();
-  for (const group of transactionGroups) {
-    const sequence = group[0].sequence;
-    const sequenceDiffs = diffs.filter((diff) => diff.voucherRef === sequence);
-    const allCorrect = sequenceDiffs.length > 0 && sequenceDiffs.every((diff) => diff.is_correct);
-    transactionPassBySequence.set(sequence, allCorrect);
-  }
+  // A concept is judged on the FIELDS it is about, not on every field of the
+  // voucher. A payment whose only slip was a thin narration used to fail
+  // payment_voucher_basics and bill_by_bill_referencing as well as
+  // narration_discipline, and the coaching note then told Yeshas his bill
+  // referencing and payment basics were "still slipping" when neither had a
+  // single error (June, 2026-09-04). Narration, bill reference, GST and TDS
+  // each own their field; the voucher-basics concepts own account, side,
+  // amount and voucher type (a missing voucher lands there too).
+  const relevantDiffs = (sequence: number, concept: ConceptTag): VoucherDiff[] =>
+    diffs.filter((diff) => diff.voucherRef === sequence && CONCEPT_FIELDS[concept].includes(diff.field));
 
   // Proportional rollup: a concept passes when at least CONCEPT_PASS_RATIO
   // of its tagged transactions were fully clean. On a 1-3 transaction drill
@@ -837,10 +856,11 @@ function computeConceptResults(
   const conceptCounts = new Map<ConceptTag, { passed: number; total: number }>();
   for (const group of transactionGroups) {
     const sequence = group[0].sequence;
-    const passed = transactionPassBySequence.get(sequence) ?? false;
     const conceptTags = new Set(group.flatMap((entry) => entry.concept_tags));
 
     for (const tag of conceptTags) {
+      const scoped = relevantDiffs(sequence, tag);
+      const passed = scoped.length > 0 && scoped.every((diff) => diff.is_correct);
       const counts = conceptCounts.get(tag) ?? { passed: 0, total: 0 };
       counts.total += 1;
       if (passed) {

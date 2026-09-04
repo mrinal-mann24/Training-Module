@@ -1175,3 +1175,34 @@ describe('matcher: one missing voucher must not cascade (Garima Level 4, 2026-09
     expect(wrong).toEqual(['1:VOUCHER_MISSING']);
   });
 });
+
+
+describe('concept rollup judges each concept on its own fields (Yeshas June, 2026-09-04)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number): AnswerKey['entries'][number] => ({
+    sequence: 9, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Payment',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'MS-B3', narration: 'Payment to Mumbai Suppliers against MS-B3 by NEFT',
+    concept_tags: ['payment_voucher_basics' as const, 'bill_by_bill_referencing' as const, 'narration_discipline' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key: AnswerKey = { entries: [leg('Mumbai Suppliers', 'Dr', 51500), leg('HDFC Bank — 1234', 'Cr', 51500)] };
+  const dayBook = { vouchers: [{ voucherType: 'Payment', date: '20260611', narration: 'paid', ledgerEntries: [
+    { ledgerName: 'Mumbai Suppliers', amount: 51500, drOrCr: 'Dr' as const, billAllocations: [{ name: 'MS-B3', amount: 51500 }] },
+    { ledgerName: 'HDFC Bank 1234', amount: 51500, drOrCr: 'Cr' as const, billAllocations: [] },
+  ] }] };
+
+  it('a thin narration fails narration_discipline only', () => {
+    const result = scoreSubmission(dayBook, { ledgers: [] }, key);
+    expect(result.per_voucher_diffs.filter((d) => !d.is_correct).map((d) => d.field)).toEqual(['narration']);
+    expect(result.concept_results).toEqual([
+      { concept_tag: 'payment_voucher_basics', result: 'pass' },
+      { concept_tag: 'bill_by_bill_referencing', result: 'pass' },
+      { concept_tag: 'narration_discipline', result: 'fail' },
+    ]);
+  });
+
+  it('a missing voucher still fails the voucher-basics concept', () => {
+    const result = scoreSubmission({ vouchers: [] }, { ledgers: [] }, key);
+    expect(result.concept_results.find((c) => c.concept_tag === 'payment_voucher_basics')?.result).toBe('fail');
+  });
+});

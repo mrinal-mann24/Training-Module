@@ -1287,3 +1287,17 @@ legs deterministically when the model's split differs; and
 the printed invoice via Downloads/patch-garima-level5-ms3102.sql (the PDF is
 already rendered). Praveen's and Yeshas's newest invoices were checked the
 same way: all consistent.
+
+### 2026-09-04 — Concept rollup judges each concept on its own fields
+
+Yeshas's June (Level 3) scored 98% with two engine flags (Deccan GST head,
+one thin narration), yet the coaching note added "bill-by-bill referencing
+still slipping" and "payment voucher basics uneven" — neither had an error.
+Cause: `computeConceptResults` failed every concept tagged on a voucher when
+ANY field of that voucher was wrong, so the narration slip on MS-B3 failed
+payment_voucher_basics and bill_by_bill_referencing too, and the coach
+narrated those concept failures. Now each concept is judged only on its own
+fields (CONCEPT_FIELDS: narration → narration_discipline, bill_reference →
+bill_by_bill_referencing, gst → gst_classification, tds →
+tds_classification, account/dr_cr/amount/voucher_type → the voucher-basics
+concepts). His generated Level 4 (July, 12 tx) passed every review check.
