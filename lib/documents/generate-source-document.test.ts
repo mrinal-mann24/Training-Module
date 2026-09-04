@@ -60,7 +60,7 @@ function content(overrides: Partial<VendorInvoiceContent>): VendorInvoiceContent
 
 describe('deriveInvoiceFigures', () => {
   it('reads base/tax/total off a multi-leg key', () => {
-    expect(deriveInvoiceFigures(MULTI_LEG)).toEqual({
+    expect(deriveInvoiceFigures(MULTI_LEG)).toMatchObject({
       vendorAccount: 'Deccan Traders',
       total: 70800,
       base: 60000,
@@ -72,7 +72,7 @@ describe('deriveInvoiceFigures', () => {
 
   it('splits a single-leg inclusive total by the stated rate', () => {
     const single = [leg({ correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 94400, gst_head: 'IGST', gst_rate: 18 })];
-    expect(deriveInvoiceFigures(single)).toEqual({
+    expect(deriveInvoiceFigures(single)).toMatchObject({
       vendorAccount: 'Mumbai Suppliers',
       total: 94400,
       base: 80000,
@@ -88,7 +88,7 @@ describe('deriveInvoiceFigures', () => {
     // as-combined reading produced 63,872 + 2,874 + 2,874 (caught by the
     // 2026-09-01 live cross-check).
     const single = [leg({ correct_account: 'Deccan Traders', dr_cr: 'Cr', amount: 69620, gst_head: 'CGST', gst_rate: 9 })];
-    expect(deriveInvoiceFigures(single)).toEqual({
+    expect(deriveInvoiceFigures(single)).toMatchObject({
       vendorAccount: 'Deccan Traders',
       total: 69620,
       base: 59000,
@@ -100,7 +100,7 @@ describe('deriveInvoiceFigures', () => {
 
   it('handles a no-GST single leg', () => {
     const single = [leg({ correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 30000 })];
-    expect(deriveInvoiceFigures(single)).toEqual({
+    expect(deriveInvoiceFigures(single)).toMatchObject({
       vendorAccount: 'Mumbai Suppliers',
       total: 30000,
       base: 30000,
@@ -291,5 +291,51 @@ describe('deriveInvoiceFigures on a TDS purchase (Praveen Level 6 legal fee, 202
     expect(figures.total).toBe(20000);
     expect(figures.base).toBe(20000);
     expect(figures.igst).toBeNull();
+  });
+});
+
+
+import { alignLineItemsToLegs } from './generate-source-document';
+
+describe('multi-leg invoices print one line per expense leg (Garima Level 5 MS-3102, 2026-09-04)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, gstHead: 'IGST' | null = null): AnswerKeyEntry => ({
+    sequence: 6, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Purchase',
+    gst_head: gstHead, gst_rate: gstHead ? 18 : null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'MS-3102 (New Ref)', narration: null, concept_tags: ['purchase_voucher_basics'],
+    requires_source_document: true, source_document_type: 'vendor_invoice',
+  });
+  const legs = [leg('Purchases', 'Dr', 35000), leg('Freight & Delivery Charges', 'Dr', 2000), leg('Input IGST', 'Dr', 6660, 'IGST'), leg('Mumbai Suppliers', 'Cr', 43660)];
+  const input: VendorInvoiceInput = { legs, transactionDescription: 'On 10-Aug-2026, a purchase invoice arrives from Mumbai Suppliers covering goods and freight together on one bill: post it from the attached invoice.' };
+  const liveContent: VendorInvoiceContent = {
+    vendorName: 'Mumbai Suppliers', vendorGSTIN: '27AABCT5055K1Z0', invoiceNumber: 'MS-3102', invoiceDate: '10-Aug-2026',
+    lineItems: [
+      { description: 'Cotton fabric roll, 50 meters', quantity: 2, rate: 8500, amount: 17000 },
+      { description: 'Freight and handling charges', quantity: 1, rate: 20000, amount: 20000 },
+    ],
+    taxBreakup: { cgst_amount: null, sgst_amount: null, igst_amount: 6660 }, totalAmount: 43660,
+  };
+
+  it('exposes the per-leg base lines', () => {
+    expect(deriveInvoiceFigures(legs).baseLines).toEqual([{ account: 'Purchases', amount: 35000 }, { account: 'Freight & Delivery Charges', amount: 2000 }]);
+  });
+
+  it('rejects the live split: right total, wrong goods/freight amounts', () => {
+    expect(checkVendorInvoiceContent(liveContent, input)).toMatch(/one per component: Purchases 35000, Freight & Delivery Charges 2000/);
+  });
+
+  it('realigns the lines to the legs, keeping the freight wording on the freight leg', () => {
+    const aligned = alignLineItemsToLegs(liveContent, deriveInvoiceFigures(legs));
+    expect(aligned.lineItems).toEqual([
+      { description: 'Cotton fabric roll, 50 meters', quantity: 1, rate: 35000, amount: 35000 },
+      { description: 'Freight and handling charges', quantity: 1, rate: 2000, amount: 2000 },
+    ]);
+    expect(checkVendorInvoiceContent(aligned, input)).toBeNull();
+  });
+
+  it('leaves a single-expense-leg invoice free to split its lines', () => {
+    const single = [leg('Purchases', 'Dr', 37000), leg('Input IGST', 'Dr', 6660, 'IGST'), leg('Mumbai Suppliers', 'Cr', 43660)];
+    const content = { ...liveContent, lineItems: [{ description: 'A', quantity: 1, rate: 17000, amount: 17000 }, { description: 'B', quantity: 1, rate: 20000, amount: 20000 }] };
+    expect(alignLineItemsToLegs(content, deriveInvoiceFigures(single))).toBe(content);
+    expect(checkVendorInvoiceContent(content, { ...input, legs: single })).toBeNull();
   });
 });

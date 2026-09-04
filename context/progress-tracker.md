@@ -1270,3 +1270,20 @@ The TDS_MISSING flags on MA/205 and SL/118 stand (the question said 194J
 applies; cumulative Sharma Legal fees for the year exceed the threshold).
 April's SL-018 GST slip (Output heads on a purchase) WAS flagged in April,
 grouped under "GST heads" in the coaching note.
+
+### 2026-09-04 — Invoice line items follow the key legs (Garima Level 5)
+
+Garima's Level 4 scored 97% (matches the pre-upload preview: two bill-ref
+slips on the Karnataka Emporium pair, three thin narrations). Her generated
+Level 5 (August, 12 tx) checks out on openings, open bills, party states,
+cash feasibility and the bank statement, except the Mumbai Suppliers bill
+MS-3102: the key expects Purchases 35,000 + Freight 2,000, the rendered
+invoice prints 17,000 + 20,000 — same total, different split, so posting
+from the document would score AMOUNT_WRONG twice. `deriveInvoiceFigures`
+now exposes `baseLines` (one per debited expense leg); the prompt demands
+one line per component; `alignLineItemsToLegs` rebuilds the lines from the
+legs deterministically when the model's split differs; and
+`checkVendorInvoiceContent` rejects a mismatched split. Live key patched to
+the printed invoice via Downloads/patch-garima-level5-ms3102.sql (the PDF is
+already rendered). Praveen's and Yeshas's newest invoices were checked the
+same way: all consistent.

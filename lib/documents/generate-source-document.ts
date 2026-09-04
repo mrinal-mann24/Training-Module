@@ -9,6 +9,7 @@ import {
   extractTransactionDate,
   formatInvoiceDate,
   type BankStatementLineInput,
+  type VendorInvoiceFigures,
   type VendorInvoiceInput,
 } from '@/lib/llm/prompts/source-document';
 import {
@@ -29,6 +30,55 @@ function amountMatches(actual: number | null, expected: number | null): boolean 
   return actual !== null && Math.abs(actual - expected) < AMOUNT_TOLERANCE;
 }
 
+function sortedAmounts(values: number[]): string {
+  return [...values].sort((a, b) => a - b).map((value) => value.toFixed(2)).join('|');
+}
+
+function lineAmountsMatchLegs(content: VendorInvoiceContent, figures: VendorInvoiceFigures): boolean {
+  return (
+    sortedAmounts(content.lineItems.map((item) => item.amount)) ===
+    sortedAmounts(figures.baseLines.map((line) => line.amount))
+  );
+}
+
+function descriptionTokens(value: string): Set<string> {
+  return new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter((token) => token.length > 3 && !['charges', 'charge', 'expenses', 'expense', 'account'].includes(token)),
+  );
+}
+
+// A bill with several expense legs (goods + freight) must print one line per
+// leg with that leg's exact amount. The model is told so, but a wrong split
+// with the right total slipped through the sum check on Garima's Level 5
+// MS-3102 (invoice 17,000 goods + 20,000 freight vs key 35,000 + 2,000;
+// 2026-09-04). This realigns deterministically: each leg becomes a line
+// carrying its own amount, keeping the model's wording where a line clearly
+// describes that leg and falling back to the account name otherwise.
+// Exported for tests.
+export function alignLineItemsToLegs(content: VendorInvoiceContent, figures: VendorInvoiceFigures): VendorInvoiceContent {
+  if (figures.baseLines.length < 2 || lineAmountsMatchLegs(content, figures)) {
+    return content;
+  }
+  // Pass 1: a model line whose wording names the leg ("Freight and handling
+  // charges" for Freight & Delivery Charges) keeps that leg. Pass 2: the
+  // remaining lines fill the remaining legs in order (the goods line lands on
+  // Purchases). Anything still unmatched prints the account name.
+  const remaining = [...content.lineItems];
+  const chosen: (string | null)[] = figures.baseLines.map((line) => {
+    const accountTokens = descriptionTokens(line.account);
+    const index = remaining.findIndex((item) => [...descriptionTokens(item.description)].some((token) => accountTokens.has(token)));
+    return index === -1 ? null : remaining.splice(index, 1)[0].description;
+  });
+  const lineItems = figures.baseLines.map((line, position) => {
+    const description = chosen[position] ?? remaining.shift()?.description ?? line.account;
+    return { description, quantity: 1, rate: line.amount, amount: line.amount };
+  });
+  return { ...content, lineItems };
+}
+
 // Deterministic figure/date validation for a generated invoice — the same
 // role the line-count check plays for the bank statement. Every delivered
 // invoice in the first live intern batches contradicted its answer key
@@ -45,6 +95,11 @@ export function checkVendorInvoiceContent(
   const lineSum = content.lineItems.reduce((sum, item) => sum + item.amount, 0);
   if (Math.abs(lineSum - figures.base) >= AMOUNT_TOLERANCE) {
     violations.push(`lineItems sum to ${lineSum} but must sum to exactly ${figures.base}.`);
+  }
+  if (figures.baseLines.length >= 2 && !lineAmountsMatchLegs(content, figures)) {
+    violations.push(
+      `lineItems must be one per component: ${figures.baseLines.map((line) => `${line.account} ${line.amount}`).join(', ')}.`,
+    );
   }
   if (Math.abs(content.totalAmount - figures.total) >= AMOUNT_TOLERANCE) {
     violations.push(`totalAmount is ${content.totalAmount} but must be exactly ${figures.total}.`);
@@ -127,12 +182,13 @@ export async function generateVendorInvoiceDocument(
         lastError = `Expected doc_type "vendor_invoice", got "${parsed.data.doc_type}".`;
         continue;
       }
-      const figureError = checkVendorInvoiceContent(parsed.data.content, input);
+      const content = alignLineItemsToLegs(parsed.data.content, deriveInvoiceFigures(input.legs));
+      const figureError = checkVendorInvoiceContent(content, input);
       if (figureError !== null) {
         lastError = figureError;
         continue;
       }
-      return parsed.data;
+      return { ...parsed.data, content };
     }
 
     lastError = parsed.error.message;

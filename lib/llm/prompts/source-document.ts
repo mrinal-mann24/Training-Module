@@ -118,6 +118,11 @@ export type VendorInvoiceFigures = {
   cgst: number | null;
   sgst: number | null;
   igst: number | null;
+  // One entry per debited expense/asset leg (account + amount). When a bill
+  // carries more than one — goods plus freight on Garima's Level 5 MS-3102,
+  // 2026-09-04 — the printed line items must split the taxable value the
+  // same way, or the learner who posts from the document is scored wrong.
+  baseLines: { account: string; amount: number }[];
 };
 
 const GST_LEG_PATTERN = /\b(cgst|sgst|igst)\b/i;
@@ -144,7 +149,7 @@ export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigur
     // Single-leg key: party total inclusive of tax; split by the stated rate.
     const head = partyLeg.gst_head;
     if (!head) {
-      return { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base: partyLeg.amount, cgst: null, sgst: null, igst: null };
+      return { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base: partyLeg.amount, cgst: null, sgst: null, igst: null, baseLines: [] };
     }
     // For CGST/SGST the key stores the PER-HEAD rate (gst_rate 9 = 9% CGST +
     // 9% SGST = 18% combined — confirmed against Praveen's live key,
@@ -154,8 +159,8 @@ export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigur
     const base = Math.round(partyLeg.amount / (1 + combinedRate));
     const tax = partyLeg.amount - base;
     return head === 'IGST'
-      ? { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: null, sgst: null, igst: tax }
-      : { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: tax / 2, sgst: tax / 2, igst: null };
+      ? { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: null, sgst: null, igst: tax, baseLines: [] }
+      : { vendorAccount: partyLeg.correct_account, total: partyLeg.amount, base, cgst: tax / 2, sgst: tax / 2, igst: null, baseLines: [] };
   }
 
   const headAmount = (head: string) => {
@@ -169,6 +174,7 @@ export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigur
     cgst: headAmount('cgst'),
     sgst: headAmount('sgst'),
     igst: headAmount('igst'),
+    baseLines: baseLegs.map((leg) => ({ account: leg.correct_account, amount: leg.amount })),
   };
 }
 
@@ -195,6 +201,23 @@ export function formatInvoiceDate(date: { day: number; monthIndex: number; year:
   return `${String(date.day).padStart(2, '0')}-${MONTH_NAMES_SHORT[date.monthIndex]}-${date.year}`;
 }
 
+// With one expense leg the model may split the taxable value freely; with
+// several (goods + freight, fee + reimbursement) each printed line must carry
+// one leg's exact amount so the document and the key tell the same story.
+function lineItemRequirement(figures: VendorInvoiceFigures): string {
+  if (figures.baseLines.length < 2) {
+    return `- lineItems: one or more items whose amounts SUM to exactly ${figures.base}
+  (taxable value, before tax).`;
+  }
+  const lines = figures.baseLines
+    .map((line) => `    - one line for "${line.account}" with amount exactly ${line.amount}`)
+    .join('\n');
+  return `- lineItems: exactly ${figures.baseLines.length} items, one per component below, each
+  with the stated amount (describe it naturally, e.g. freight for a freight leg):
+${lines}
+  (they sum to the taxable value ${figures.base}).`;
+}
+
 function buildVendorInvoiceSystemPrompt(input: VendorInvoiceInput): string {
   const figures = deriveInvoiceFigures(input.legs);
   const date = extractTransactionDate(input.transactionDescription);
@@ -218,8 +241,7 @@ non-negotiable:
 - vendorName: "${figures.vendorAccount}" exactly (never an invented name).
 - invoiceDate: exactly "${date ? formatInvoiceDate(date) : 'the date stated in the transaction description below'}".
 - invoiceNumber: ${billRef ? `"${String(billRef).split(/[\s(]/)[0]}" exactly` : 'a realistic bill number'}.
-- lineItems: one or more items whose amounts SUM to exactly ${figures.base}
-  (taxable value, before tax).
+${lineItemRequirement(figures)}
 - taxBreakup:
 ${taxLines}
 - totalAmount: exactly ${figures.total} (line items plus tax).
