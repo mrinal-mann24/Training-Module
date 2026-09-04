@@ -296,13 +296,31 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   }
 
   const unmatchedEntries = consolidateLedgerEntries(voucher.ledgerEntries);
+  const consolidated = consolidateExpectedLegs(expectedLegs);
 
-  for (const expectedLeg of consolidateExpectedLegs(expectedLegs)) {
-    const matchIndex = unmatchedEntries.findIndex((entry) => legMatchesEntry(entry, expectedLeg));
-    const matchingEntry = matchIndex === -1 ? undefined : unmatchedEntries[matchIndex];
+  // Pair expected legs to posted entries in two passes. Pass 1 claims an
+  // entry by the account NAME; only pass 2 falls back to the key's aliases.
+  // In a single pass the alias "Advertising" (for Advertisement &
+  // Marketing) claimed the party entry "Signage Advertising" before the
+  // party leg had its turn, and a correctly posted party scored
+  // DR_CR_REVERSED + AMOUNT_WRONG (Yeshas's Level 4 SA-105, 2026-09-04).
+  const assigned = new Map<number, LedgerEntry>();
+  consolidated.forEach((leg, index) => {
+    const matchIndex = unmatchedEntries.findIndex((entry) => accountNamesMatch(entry.ledgerName, leg.correct_account));
     if (matchIndex !== -1) {
-      unmatchedEntries.splice(matchIndex, 1);
+      assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
     }
+  });
+  consolidated.forEach((leg, index) => {
+    if (assigned.has(index)) return;
+    const matchIndex = unmatchedEntries.findIndex((entry) => legMatchesEntry(entry, leg));
+    if (matchIndex !== -1) {
+      assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
+    }
+  });
+
+  for (const [index, expectedLeg] of consolidated.entries()) {
+    const matchingEntry = assigned.get(index);
 
     diffs.push({
       voucherRef: sequence,

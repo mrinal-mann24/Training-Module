@@ -1206,3 +1206,32 @@ describe('concept rollup judges each concept on its own fields (Yeshas June, 202
     expect(result.concept_results.find((c) => c.concept_tag === 'payment_voucher_basics')?.result).toBe('fail');
   });
 });
+
+
+describe('leg pairing: account names claim entries before aliases do (Yeshas SA-105, 2026-09-04)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, aliases?: string[], gstHead: 'CGST' | 'SGST' | null = null): AnswerKey['entries'][number] => ({
+    sequence: 10, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Purchase',
+    gst_head: gstHead, gst_rate: gstHead ? 9 : null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'SA-105', narration: null, concept_tags: ['purchase_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+    ...(aliases ? { account_aliases: aliases } : {}),
+  });
+  const key: AnswerKey = { entries: [
+    leg('Advertisement & Marketing', 'Dr', 12000, ['Marketing collaterals', 'Advertising', 'Marketing Expenses']),
+    leg('Input CGST', 'Dr', 1080, undefined, 'CGST'),
+    leg('Input SGST', 'Dr', 1080, undefined, 'SGST'),
+    leg('Signage Advertising', 'Cr', 14160),
+  ] };
+  const dayBook = { vouchers: [{ voucherType: 'Purchase', date: '20260714', narration: 'Purchased signage from Signage Advertising SA-105', ledgerEntries: [
+    { ledgerName: 'Signage Advertising', amount: 14160, drOrCr: 'Cr' as const, billAllocations: [{ name: 'SA-105', amount: 14160 }] },
+    { ledgerName: 'Purchase A/C', amount: 12000, drOrCr: 'Dr' as const, billAllocations: [] },
+    { ledgerName: 'OUTPUT SGST', amount: 1080, drOrCr: 'Dr' as const, billAllocations: [] },
+    { ledgerName: 'OUTPUT CGST', amount: 1080, drOrCr: 'Dr' as const, billAllocations: [] },
+  ] }] };
+
+  it('the party entry stays with the party leg; only the real slips are flagged', () => {
+    const result = scoreSubmission(dayBook, { ledgers: [] }, key);
+    const codes = result.per_voucher_diffs.filter((d) => !d.is_correct && d.error_code).map((d) => d.error_code).sort();
+    expect(codes).toEqual(['ACCOUNT_WRONG', 'GST_HEAD_WRONG']);
+  });
+});

@@ -1315,3 +1315,17 @@ their stock lines). Prompt, `alignLineItemsToLegs` and
 `checkVendorInvoiceContent` updated with tests. His other two flags are his
 own: the same GST ledger picked twice (SGST twice on MA/206, CGST twice on
 HR/101). No key patch: 95% passes and the split is arguable practice.
+
+### 2026-09-04 — Leg pairing: account names claim entries before aliases
+
+Yeshas's July (Level 4) recorded 96.4% with DR_CR_REVERSED + AMOUNT_WRONG on
+SA-105 that the pre-upload preview (no alias inheritance) did not show. The
+inherited pack alias "Advertising" for "Advertisement & Marketing" let the
+expense leg claim the party entry "Signage Advertising" (containment match)
+before the party leg was paired, so a correctly posted party scored as
+reversed and wrong-amount, and the coaching note repeated both. Pairing in
+`diffVoucherAgainstAnswerKey` is now two-pass: entries are claimed by
+account name first, aliases only for legs still unmatched. His genuine
+slips (Purchases instead of the expense ledger, Output instead of Input GST)
+stand. Live row patched via Downloads/patch-yeshas-july-pairing.sql. His
+generated Level 5 (August purchase drill, 3 tx) checks out.
