@@ -1301,3 +1301,17 @@ fields (CONCEPT_FIELDS: narration → narration_discipline, bill_reference →
 bill_by_bill_referencing, gst → gst_classification, tds →
 tds_classification, account/dr_cr/amount/voucher_type → the voucher-basics
 concepts). His generated Level 4 (July, 12 tx) passed every review check.
+
+### 2026-09-04 — Service/expense invoices print a single line (Praveen MA/206)
+
+Praveen's October pre-upload preview: 95%, gate valid. One flag traced to
+the document: the Mehta & Associates invoice MA/206 printed two service
+lines (consultation 10,000; audit review 5,000) against a key with one
+15,000 Legal & Professional Charges leg, so posting line-by-line to two
+ledgers scored AMOUNT_WRONG + ACCOUNT_WRONG. The 2026-09-04 multi-leg rule
+already forces one line per leg when there are several legs; now a single
+NON-goods expense leg also prints exactly one line (goods purchases keep
+their stock lines). Prompt, `alignLineItemsToLegs` and
+`checkVendorInvoiceContent` updated with tests. His other two flags are his
+own: the same GST ledger picked twice (SGST twice on MA/206, CGST twice on
+HR/101). No key patch: 95% passes and the split is arguable practice.

@@ -34,6 +34,18 @@ function sortedAmounts(values: number[]): string {
   return [...values].sort((a, b) => a - b).map((value) => value.toFixed(2)).join('|');
 }
 
+// A goods purchase may print several stock lines (cotton, polyester) that all
+// post to Purchases. A service or expense bill may not: Praveen posted
+// MA/206's two printed lines ("Professional consultation 10,000", "Audit and
+// compliance review 5,000") to two ledgers, exactly as the document invited,
+// and was scored AMOUNT_WRONG + ACCOUNT_WRONG against a key with one
+// 15,000 leg (2026-09-04). One expense leg, one printed line.
+const GOODS_ACCOUNT_PATTERN = /\b(purchase|purchases|goods|stock|material|materials|inventory)\b/i;
+
+function singleLineRequired(figures: VendorInvoiceFigures): boolean {
+  return figures.baseLines.length === 1 && !GOODS_ACCOUNT_PATTERN.test(figures.baseLines[0].account);
+}
+
 function lineAmountsMatchLegs(content: VendorInvoiceContent, figures: VendorInvoiceFigures): boolean {
   return (
     sortedAmounts(content.lineItems.map((item) => item.amount)) ===
@@ -59,6 +71,13 @@ function descriptionTokens(value: string): Set<string> {
 // describes that leg and falling back to the account name otherwise.
 // Exported for tests.
 export function alignLineItemsToLegs(content: VendorInvoiceContent, figures: VendorInvoiceFigures): VendorInvoiceContent {
+  if (singleLineRequired(figures) && content.lineItems.length > 1) {
+    const [line] = figures.baseLines;
+    return {
+      ...content,
+      lineItems: [{ description: content.lineItems[0].description, quantity: 1, rate: line.amount, amount: line.amount }],
+    };
+  }
   if (figures.baseLines.length < 2 || lineAmountsMatchLegs(content, figures)) {
     return content;
   }
@@ -95,6 +114,9 @@ export function checkVendorInvoiceContent(
   const lineSum = content.lineItems.reduce((sum, item) => sum + item.amount, 0);
   if (Math.abs(lineSum - figures.base) >= AMOUNT_TOLERANCE) {
     violations.push(`lineItems sum to ${lineSum} but must sum to exactly ${figures.base}.`);
+  }
+  if (singleLineRequired(figures) && content.lineItems.length !== 1) {
+    violations.push(`lineItems must be exactly one line for "${figures.baseLines[0].account}" with amount ${figures.baseLines[0].amount}.`);
   }
   if (figures.baseLines.length >= 2 && !lineAmountsMatchLegs(content, figures)) {
     violations.push(

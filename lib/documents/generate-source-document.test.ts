@@ -339,3 +339,39 @@ describe('multi-leg invoices print one line per expense leg (Garima Level 5 MS-3
     expect(checkVendorInvoiceContent(content, { ...input, legs: single })).toBeNull();
   });
 });
+
+
+describe('a single expense leg prints a single line (Praveen MA/206, 2026-09-04)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, gstHead: 'CGST' | 'SGST' | null = null): AnswerKeyEntry => ({
+    sequence: 2, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Purchase',
+    gst_head: gstHead, gst_rate: gstHead ? 9 : null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'MA/206', narration: null, concept_tags: ['purchase_voucher_basics'],
+    requires_source_document: true, source_document_type: 'vendor_invoice',
+  });
+  const serviceLegs = [leg('Legal & Professional Charges', 'Dr', 15000), leg('Input CGST', 'Dr', 1350, 'CGST'), leg('Input SGST', 'Dr', 1350, 'SGST'), leg('Mehta & Associates', 'Cr', 17700)];
+  const input: VendorInvoiceInput = { legs: serviceLegs, transactionDescription: 'On 04-Oct-2026, an invoice arrives from Mehta & Associates for professional services rendered this month.' };
+  const twoLines: VendorInvoiceContent = {
+    vendorName: 'Mehta & Associates', vendorGSTIN: '29AABCM1234F1Z5', invoiceNumber: 'MA/206', invoiceDate: '04-Oct-2026',
+    lineItems: [
+      { description: 'Professional consultation services', quantity: 1, rate: 10000, amount: 10000 },
+      { description: 'Audit and compliance review', quantity: 1, rate: 5000, amount: 5000 },
+    ],
+    taxBreakup: { cgst_amount: 1350, sgst_amount: 1350, igst_amount: null }, totalAmount: 17700,
+  };
+
+  it('rejects a split service bill', () => {
+    expect(checkVendorInvoiceContent(twoLines, input)).toMatch(/exactly one line for "Legal & Professional Charges"/);
+  });
+
+  it('collapses the split into one line carrying the leg amount', () => {
+    const aligned = alignLineItemsToLegs(twoLines, deriveInvoiceFigures(serviceLegs));
+    expect(aligned.lineItems).toEqual([{ description: 'Professional consultation services', quantity: 1, rate: 15000, amount: 15000 }]);
+    expect(checkVendorInvoiceContent(aligned, input)).toBeNull();
+  });
+
+  it('still lets a goods purchase print several stock lines', () => {
+    const goods = [leg('Purchases', 'Dr', 15000), leg('Input CGST', 'Dr', 1350, 'CGST'), leg('Input SGST', 'Dr', 1350, 'SGST'), leg('Mehta & Associates', 'Cr', 17700)];
+    expect(alignLineItemsToLegs(twoLines, deriveInvoiceFigures(goods))).toBe(twoLines);
+    expect(checkVendorInvoiceContent(twoLines, { ...input, legs: goods })).toBeNull();
+  });
+});

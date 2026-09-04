@@ -205,6 +205,11 @@ export function formatInvoiceDate(date: { day: number; monthIndex: number; year:
 // several (goods + freight, fee + reimbursement) each printed line must carry
 // one leg's exact amount so the document and the key tell the same story.
 function lineItemRequirement(figures: VendorInvoiceFigures): string {
+  if (figures.baseLines.length === 1 && !/\b(purchase|purchases|goods|stock|material|materials|inventory)\b/i.test(figures.baseLines[0].account)) {
+    return `- lineItems: exactly ONE line describing the "${figures.baseLines[0].account}" service/expense,
+  amount exactly ${figures.base} (taxable value, before tax). Do not split it into
+  components; the learner posts it to a single ledger.`;
+  }
   if (figures.baseLines.length < 2) {
     return `- lineItems: one or more items whose amounts SUM to exactly ${figures.base}
   (taxable value, before tax).`;
