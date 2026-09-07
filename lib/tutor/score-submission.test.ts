@@ -1235,3 +1235,68 @@ describe('leg pairing: account names claim entries before aliases do (Yeshas SA-
     expect(codes).toEqual(['ACCOUNT_WRONG', 'GST_HEAD_WRONG']);
   });
 });
+
+describe('GST set-off journal: input and output legs of the same head must not cross (Praveen February, 2026-09-07)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, gstHead: 'CGST' | 'SGST' | 'IGST' | null): AnswerKey['entries'][number] => ({
+    sequence: 9, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Journal',
+    gst_head: gstHead, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['journal_voucher_basics' as const, 'gst_classification' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key: AnswerKey = { entries: [
+    leg('Output CGST 6%', 'Dr', 1920, 'CGST'),
+    leg('Output CGST 9%', 'Dr', 42390, 'CGST'),
+    leg('Output SGST 6%', 'Dr', 1920, 'SGST'),
+    leg('Output SGST 9%', 'Dr', 42390, 'SGST'),
+    leg('Output IGST 18%', 'Dr', 148680, 'IGST'),
+    leg('Input CGST 9%', 'Cr', 50644.83, 'CGST'),
+    leg('Input SGST 9%', 'Cr', 50644.83, 'SGST'),
+    leg('Input IGST 18%', 'Cr', 76140, 'IGST'),
+    leg('GST Payable', 'Cr', 59870.34, null),
+  ] };
+  // Posted in Praveen's own order and casing, 9% legs before 6% legs.
+  const entry = (ledgerName: string, amount: number, drOrCr: 'Dr' | 'Cr') => ({ ledgerName, amount, drOrCr, billAllocations: [] });
+  const dayBook = { vouchers: [{ voucherType: 'Journal', date: '20270215', narration: 'GST utilisation for FEB', ledgerEntries: [
+    entry('Output CGST 9%', 42390, 'Dr'), entry('Output SGST 9%', 42390, 'Dr'), entry('OUTPUT IGST 18%', 148680, 'Dr'),
+    entry('INPUT CGST 9%', 50644.83, 'Cr'), entry('INPUT SGST 9 %', 50644.83, 'Cr'), entry('INPUT IGST 18%', 76140, 'Cr'),
+    entry('Output CGST 6%', 1920, 'Dr'), entry('Output SGST 6%', 1920, 'Dr'), entry('GST Payable', 59870.34, 'Cr'),
+  ] }] };
+
+  it('scores a correctly posted nine-leg set-off with no flags', () => {
+    const result = scoreSubmission(dayBook, { ledgers: [] }, key);
+    const codes = result.per_voucher_diffs.filter((d) => !d.is_correct && d.error_code).map((d) => d.error_code);
+    expect(codes).toEqual([]);
+  });
+
+  it('still flags a set-off that leaves a whole head out', () => {
+    const noIgst = { vouchers: [{ ...dayBook.vouchers[0], ledgerEntries: dayBook.vouchers[0].ledgerEntries.filter((e) => !/IGST/i.test(e.ledgerName)) }] };
+    const result = scoreSubmission(noIgst, { ledgers: [] }, key);
+    const codes = result.per_voucher_diffs.filter((d) => !d.is_correct && d.error_code).map((d) => d.error_code);
+    expect(codes).toContain('GST_HEAD_WRONG');
+    expect(codes).toContain('ACCOUNT_WRONG');
+  });
+});
+
+describe('bill reference that names only a type, no number (Praveen February #12, 2026-09-07)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', ref: string | null): AnswerKey['entries'][number] => ({
+    sequence: 12, correct_account: account, dr_cr: drCr, amount: 5000, voucher_type: 'Journal',
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: ref, narration: null, concept_tags: ['journal_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key: AnswerKey = { entries: [leg('Suspense', 'Dr', 'New Ref (advance)'), leg('Bengaluru Boutique', 'Cr', 'New Ref (advance)')] };
+  const voucher = (allocations: { name: string; amount: number }[]) => ({ vouchers: [{ voucherType: 'Journal', date: '20270224', narration: 'Suspense reclassified as advance', ledgerEntries: [
+    { ledgerName: 'Suspense A/c', amount: 5000, drOrCr: 'Dr' as const, billAllocations: [] },
+    { ledgerName: 'Bengaluru Boutique', amount: 5000, drOrCr: 'Cr' as const, billAllocations: allocations },
+  ] }] });
+
+  it("accepts whatever allocation the learner created (Tally's own running number)", () => {
+    const result = scoreSubmission(voucher([{ name: '9', amount: 5000 }]), { ledgers: [] }, key);
+    expect(result.per_voucher_diffs.filter((d) => d.field === 'bill_reference').every((d) => d.is_correct)).toBe(true);
+  });
+
+  it('still requires an allocation to exist', () => {
+    const result = scoreSubmission(voucher([]), { ledgers: [] }, key);
+    expect(result.per_voucher_diffs.some((d) => d.error_code === 'BILL_REFERENCE_MISSING')).toBe(true);
+  });
+});

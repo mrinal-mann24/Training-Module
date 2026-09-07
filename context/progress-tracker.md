@@ -1334,3 +1334,10 @@ generated Level 5 (August purchase drill, 3 tx) checks out.
 - Yeshas uploaded his December explain drill twice eight minutes apart. The second upload landed after the first was scored but before the next batch was generated, so `getLatestExercise` still returned December, both were scored, two January batches were generated and the four concept attempts were written twice.
 - `hasScoredSubmissionForExercise` (lib/db/queries/submissions.ts) + guard in both `submitFiles` and the text-part action (app/(chat)/chat/actions.ts): a scored exercise now refuses another submission with a message that the next batch is on its way. `invalid` (gate-rejected) submissions still allow re-upload.
 - Data cleanup for Yeshas in Downloads/patch-yeshas-duplicate-jan.sql (orphan exercise 15c0b975 + duplicate attempts). Praveen Feb key patched separately (Suspense 12,000 → 5,000, Downloads/patch-praveen-feb-suspense.sql, applied).
+
+### 2026-09-07 — Scorer: GST set-off journals and type-only bill references
+- Praveen's February set-off (nine legs: Output CGST/SGST 6% and 9%, Output IGST, Input CGST/SGST/IGST, GST Payable) previewed DR_CR_REVERSED ×2 + GST_HEAD_WRONG although every leg was right. Two causes in `lib/tutor/score-submission.ts`:
+  - Leg pairing let the lenient GST-head name match claim the wrong rate ledger first. Added pass 0: an entry whose normalised name equals the key account is paired before any lenient/alias matching.
+  - `diffGst` enforced a single regime (CGST+SGST without IGST, or IGST alone). When the key's own legs span both regimes (a set-off), correct now means every head the key names is present.
+- `diffBillReference`: a key reference that names only a type ("New Ref (advance)", no bill number) now accepts any allocation the learner created; a missing allocation is still BILL_REFERENCE_MISSING. Praveen's February #12 (suspense reclassified as a customer advance) used Tally's running number and was flagged.
+- Regression tests appended to score-submission.test.ts. Praveen's February preview now 100%.

@@ -304,8 +304,21 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   // Marketing) claimed the party entry "Signage Advertising" before the
   // party leg had its turn, and a correctly posted party scored
   // DR_CR_REVERSED + AMOUNT_WRONG (Yeshas's Level 4 SA-105, 2026-09-04).
+  // Pass 0: an entry whose name IS the key's account (after normalisation)
+  // belongs to that leg and nothing else. Without it the lenient name match
+  // let key leg "Output CGST 6%" claim the posted "Output CGST 9%" entry
+  // first, leaving the real 6% entry to be mis-paired down the line
+  // (Praveen's February GST set-off, nine legs, 2026-09-07).
   const assigned = new Map<number, LedgerEntry>();
   consolidated.forEach((leg, index) => {
+    const expectedName = normalizeAccountName(leg.correct_account);
+    const matchIndex = unmatchedEntries.findIndex((entry) => normalizeAccountName(entry.ledgerName) === expectedName);
+    if (matchIndex !== -1) {
+      assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
+    }
+  });
+  consolidated.forEach((leg, index) => {
+    if (assigned.has(index)) return;
     const matchIndex = unmatchedEntries.findIndex((entry) => accountNamesMatch(entry.ledgerName, leg.correct_account));
     if (matchIndex !== -1) {
       assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
@@ -448,9 +461,18 @@ function diffGst(
   // "CGST/SGST split missed" and maps to GST_MISSING; the wrong regime
   // entirely stays GST_HEAD_WRONG.
   const expectedIntraState = expected.gst_head === 'CGST' || expected.gst_head === 'SGST';
-  const headCorrect = expectedIntraState
-    ? actualGst.heads.has('CGST') && actualGst.heads.has('SGST') && !actualGst.heads.has('IGST')
-    : actualGst.heads.has('IGST') && !actualGst.heads.has('CGST') && !actualGst.heads.has('SGST');
+  // A month-end set-off journal legitimately touches every head — output
+  // CGST/SGST/IGST against input CGST/SGST/IGST — so the one-regime rule
+  // below would call a correct set-off GST_HEAD_WRONG (Praveen's February,
+  // 2026-09-07). When the key's own legs span both regimes, correct means
+  // every head the key names is present.
+  const expectedHeads = new Set(expectedLegs.map((leg) => leg.gst_head).filter((head): head is 'CGST' | 'SGST' | 'IGST' => head !== null));
+  const expectedMixedRegime = expectedHeads.has('IGST') && (expectedHeads.has('CGST') || expectedHeads.has('SGST'));
+  const headCorrect = expectedMixedRegime
+    ? [...expectedHeads].every((head) => actualGst.heads.has(head))
+    : expectedIntraState
+      ? actualGst.heads.has('CGST') && actualGst.heads.has('SGST') && !actualGst.heads.has('IGST')
+      : actualGst.heads.has('IGST') && !actualGst.heads.has('CGST') && !actualGst.heads.has('SGST');
 
   // Side check (Input vs Output) only when the learner's ledger name states
   // a side AND the voucher type implies one — silent otherwise, so plain
@@ -512,6 +534,11 @@ function diffTds(
 // expected ref (normalized containment, so "INV-025" matches "INV-025 dt
 // 04-May"). First-allocation-only exact comparison under-credited real
 // submissions (pilot calibration, 2026-08-20).
+// Reference words that name a Tally allocation TYPE, not a bill number:
+// "New Ref", "Agst Ref", "Advance", "On Account" (compared after
+// normalizeAccountName, so no spaces or punctuation).
+const PLACEHOLDER_REFERENCE = /^(newref|newreference|agstref|againstref|advance|onaccount)$/;
+
 function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRef: number): VoucherDiff {
   if (expected.bill_reference === null) {
     return {
@@ -546,7 +573,21 @@ function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRe
     .split(/[,;]/)
     .map((ref) => ref.replace(/^\s*against\s+/i, ''))
     .map((ref) => normalizeAccountName(ref))
-    .filter((ref) => ref.length > 0);
+    .filter((ref) => ref.length > 0)
+    .filter((ref) => !PLACEHOLDER_REFERENCE.test(ref));
+  // The key named only a reference TYPE ("New Ref (advance)") because the
+  // brief gave no bill number — a suspense reclassified as a customer
+  // advance (Praveen's February #12, 2026-09-07). Any allocation the learner
+  // created is then the right answer; there is no number to compare.
+  if (expectedRefs.length === 0) {
+    return {
+      voucherRef,
+      field: 'bill_reference',
+      expected_masked: true,
+      is_correct: true,
+      error_code: null,
+    };
+  }
   const referenceCorrect = actualReferences.some((actual) => {
     const normalizedActual = normalizeAccountName(actual);
     return expectedRefs.some(
