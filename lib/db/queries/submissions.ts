@@ -91,6 +91,31 @@ export async function getOpenSubmissionForExercise(
   return data;
 }
 
+// A scored exercise must not accept another submission: the scoring job
+// generates the next exercise a few minutes after the status flips to
+// 'scored', and during that window getLatestExercise still returns the old
+// one. Yeshas re-uploaded December inside that window (2026-09-07) and got
+// two January batches plus duplicated concept attempts. 'invalid' rows do
+// not count — a gate-rejected upload must stay re-submittable.
+export async function hasScoredSubmissionForExercise(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exerciseId: string,
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('submissions')
+    .select('id', { count: 'exact', head: true })
+    .eq('learner_id', learnerId)
+    .eq('exercise_id', exerciseId)
+    .eq('status', 'scored');
+
+  if (error) {
+    throw error;
+  }
+
+  return (count ?? 0) > 0;
+}
+
 export async function updateSubmissionFilePaths(
   supabase: SupabaseClient,
   submissionId: string,

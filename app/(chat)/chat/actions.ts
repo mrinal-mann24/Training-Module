@@ -16,6 +16,7 @@ import { getExerciseAnswerKey, getLatestDiagnosticExercise, getLatestExercise } 
 import {
   insertSubmission,
   getOpenSubmissionForExercise,
+  hasScoredSubmissionForExercise,
   updateSubmissionFilePaths,
   getSubmission,
 } from '@/lib/db/queries/submissions';
@@ -162,6 +163,12 @@ export type SubmitFilesResult =
 //
 // Unit 11: exercises with exactly the original two required parts
 // (diagnostic/adaptive — daybook_xml + trialbalance_xml) keep sending
+// Shown when the displayed exercise already has a scored submission: the next
+// batch is generated a few minutes after scoring, and in that window the old
+// exercise is still the latest one (see hasScoredSubmissionForExercise).
+const ALREADY_SCORED_MESSAGE =
+  "This exercise has already been scored, so I won't take a second submission for it. Your next batch is being prepared and will appear here in a minute or two. Refresh the page if it hasn't shown up.";
+
 // submission/uploaded, routing through Unit 07's original run-scoring job
 // unchanged, per the spec's explicit "don't route simple submissions through
 // the more complex waiting logic unnecessarily." An 'explain' exercise has
@@ -241,6 +248,9 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
         ? "No files needed for this one! It's a written review: look through the books in the exercise above and type what you found in the message box. Tell me what looks off and why, in your own words."
         : 'This one is answered in writing, not with file uploads. Type your answer in the message box and send it.',
     };
+  }
+  if (await hasScoredSubmissionForExercise(supabase, user.id, exercise.id)) {
+    return { status: 'error', error: ALREADY_SCORED_MESSAGE };
   }
 
   const daybookBuffer = daybookUpload.buffer;
@@ -349,6 +359,9 @@ export async function submitTextPart(text: string): Promise<SubmitTextPartResult
 
   if (!partType) {
     return { status: 'error', error: "This exercise is scored from your Tally exports, so I can't take a typed answer for it. If that was a question for me, just ask it again and I'll answer. When you're ready to submit, attach the Day Book and Trial Balance XMLs." };
+  }
+  if (await hasScoredSubmissionForExercise(supabase, user.id, exercise.id)) {
+    return { status: 'error', error: ALREADY_SCORED_MESSAGE };
   }
 
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);

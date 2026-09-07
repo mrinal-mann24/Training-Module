@@ -1329,3 +1329,8 @@ account name first, aliases only for legs still unmatched. His genuine
 slips (Purchases instead of the expense ledger, Output instead of Input GST)
 stand. Live row patched via Downloads/patch-yeshas-july-pairing.sql. His
 generated Level 5 (August purchase drill, 3 tx) checks out.
+
+### 2026-09-07 — Block re-submission of an already-scored exercise
+- Yeshas uploaded his December explain drill twice eight minutes apart. The second upload landed after the first was scored but before the next batch was generated, so `getLatestExercise` still returned December, both were scored, two January batches were generated and the four concept attempts were written twice.
+- `hasScoredSubmissionForExercise` (lib/db/queries/submissions.ts) + guard in both `submitFiles` and the text-part action (app/(chat)/chat/actions.ts): a scored exercise now refuses another submission with a message that the next batch is on its way. `invalid` (gate-rejected) submissions still allow re-upload.
+- Data cleanup for Yeshas in Downloads/patch-yeshas-duplicate-jan.sql (orphan exercise 15c0b975 + duplicate attempts). Praveen Feb key patched separately (Suspense 12,000 → 5,000, Downloads/patch-praveen-feb-suspense.sql, applied).
