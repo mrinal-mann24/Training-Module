@@ -149,11 +149,20 @@ function normalizeVoucher(voucher: Record<string, unknown>): {
 // Sign convention confirmed against the real DayBook.xml sample:
 // ISDEEMEDPOSITIVE=Yes + negative AMOUNT => Debit
 // ISDEEMEDPOSITIVE=No  + positive AMOUNT => Credit
+//
+// The AMOUNT sign is the effective side; ISDEEMEDPOSITIVE is only the side
+// the leg was keyed on. Tally lets a learner key a leg on the Dr side with a
+// negative figure (a "negative debit"), which it then posts as a credit —
+// Garima's March 2025 TDS legs (2026-09-09) arrived as
+// ISDEEMEDPOSITIVE=Yes + AMOUNT=+5000 inside otherwise balanced purchase
+// vouchers, and reading the flag alone scored them DR_CR_REVERSED. So the
+// sign decides whenever the amount is non-zero; the flag is the fallback
+// for a zero leg.
 function normalizeLedgerEntry(entry: Record<string, unknown>): LedgerEntry {
   const ledgerName = String(entry['LEDGERNAME'] ?? '');
   const amount = Number(entry['AMOUNT'] ?? 0);
   const isDeemedPositive = String(entry['ISDEEMEDPOSITIVE'] ?? '') === 'Yes';
-  const drOrCr = isDeemedPositive ? 'Dr' : 'Cr';
+  const drOrCr = amount < 0 ? 'Dr' : amount > 0 ? 'Cr' : isDeemedPositive ? 'Dr' : 'Cr';
 
   const rawBillAllocations = entry['BILLALLOCATIONS.LIST'];
   const billAllocations = extractBillAllocations(rawBillAllocations);
