@@ -75,12 +75,23 @@ export async function insertSourceDocument(
 const DOC_TYPE_LABEL: Record<SourceDocumentType, string> = {
   vendor_invoice: 'Invoice',
   bank_statement: 'Bank Statement',
+  sales_invoice: 'Sales Invoice',
+  month_end_note: 'Month-end Notes',
 };
 
 function deriveDocumentName(docType: SourceDocumentType, structuredData: unknown): string {
   if (docType === 'vendor_invoice') {
     const vendorName = (structuredData as { vendorName?: string }).vendorName;
     return vendorName ? `${DOC_TYPE_LABEL.vendor_invoice} — ${vendorName}.pdf` : `${DOC_TYPE_LABEL.vendor_invoice}.pdf`;
+  }
+  if (docType === 'sales_invoice') {
+    const { buyerName, isCashMemo, invoiceNumber } = structuredData as { buyerName?: string; isCashMemo?: boolean; invoiceNumber?: string };
+    const label = isCashMemo ? 'Cash Memo' : DOC_TYPE_LABEL.sales_invoice;
+    return `${label} — ${isCashMemo ? invoiceNumber ?? 'counter sale' : buyerName ?? invoiceNumber ?? ''}.pdf`;
+  }
+  if (docType === 'month_end_note') {
+    const period = (structuredData as { period?: string }).period;
+    return period ? `${DOC_TYPE_LABEL.month_end_note} — ${period}.pdf` : `${DOC_TYPE_LABEL.month_end_note}.pdf`;
   }
   const accountHolderName = (structuredData as { accountHolderName?: string }).accountHolderName;
   return accountHolderName

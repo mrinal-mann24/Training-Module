@@ -44,7 +44,8 @@ import type {
   BankStatementLineInput,
   VendorInvoiceInput,
 } from "@/lib/llm/prompts/source-document";
-import type { GeneratedSourceDocument } from "@/lib/schemas/source-document";
+import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
+import { applyDocumentsMode, checkMonthEndNoteDetails } from "@/lib/tutor/documents-mode";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -115,16 +116,18 @@ export function planSourceDocuments(
         partyAccounts: legs.map((leg) => leg.correct_account),
         transactionDescription,
       });
-    } else {
+    } else if (docType === "vendor_invoice") {
       plan.invoices.push({ legs, transactionDescription });
     }
+    // sales_invoice / month_end_note are built by code in documents mode
+    // (lib/tutor/documents-mode.ts), never by the invoice generator.
   }
 
   return plan;
 }
 
 type PreparedSourceDocument = {
-  docType: "vendor_invoice" | "bank_statement";
+  docType: SourceDocumentType;
   storagePath: string;
   content: unknown;
 };
@@ -157,6 +160,9 @@ async function prepareSourceDocuments(
   // build-bank-statement.ts); null when the batch has no statement-backed
   // bank lines. companyName is still used for the invoices' buyer block.
   statement: BankStatementContent | null,
+  // Documents-mode extras already built by code (sales invoices, the
+  // month-end notes sheet): render + upload only, no LLM call.
+  codeBuiltDocuments: { document: GeneratedSourceDocument; seed: string }[] = [],
 ): Promise<PreparedSourceDocument[]> {
   const plan = planSourceDocuments(generatedExercise);
   // Storage folder + format-rotation seed base. Pre-generated (not the
@@ -166,7 +172,7 @@ async function prepareSourceDocuments(
 
   async function renderAndUpload(
     generated: GeneratedSourceDocument,
-    docType: "vendor_invoice" | "bank_statement",
+    docType: SourceDocumentType,
     formatSeed: string,
   ): Promise<PreparedSourceDocument> {
     const pdfBuffer = await renderSourceDocumentPdf(generated, formatSeed);
@@ -205,9 +211,15 @@ async function prepareSourceDocuments(
       ? renderAndUpload({ doc_type: "bank_statement", content: statement }, "bank_statement", `${batchId}:bank-statement`)
       : null;
 
-  const prepared = await Promise.all(
-    statementPromise ? [...invoicePromises, statementPromise] : invoicePromises,
+  const codeBuiltPromises = codeBuiltDocuments.map(({ document, seed }) =>
+    renderAndUpload(document, document.doc_type, `${batchId}:${seed}`),
   );
+
+  const prepared = await Promise.all([
+    ...invoicePromises,
+    ...(statementPromise ? [statementPromise] : []),
+    ...codeBuiltPromises,
+  ]);
 
   return prepared;
 }
@@ -1014,6 +1026,10 @@ export async function generateAdaptiveExercise(
   // stated to the prompt as a hard rule, and enforced by checkBatchMonth in
   // the retry loop below.
   exerciseOrdinal = 2,
+  // Documents mode (2026-09-09): every transaction is delivered as
+  // paperwork — see lib/tutor/documents-mode.ts. Decided by the caller from
+  // the learner's mastery.
+  documentsMode = false,
 ): Promise<{ id: string }> {
   const difficultyLevel = target.reinforcementActive
     ? dropOneLevel(baseDifficultyLevel)
@@ -1052,6 +1068,7 @@ export async function generateAdaptiveExercise(
     cashPosition,
     openBills,
     partyTaxClasses,
+    documentsMode,
   };
 
   let lastError: string | null = null;
@@ -1107,7 +1124,10 @@ export async function generateAdaptiveExercise(
       const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
       const settlementError = checkSettlementReferences(parsed.data, openBills);
       const partyTaxError = checkPartyTaxConsistency(parsed.data, partyTaxClasses);
-      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError]
+      // Documents mode: journal-type lines must keep their figures — that
+      // text becomes the month-end notes sheet (documents-mode.ts).
+      const notesError = documentsMode ? checkMonthEndNoteDetails(parsed.data) : null;
+      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError]
         .filter(Boolean)
         .join(" ");
       const batchError = [
@@ -1119,6 +1139,7 @@ export async function generateAdaptiveExercise(
         openingFigureError,
         settlementError,
         partyTaxError,
+        notesError,
       ]
         .filter(Boolean)
         .join(" ");
@@ -1168,21 +1189,46 @@ export async function generateAdaptiveExercise(
     answer_key: { ...generated.answer_key, opening_balances: openingBalances },
   };
 
+  // Documents mode: every transaction becomes document-backed, the brief
+  // lines become pointers, and the sales invoices / month-end notes are
+  // built here by code from the key. Applied AFTER every validation and
+  // stamp above so the checks saw the model's full-detail text, and BEFORE
+  // the statement so the pointers and narrations line up.
+  const documentsPlan = documentsMode
+    ? applyDocumentsMode(generatedWithOpenings, {
+        companyName: companyName ?? "Blossom Retail Pvt Ltd",
+        monthLabel: exerciseMonth.label,
+      })
+    : null;
+  const modeApplied = documentsPlan ? documentsPlan.generated : generatedWithOpenings;
+
   // Statement lines, running balance and reference numbers come from the
   // key and the real opening bank balance; the same references are written
   // into the key's narrations so "copy the bank reference verbatim" is
   // satisfiable (2026-09-03).
   const statement =
-    planSourceDocuments(generatedWithOpenings).bankLines.length > 0
+    planSourceDocuments(modeApplied).bankLines.length > 0
       ? buildBankStatementContent({
           companyName: companyName ?? "Blossom Retail Pvt Ltd",
           openingBankBalance: cashPosition.bank,
-          generated: generatedWithOpenings,
+          generated: modeApplied,
         })
       : null;
   const finalExercise = statement
-    ? applyBankReferences(generatedWithOpenings, statement.referenceBySequence)
-    : generatedWithOpenings;
+    ? applyBankReferences(modeApplied, statement.referenceBySequence)
+    : modeApplied;
+
+  const codeBuiltDocuments = documentsPlan
+    ? [
+        ...documentsPlan.salesInvoices.map(({ sequence, content }) => ({
+          document: { doc_type: "sales_invoice" as const, content },
+          seed: `sales:${sequence}`,
+        })),
+        ...(documentsPlan.monthEndNotes
+          ? [{ document: { doc_type: "month_end_note" as const, content: documentsPlan.monthEndNotes }, seed: "month-end-notes" }]
+          : []),
+      ]
+    : [];
 
   const documents = await prepareSourceDocuments(
     supabase,
@@ -1190,6 +1236,7 @@ export async function generateAdaptiveExercise(
     finalExercise,
     companyName ?? "Blossom Retail Pvt Ltd",
     statement?.content ?? null,
+    codeBuiltDocuments,
   );
 
   const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);

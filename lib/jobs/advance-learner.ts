@@ -6,6 +6,7 @@ import { recomputeMastery, selectWeakConcept } from '@/lib/tutor/mastery';
 import { generateAdaptiveExercise } from '@/lib/tutor/generate-exercise';
 import { generateReviewExercise } from '@/lib/tutor/generate-review-exercise';
 import { selectNextExerciseKind } from '@/lib/tutor/select-exercise-kind';
+import { isDocumentsModeUnlocked } from '@/lib/tutor/documents-mode';
 import { selectBatchConcepts } from '@/lib/tutor/select-batch-concepts';
 import { getRecentCompanyTransactionLog } from '@/lib/db/queries/company';
 import { CONCEPT_TAGS, EXERCISE_DIFFICULTY_LEVELS, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
@@ -160,6 +161,7 @@ export async function generateNextExercise(
     batchPlan,
     params.licenseMode,
     priorExerciseCount + 1,
+    isDocumentsModeUnlocked(currentMastery.values()),
   );
   return 'generated';
 }

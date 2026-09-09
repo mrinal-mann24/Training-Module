@@ -46,6 +46,11 @@ export type AdaptiveExerciseParams = {
   // How each known party has been taxed so far (2026-09-03): a party's
   // state never changes, so its GST treatment cannot either.
   partyTaxClasses: Map<string, PartyTaxClass>;
+  // Documents mode (2026-09-09): every sale, purchase and bank movement is
+  // document-backed; journals stay fully written (they are delivered as a
+  // month-end notes sheet by code). The code overrides whatever the model
+  // decides per transaction, so this only steers the text it writes.
+  documentsMode?: boolean;
 };
 
 function buildPartyStatesBlock(classes: Map<string, PartyTaxClass>): string {
@@ -318,6 +323,23 @@ always.) Transactions WITHOUT a document keep full explicit details in the
 text: date, parties with state, amounts with GST stated separately, bill
 numbers.
 
+${
+    params.documentsMode
+      ? `
+DOCUMENTS MODE (overrides the "use judgment" rule above): this learner now
+works from paperwork only. EVERY Sales transaction (a cash counter sale too)
+has requires_source_document true with source_document_type "sales_invoice";
+EVERY Purchase has "vendor_invoice"; EVERY Contra, Receipt and Payment has
+"bank_statement". Write all of those lines as pointers with NO figures, as
+described above; for a sale the pointer names the customer and the invoice
+number, for a cash sale it just says a counter sale was made for cash. Journals,
+debit notes and credit notes keep requires_source_document false and full
+explicit details in their text; the system moves them onto a month-end notes
+sheet for the learner. Keep the usual mix of the batch, including two or more
+journal-type entries.
+`
+      : ''
+  }
 Never use an em dash anywhere in learner-facing text; use a colon, comma, or full stop.
 
 Respond only with JSON matching the provided schema. The "variant" field should be "A".`;

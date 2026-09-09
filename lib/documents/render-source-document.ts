@@ -8,6 +8,8 @@ import { VendorInvoiceDocumentE } from '@/lib/documents/templates/vendor-invoice
 import { VendorInvoiceDocumentF } from '@/lib/documents/templates/vendor-invoice-f';
 import { BankStatementDocument } from '@/lib/documents/templates/bank-statement';
 import { BankStatementHdfcDocument } from '@/lib/documents/templates/bank-statement-hdfc';
+import { SalesInvoiceDocument } from '@/lib/documents/templates/sales-invoice';
+import { MonthEndNotesDocument } from '@/lib/documents/templates/month-end-notes';
 import { pickFormatIndex } from '@/lib/documents/pick-template';
 import type { GeneratedSourceDocument, VendorInvoiceContent, BankStatementContent } from '@/lib/schemas/source-document';
 
@@ -38,10 +40,21 @@ export async function renderSourceDocumentPdf(
   formatSeed: string,
 ): Promise<Buffer> {
   const formatIndex = pickFormatIndex(generated.doc_type, formatSeed);
-  const element =
-    generated.doc_type === 'vendor_invoice'
-      ? VENDOR_INVOICE_FORMATS[formatIndex]({ content: generated.content })
-      : BANK_STATEMENT_FORMATS[formatIndex]({ content: generated.content });
+  let element: React.ReactElement<DocumentProps>;
+  switch (generated.doc_type) {
+    case 'vendor_invoice':
+      element = VENDOR_INVOICE_FORMATS[formatIndex]({ content: generated.content });
+      break;
+    case 'bank_statement':
+      element = BANK_STATEMENT_FORMATS[formatIndex]({ content: generated.content });
+      break;
+    case 'sales_invoice':
+      element = SalesInvoiceDocument({ content: generated.content });
+      break;
+    case 'month_end_note':
+      element = MonthEndNotesDocument({ content: generated.content });
+      break;
+  }
 
   return renderToBuffer(element);
 }
