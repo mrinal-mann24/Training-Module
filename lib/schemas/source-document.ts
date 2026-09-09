@@ -50,6 +50,9 @@ const TaxBreakupSchema = z.object({
 export const VendorInvoiceContentSchema = z.object({
   vendorName: z.string(),
   vendorGSTIN: z.string(),
+  // Set by code from the party directory after generation (2026-09-09);
+  // optional so documents stored before then still parse and re-render.
+  vendorAddress: z.string().optional(),
   invoiceNumber: z.string(),
   invoiceDate: z.string(),
   lineItems: z.array(VendorInvoiceLineItemSchema).min(1),
@@ -80,6 +83,10 @@ export const SalesInvoiceContentSchema = z.object({
   sellerGSTIN: z.string(),
   sellerAddress: z.string(),
   buyerName: z.string(),
+  // Buyer block from the party directory (2026-09-09); optional so older
+  // stored invoices still parse. GSTIN is null on a cash memo.
+  buyerAddress: z.string().optional(),
+  buyerGSTIN: z.string().nullable().optional(),
   placeOfSupply: z.string(),
   invoiceNumber: z.string(),
   invoiceDate: z.string(),
@@ -108,6 +115,7 @@ export const SalesRegisterRowSchema = z.object({
   invoiceNumber: z.string(),
   invoiceDate: z.string(),
   customerName: z.string(),
+  customerGSTIN: z.string().nullable(),
   placeOfSupply: z.string(),
   isCashMemo: z.boolean(),
   taxableValue: z.number(),

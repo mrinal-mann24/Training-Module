@@ -17,6 +17,23 @@ import {
   type GeneratedSourceDocument,
   type VendorInvoiceContent,
 } from '@/lib/schemas/source-document';
+import { partyDetailsFor } from '@/lib/documents/party-directory';
+
+// The invoice's GST regime, read off the legs: IGST → inter-state,
+// CGST/SGST → intra-state, no GST leg → unknown (the directory decides).
+function interStateOf(legs: VendorInvoiceInput['legs']): boolean | null {
+  const heads = legs.map((leg) => leg.gst_head).filter((head): head is NonNullable<typeof head> => head !== null);
+  if (heads.length === 0) return null;
+  return heads.some((head) => head === 'IGST');
+}
+
+// Vendor identity comes from the party directory, never the model
+// (2026-09-09): the same vendor prints the same GSTIN and address on every
+// invoice, and the address always agrees with the GST charged.
+function stampVendorIdentity(content: VendorInvoiceContent, legs: VendorInvoiceInput['legs']): VendorInvoiceContent {
+  const party = partyDetailsFor(content.vendorName, interStateOf(legs));
+  return { ...content, vendorGSTIN: party.gstin, vendorAddress: party.address };
+}
 
 const MAX_ATTEMPTS = 3;
 
@@ -210,7 +227,7 @@ export async function generateVendorInvoiceDocument(
         lastError = figureError;
         continue;
       }
-      return { ...parsed.data, content };
+      return { ...parsed.data, content: stampVendorIdentity(content, input.legs) };
     }
 
     lastError = parsed.error.message;

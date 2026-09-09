@@ -119,6 +119,27 @@ describe('buildSalesInvoiceContent', () => {
     expect(content.totalAmount).toBe(70800);
     expect(content.placeOfSupply).toBe('Karnataka');
     expect(content.sellerName).toBe(COMPANY);
+    // Buyer block from the party directory: fixed address and GSTIN in a
+    // state that agrees with the CGST+SGST charged.
+    expect(content.buyerAddress).toMatch(/Bengaluru 560\d{3}, Karnataka$/);
+    expect(content.buyerGSTIN).toMatch(/^29[A-Z]{5}[0-9]{4}[A-Z]1Z[0-9A-Z]$/);
+  });
+
+  it('gives an inter-state buyer an out-of-state address and no buyer details on a cash memo', () => {
+    const igstLegs = [
+      leg(9, 'Sales', 'Chennai Home Store', 'Dr', 106200, { bill_reference: 'INV-071 (New Ref)' }),
+      leg(9, 'Sales', 'Sales', 'Cr', 90000, { bill_reference: 'INV-071 (New Ref)' }),
+      leg(9, 'Sales', 'Output IGST', 'Cr', 16200, { bill_reference: 'INV-071 (New Ref)', gst_head: 'IGST' }),
+    ];
+    const interState = buildSalesInvoiceContent(igstLegs, 'On 10-Apr-2025, you raise Sales Invoice INV-071 to Chennai Home Store for goods worth Rs 90,000 plus IGST Rs 16,200, total Rs 106,200, on credit.', COMPANY);
+    expect(interState.placeOfSupply).toBe('Tamil Nadu');
+    expect(interState.buyerAddress).toMatch(/Chennai 600\d{3}, Tamil Nadu$/);
+    expect(interState.buyerGSTIN?.slice(0, 2)).toBe('33');
+
+    const cashMemo = buildSalesInvoiceContent(batch().answer_key.entries.filter((e) => e.sequence === 2), batch().transactions[1].description, COMPANY);
+    expect(cashMemo.buyerAddress).toBeUndefined();
+    expect(cashMemo.buyerGSTIN).toBeNull();
+    expect(cashMemo.placeOfSupply).toBe('Karnataka');
   });
 
   it('turns a cash sale into a cash memo with a generated number', () => {

@@ -109,6 +109,7 @@ export function VendorInvoiceDocumentD({ content }: Props) {
         <View style={styles.metaPanels}>
           <View style={styles.metaPanel}>
             <Text style={styles.metaTitle}>{content.vendorName}</Text>
+            {content.vendorAddress ? <Text style={styles.metaLine}>{content.vendorAddress}</Text> : null}
             <Text style={styles.metaLine}>GSTIN/UIN: {content.vendorGSTIN}</Text>
           </View>
           <View style={styles.metaPanelLast}>

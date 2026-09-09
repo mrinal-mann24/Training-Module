@@ -109,6 +109,7 @@ export function VendorInvoiceDocumentB({ content }: Props) {
       <Page size="A4" style={styles.page}>
         <View style={styles.box}>
           <Text style={styles.vendorName}>{content.vendorName}</Text>
+          {content.vendorAddress ? <Text style={styles.gstin}>{content.vendorAddress}</Text> : null}
           <Text style={styles.gstin}>GSTIN: {content.vendorGSTIN}</Text>
           <Text style={styles.docTitle}>TAX INVOICE</Text>
 

@@ -4,6 +4,7 @@ import { isBankLedger, partyLegOf, splitBillReferences } from '@/lib/db/queries/
 import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
 import { COMPANY_DETAILS } from '@/lib/documents/company-details';
 import { buildSalesRegisterContent } from '@/lib/documents/build-sales-register';
+import { partyDetailsFor } from '@/lib/documents/party-directory';
 
 // Documents mode (2026-09-09). Once a learner has mastered enough concepts,
 // a batch stops spelling entries out in text: every transaction is
@@ -129,12 +130,18 @@ export function buildSalesInvoiceContent(
 
   const isCashMemo = CASH_LEDGER_PATTERN.test(party.correct_account);
   const stamp = `${String(date.year).slice(-2)}${String(date.monthIndex + 1).padStart(2, '0')}${String(date.day).padStart(2, '0')}`;
+  // Buyer block from the party directory (2026-09-09): a fixed address and
+  // GSTIN per customer, in a state that agrees with the GST charged. A
+  // walk-in cash sale has no buyer details and is supplied in our own state.
+  const buyer = isCashMemo ? null : partyDetailsFor(party.correct_account, igst !== null);
   return {
     sellerName: companyName,
     sellerGSTIN: COMPANY_DETAILS.gstin,
     sellerAddress: COMPANY_DETAILS.address,
     buyerName: isCashMemo ? 'Cash (walk-in customer)' : party.correct_account,
-    placeOfSupply: igst !== null ? 'Inter-state (IGST)' : COMPANY_DETAILS.state,
+    buyerAddress: buyer?.address,
+    buyerGSTIN: buyer?.gstin ?? null,
+    placeOfSupply: buyer?.state ?? COMPANY_DETAILS.state,
     invoiceNumber: firstBillReference(legs) ?? `CM-${stamp}-${String(sequence).padStart(2, '0')}`,
     invoiceDate: formatInvoiceDate(date),
     isCashMemo,

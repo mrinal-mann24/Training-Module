@@ -105,6 +105,7 @@ export function VendorInvoiceDocumentC({ content }: Props) {
         <View style={styles.topRow}>
           <View>
             <Text style={styles.vendorName}>{content.vendorName}</Text>
+            {content.vendorAddress ? <Text style={styles.gstin}>{content.vendorAddress}</Text> : null}
             <Text style={styles.gstin}>GSTIN {content.vendorGSTIN}</Text>
           </View>
           <View>

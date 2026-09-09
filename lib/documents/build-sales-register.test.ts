@@ -10,6 +10,7 @@ function invoice(overrides: Partial<SalesInvoiceContent> = {}): SalesInvoiceCont
     sellerGSTIN: '29AABCB1234H1Z5',
     sellerAddress: '12 MG Road, Bengaluru',
     buyerName: 'Karnataka Emporium',
+    buyerGSTIN: '29AABCK1234E1Z5',
     placeOfSupply: 'Karnataka',
     invoiceNumber: 'INV-070',
     invoiceDate: '02-Apr-2025',
@@ -28,6 +29,7 @@ describe('buildSalesRegisterContent', () => {
         invoice(),
         invoice({
           buyerName: 'Chennai Home Store',
+          buyerGSTIN: null,
           placeOfSupply: 'Tamil Nadu',
           invoiceNumber: 'INV-071',
           invoiceDate: '10-Apr-2025',
@@ -43,9 +45,9 @@ describe('buildSalesRegisterContent', () => {
     expect(content?.period).toBe('April 2025');
     expect(content?.sellerGSTIN).toBe('29AABCB1234H1Z5');
     expect(content?.rows).toEqual([
-      { invoiceNumber: 'INV-070', invoiceDate: '02-Apr-2025', customerName: 'Karnataka Emporium', placeOfSupply: 'Karnataka', isCashMemo: false, taxableValue: 40000, cgst: 3600, sgst: 3600, igst: 0, total: 47200 },
-      { invoiceNumber: 'INV-071', invoiceDate: '10-Apr-2025', customerName: 'Chennai Home Store', placeOfSupply: 'Tamil Nadu', isCashMemo: false, taxableValue: 90000, cgst: 0, sgst: 0, igst: 16200, total: 106200 },
-      { invoiceNumber: 'CM-250405-03', invoiceDate: '05-Apr-2025', customerName: 'Cash (walk-in customer)', placeOfSupply: 'Karnataka', isCashMemo: true, taxableValue: 2000, cgst: 180, sgst: 180, igst: 0, total: 2360 },
+      { invoiceNumber: 'INV-070', invoiceDate: '02-Apr-2025', customerName: 'Karnataka Emporium', customerGSTIN: '29AABCK1234E1Z5', placeOfSupply: 'Karnataka', isCashMemo: false, taxableValue: 40000, cgst: 3600, sgst: 3600, igst: 0, total: 47200 },
+      { invoiceNumber: 'INV-071', invoiceDate: '10-Apr-2025', customerName: 'Chennai Home Store', customerGSTIN: null, placeOfSupply: 'Tamil Nadu', isCashMemo: false, taxableValue: 90000, cgst: 0, sgst: 0, igst: 16200, total: 106200 },
+      { invoiceNumber: 'CM-250405-03', invoiceDate: '05-Apr-2025', customerName: 'Cash (walk-in customer)', customerGSTIN: null, placeOfSupply: 'Karnataka', isCashMemo: true, taxableValue: 2000, cgst: 180, sgst: 180, igst: 0, total: 2360 },
     ]);
     // Every row's parts add to its total, the same identity the invoice keeps.
     for (const row of content?.rows ?? []) expect(row.taxableValue + row.cgst + row.sgst + row.igst).toBe(row.total);
@@ -62,7 +64,7 @@ describe('renderSalesRegisterCsv', () => {
     const lines = csv.slice(1).split('\r\n');
     expect(lines).toEqual([
       SALES_REGISTER_COLUMNS.map((c) => `"${c}"`).join(','),
-      '"INV-070","02-04-2025","Mehta & Associates, Bengaluru","Karnataka","Tax Invoice","40000.00","3600.00","3600.00","0.00","47200.00"',
+      '"INV-070","02-04-2025","Mehta & Associates, Bengaluru","29AABCK1234E1Z5","Karnataka","Tax Invoice","40000.00","3600.00","3600.00","0.00","47200.00"',
       '',
     ]);
   });

@@ -45,6 +45,8 @@ export function SalesInvoiceDocument({ content }: Props) {
           <View style={styles.partyColumn}>
             <Text style={styles.label}>Bill to</Text>
             <Text>{content.buyerName}</Text>
+            {content.buyerAddress ? <Text>{content.buyerAddress}</Text> : null}
+            {content.buyerGSTIN ? <Text>GSTIN: {content.buyerGSTIN}</Text> : null}
             <Text>Place of supply: {content.placeOfSupply}</Text>
             <View style={styles.metaRow}>
               <Text>{content.isCashMemo ? 'Memo No' : 'Invoice No'}: {content.invoiceNumber}</Text>

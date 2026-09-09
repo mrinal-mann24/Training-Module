@@ -91,6 +91,7 @@ export function VendorInvoiceDocument({ content }: VendorInvoiceDocumentProps) {
             <Text>{content.vendorName}</Text>
             <Text>Invoice No: {content.invoiceNumber}</Text>
           </View>
+          {content.vendorAddress ? <Text>{content.vendorAddress}</Text> : null}
           <View style={styles.metaRow}>
             <Text>GSTIN: {content.vendorGSTIN}</Text>
             <Text>Date: {content.invoiceDate}</Text>

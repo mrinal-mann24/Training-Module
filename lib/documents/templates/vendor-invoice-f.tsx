@@ -120,6 +120,7 @@ export function VendorInvoiceDocumentF({ content }: Props) {
         <View style={styles.headerBand}>
           <View>
             <Text style={styles.vendorName}>{content.vendorName}</Text>
+            {content.vendorAddress ? <Text style={styles.headerGstin}>{content.vendorAddress}</Text> : null}
             <Text style={styles.headerGstin}>GSTIN {content.vendorGSTIN}</Text>
           </View>
           <Text style={styles.invoiceWord}>INVOICE</Text>
