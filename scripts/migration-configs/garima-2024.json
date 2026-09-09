@@ -1,0 +1,73 @@
+{
+  "rename": {
+    "AHMDELITE": "Ahmedabad Elite",
+    "AHMDIMPT": "Ahmedabad Import",
+    "BALAJI": "Balaji Interiors (firm)",
+    "BANK CHRG MAINT+IMPS+GST": "BANK CHARGES",
+    "BHARATMAC": { "to": "Bharat Machinery", "parent": "Sundry Creditors" },
+    "BILLPAY BESCOM ELEC": { "to": "Electricity Charges", "parent": "Indirect Expenses" },
+    "BNGCLEAN": "Bangalore Cleaning (firm)",
+    "BNGLOCAL": "Bengaluru Local Store",
+    "CARESW": "Software Cloud LLC",
+    "CARESW BANK": "Software Cloud LLC",
+    "Cash Bank": "Cash",
+    "CHENHS": "Chennai Home Store",
+    "CHENSUP": "Chennai Suppliers",
+    "CHENSUP2": "Chennai Suppliers",
+    "COIMINT": "Coimbatore Interiors",
+    "CREDIT SAVINGS": { "to": "Interest Income", "parent": "Indirect Incomes" },
+    "DBAZAAR": { "to": "Delhi Bazaar", "parent": "Sundry Debtors" },
+    "Delhi Bazaar S": { "to": "Delhi Bazaar", "parent": "Sundry Debtors" },
+    "DBAZAAR2": "Bengaluru Boutique",
+    "Deccan": "Deccan Traders",
+    "DELDIR": "Delivery Direct (firm)",
+    "freight": { "to": "Freight & Delivery Charges", "parent": "Direct Expenses" },
+    "HERORENT": "Hero Rentals (individual)",
+    "HYDINTR": "Hyderabad Interiors",
+    "KAREM MARCH": "Karnataka Emporium",
+    "KAREMP": "Karnataka Emporium",
+    "Karnataka Emporium S": "Karnataka Emporium",
+    "KHANDICRAFT": "Kerala Handicrafts",
+    "KOCHIMOD": "Kochi Modern",
+    "KOLKATRD": "Kolkata Traders",
+    "KOLKEMP": "Kolkata Emporium",
+    "LUDWOOD": "Ludhiana Woodworks",
+    "MEHTA": "Mehta & Associates (firm)",
+    "MUMBAISUP": "Mumbai Suppliers",
+    "/MYSDECOR": "Mysore Decor",
+    "NAGPURRT": "Nagpur Retail",
+    "NEFT": "Coimbatore Wholesale",
+    "PRIYAS": { "to": "Salaries", "parent": "Indirect Expenses" },
+    "RAJHOME": "Rajasthan Home Decor",
+    "SCLOUD": "Software Cloud LLC",
+    "SIGNADV": "Signage Advertising (firm)",
+    "SLEGAL": "Sharma Legal (individual)",
+    "TDS DEPOST": "TDS Payable — u/s 194J",
+    "TRICHY": "Trichy Textiles",
+    "UPI/26042101/GUJRETAIL/PMT": "Gujarat Retail",
+    "VIZAGFURN": "Vizag Furnishings"
+  },
+  "relabel": [
+    { "date": "20260424", "narrationContains": "VIZAGV/PMT", "from": "VIZAGFURN", "to": "Vizag Vendors" }
+  ],
+  "parentOverride": {
+    "Karnataka Emporium": "Sundry Debtors"
+  },
+  "dropVouchers": [
+    { "date": "20260401", "narration": "OPENING BALANCE B/F" },
+    { "date": "20260430", "voucherType": "Journal", "narrationStartsWith": "30-Apr UPI credit" }
+  ],
+  "openings": [
+    { "account": "HDFC BANK", "dr_cr": "Dr", "amount": 800000 },
+    { "account": "Cash", "dr_cr": "Dr", "amount": 5000 },
+    { "account": "Office Equipment", "dr_cr": "Dr", "amount": 120000 },
+    { "account": "Karnataka Emporium", "dr_cr": "Dr", "amount": 75000, "bills": [{ "name": "INV-M-101 dt 25-Mar-26", "date": "20260325", "amount": 75000 }] },
+    { "account": "Delhi Bazaar", "dr_cr": "Dr", "amount": 90000, "bills": [{ "name": "INV-M-102 dt 28-Mar-26", "date": "20260328", "amount": 90000 }] },
+    { "account": "Input CGST c/f", "dr_cr": "Dr", "amount": 5000 },
+    { "account": "Input SGST c/f", "dr_cr": "Dr", "amount": 5000 },
+    { "account": "Deccan Traders", "dr_cr": "Cr", "amount": 50000, "bills": [{ "name": "DT-99 dt 20-Mar-26", "date": "20260320", "amount": 50000 }] },
+    { "account": "Mumbai Suppliers", "dr_cr": "Cr", "amount": 120000, "bills": [{ "name": "MS-M1 dt 22-Mar-26", "date": "20260322", "amount": 120000 }] },
+    { "account": "TDS Payable — u/s 194J", "dr_cr": "Cr", "amount": 5000 },
+    { "account": "Capital — Anita Rao", "dr_cr": "Cr", "amount": 925000 }
+  ]
+}

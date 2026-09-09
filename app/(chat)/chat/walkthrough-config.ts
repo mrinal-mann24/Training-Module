@@ -1,4 +1,5 @@
 import type { LicenseMode } from '@/lib/schemas/onboarding';
+import { BOOKS_BEGIN_LABEL } from '@/lib/tutor/timeline';
 
 export type WalkthroughStep = {
   id: string;
@@ -22,7 +23,7 @@ const EDUCATIONAL_MODE_STEP: WalkthroughStep = {
 
 const BOOKS_BEGIN_DATE_STEP: WalkthroughStep = {
   id: 'books-begin-date',
-  content: 'Set your Books Begin Date to 01-Apr-2026 in Tally before starting.',
+  content: `Set your Books Begin Date to ${BOOKS_BEGIN_LABEL} in Tally before starting.`,
   buttonLabel: 'Next',
 };
 

@@ -160,7 +160,7 @@ function exerciseWith(entries: GeneratedExercise['answer_key']['entries']): Gene
     scenario: 'Batch: same company, continuing.',
     transactions: sequences.map((sequence) => ({
       sequence,
-      description: `On 01-May-2026, transaction ${sequence}.`,
+      description: `On 01-May-2024, transaction ${sequence}.`,
     })),
     difficulty_level: 'L1',
     variant: 'A',
@@ -255,19 +255,19 @@ function datedBatch(descriptions: string[]): GeneratedExercise {
 }
 
 describe('exerciseMonthForModule', () => {
-  it('anchors ordinal 1 on the diagnostic pack month, April 2026', () => {
-    expect(exerciseMonthForModule(1)).toEqual({ label: 'April 2026', monthIndex: 3, year: 2026 });
+  it('anchors ordinal 1 on the diagnostic pack month, April 2024', () => {
+    expect(exerciseMonthForModule(1)).toEqual({ label: 'April 2024', monthIndex: 3, year: 2024 });
   });
 
   it('advances one calendar month per exercise', () => {
-    expect(exerciseMonthForModule(2).label).toBe('May 2026');
-    expect(exerciseMonthForModule(3).label).toBe('June 2026');
-    expect(exerciseMonthForModule(5).label).toBe('August 2026');
+    expect(exerciseMonthForModule(2).label).toBe('May 2024');
+    expect(exerciseMonthForModule(3).label).toBe('June 2024');
+    expect(exerciseMonthForModule(5).label).toBe('August 2024');
   });
 
   it('rolls over the year boundary', () => {
-    expect(exerciseMonthForModule(10).label).toBe('January 2027');
-    expect(exerciseMonthForModule(13).label).toBe('April 2027');
+    expect(exerciseMonthForModule(10).label).toBe('January 2025');
+    expect(exerciseMonthForModule(13).label).toBe('April 2025');
   });
 });
 
@@ -276,20 +276,20 @@ describe('checkBatchMonth', () => {
 
   it('accepts a batch dated entirely inside the assigned month', () => {
     const batch = datedBatch([
-      'On 01-May-2026, transferred Rs. 15,000 from Cash to HDFC Bank.',
-      'On 15/05/2026, sold goods to Karnataka Emporium for Rs. 30,000 plus GST.',
+      'On 01-May-2024, transferred Rs. 15,000 from Cash to HDFC Bank.',
+      'On 15/05/2024, sold goods to Karnataka Emporium for Rs. 30,000 plus GST.',
     ]);
     expect(checkBatchMonth(batch, may)).toBe(null);
   });
 
   it('rejects the observed live failure: May and June mixed in one batch', () => {
     const batch = datedBatch([
-      'On 01-May-2026, transferred Rs. 15,000 from Cash to HDFC Bank.',
-      'On 01-Jun-2026, settled Rs. 6,000 to Sharma Legal.',
+      'On 01-May-2024, transferred Rs. 15,000 from Cash to HDFC Bank.',
+      'On 01-Jun-2024, settled Rs. 6,000 to Sharma Legal.',
     ]);
     const error = checkBatchMonth(batch, may);
     expect(error).toContain('Month violated');
-    expect(error).toContain('01-Jun-2026');
+    expect(error).toContain('01-Jun-2024');
   });
 
   it('rejects a wrong-year date', () => {
@@ -299,7 +299,7 @@ describe('checkBatchMonth', () => {
 
   it('does not treat a bare month mention as a transaction date', () => {
     const batch = datedBatch([
-      'On 02-May-2026, received Rs. 75,000 from Karnataka Emporium settling the March invoice.',
+      'On 02-May-2024, received Rs. 75,000 from Karnataka Emporium settling the March invoice.',
     ]);
     expect(checkBatchMonth(batch, may)).toBe(null);
   });

@@ -3,6 +3,7 @@ import { CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/l
 import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill, PartyTaxClass } from '@/lib/db/queries/company';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
+import { BOOKS_BEGIN_LABEL, BOOKS_BEGIN_YEAR } from '@/lib/tutor/timeline';
 
 export type AdaptiveExerciseParams = {
   targetConceptTag: ConceptTag;
@@ -260,7 +261,7 @@ ${params.exerciseMonthLabel} — no other month, no other year, ever. The
 company's timeline advances exactly one month per module, computed by the
 system, and a batch never mixes months. Write each date explicitly in every
 transaction line (e.g. "On 01-${params.exerciseMonthLabel.slice(0, 3)}-${params.exerciseMonthLabel.slice(-4)}, ...").
-The learner's books begin 01-Apr-2026: a voucher dated before that, or in any
+The learner's books begin ${BOOKS_BEGIN_LABEL}: a voucher dated before that, or in any
 other year, is REJECTED by the submission gate outright. Amounts are in
 Indian Rupees.${
     params.licenseMode === 'educational'
@@ -307,9 +308,9 @@ DOCUMENT-BACKED TRANSACTION TEXT (hard requirement): when a transaction has
 requires_source_document true, its numbered line is a short POINTER, not a
 spelled-out entry — the learner must pull the figures from the document, like
 real work. The pointer states the date, the party, and what happened, then
-directs to the document: "On 05-May-2026, an invoice arrived from Signage
+directs to the document: "On 05-May-${BOOKS_BEGIN_YEAR}, an invoice arrived from Signage
 Advertising for marketing collaterals: post it from the attached invoice", or
-"On 12-May-2026, a receipt from Delhi Bazaar landed in the bank: post it from
+"On 12-May-${BOOKS_BEGIN_YEAR}, a receipt from Delhi Bazaar landed in the bank: post it from
 the bank statement". NEVER state the amount, the GST amount or rate, or the
 tax split in a document-backed transaction's text — restating them makes the
 document pointless. (The hidden answer key still carries the exact figures as

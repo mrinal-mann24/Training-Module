@@ -4,8 +4,9 @@ import { useActionState, useState } from 'react';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { submitOnboarding } from './actions';
 import { initialOnboardingFormState } from './onboarding-form-state';
+import { BOOKS_BEGIN_DATE } from '@/lib/tutor/timeline';
 
-const DEFAULT_BOOKS_BEGIN_DATE = '2026-04-01';
+const DEFAULT_BOOKS_BEGIN_DATE = BOOKS_BEGIN_DATE;
 
 const INPUT_CLASSES = 'night-input w-full rounded-lg px-4 py-3 font-body text-sm';
 

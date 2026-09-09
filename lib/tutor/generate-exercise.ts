@@ -35,6 +35,7 @@ import {
 import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/build-bank-statement";
 import type { BankStatementContent } from "@/lib/schemas/source-document";
 import { insertSourceDocument } from "@/lib/db/queries/source-documents";
+import { BOOKS_BEGIN_MONTH_INDEX, BOOKS_BEGIN_YEAR } from "@/lib/tutor/timeline";
 import {
   generateVendorInvoiceDocument,
 } from "@/lib/documents/generate-source-document";
@@ -452,9 +453,6 @@ const MONTH_NAMES = [
   "November",
   "December",
 ] as const;
-const BOOKS_BEGIN_MONTH_INDEX = 3; // April
-const BOOKS_BEGIN_YEAR = 2026;
-
 export type ExerciseMonth = { label: string; monthIndex: number; year: number };
 
 export function exerciseMonthForModule(moduleNumber: number): ExerciseMonth {
