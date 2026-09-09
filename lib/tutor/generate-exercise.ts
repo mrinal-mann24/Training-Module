@@ -775,7 +775,12 @@ export function stampOpeningPosition(
 ): GeneratedExercise {
   const bankLabel =
     openingBalances.find((opening) => /\bbank\b|hdfc/i.test(opening.account))?.account ?? "Bank";
-  const line = `Opening position for this batch (system-computed from your books): Cash-in-Hand ${formatRupees(cashPosition.cash)}; ${bankLabel} ${formatRupees(cashPosition.bank)}.`;
+  // "For reference only" (2026-09-09): Garima read this line as a task and
+  // posted adjustments every month to force her Tally balances onto these
+  // figures, which drifted her books further and risks an extra voucher
+  // failing the exact count gate. The figures are the platform's running
+  // balance from the correct postings; nothing is to be posted from them.
+  const line = `Opening position for this batch (the platform's running balance from the correct postings so far, for reference only; do not post anything to match these figures): Cash-in-Hand ${formatRupees(cashPosition.cash)}; ${bankLabel} ${formatRupees(cashPosition.bank)}.`;
   return { ...generated, scenario: `${generated.scenario.trim()}\n\n${line}` };
 }
 

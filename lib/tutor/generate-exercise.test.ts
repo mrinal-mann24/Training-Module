@@ -650,7 +650,7 @@ describe('opening figures in the scenario prose (Yeshas Level 2 said 8,67,186 fo
     expect(scrubbed.scenario).toBe('Batch: same company, continuing. Work in date order.');
     const stamped = stampOpeningPosition(scrubbed, position, [{ account: 'HDFC Bank — 1234' }, { account: 'Cash' }]);
     expect(stamped.scenario).toBe(
-      'Batch: same company, continuing. Work in date order.\n\nOpening position for this batch (system-computed from your books): Cash-in-Hand Rs 19,900; HDFC Bank — 1234 Rs 8,66,116.',
+      'Batch: same company, continuing. Work in date order.\n\nOpening position for this batch (the platform\'s running balance from the correct postings so far, for reference only; do not post anything to match these figures): Cash-in-Hand Rs 19,900; HDFC Bank — 1234 Rs 8,66,116.',
     );
   });
 
