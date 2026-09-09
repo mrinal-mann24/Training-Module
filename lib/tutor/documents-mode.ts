@@ -1,8 +1,9 @@
 import type { GeneratedExercise } from '@/lib/schemas/exercise';
-import type { MonthEndNotesContent, SalesInvoiceContent, SourceDocumentType } from '@/lib/schemas/source-document';
+import type { MonthEndNotesContent, SalesInvoiceContent, SalesRegisterContent, SourceDocumentType } from '@/lib/schemas/source-document';
 import { isBankLedger, partyLegOf, splitBillReferences } from '@/lib/db/queries/company';
 import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
 import { COMPANY_DETAILS } from '@/lib/documents/company-details';
+import { buildSalesRegisterContent } from '@/lib/documents/build-sales-register';
 
 // Documents mode (2026-09-09). Once a learner has mastered enough concepts,
 // a batch stops spelling entries out in text: every transaction is
@@ -47,6 +48,9 @@ export type DocumentsModePlan = {
   generated: GeneratedExercise;
   salesInvoices: { sequence: number; content: SalesInvoiceContent }[];
   monthEndNotes: MonthEndNotesContent | null;
+  // CSV of the month's sales for AI Accountant (its sales screen takes no
+  // PDFs); null when the batch has no sale. Same figures as salesInvoices.
+  salesRegister: SalesRegisterContent | null;
 };
 
 const GST_LEG_PATTERN = /\b(cgst|sgst|igst)\b/i;
@@ -179,6 +183,10 @@ function pointerFor(docType: SourceDocumentType, legs: Entry[], dateLabel: strin
     }
     case 'month_end_note':
       return `On ${dateLabel}, post month-end note ${noteNumber} from the attached Month-end Notes document.`;
+    case 'sales_register':
+      // Batch-level companion to the sales invoices, never a transaction's
+      // own document (documentTypeForVoucher never returns it).
+      throw new Error('sales_register is not a per-transaction document type.');
   }
 }
 
@@ -255,7 +263,7 @@ export function applyDocumentsMode(
   }
   const parts = [
     counts.invoices > 0 ? `${counts.invoices} vendor invoice${counts.invoices === 1 ? '' : 's'}` : null,
-    counts.sales > 0 ? `${counts.sales} sales invoice${counts.sales === 1 ? '' : 's'} or cash memo${counts.sales === 1 ? '' : 's'}` : null,
+    counts.sales > 0 ? `${counts.sales} sales invoice${counts.sales === 1 ? '' : 's'} or cash memo${counts.sales === 1 ? '' : 's'} (plus one sales register CSV for AI Accountant)` : null,
     counts.bank > 0 ? 'one bank statement' : null,
     notes.length > 0 ? 'one month-end notes sheet' : null,
   ].filter((part): part is string => part !== null);
@@ -271,5 +279,9 @@ export function applyDocumentsMode(
     salesInvoices,
     monthEndNotes:
       notes.length > 0 ? { companyName: params.companyName, period: params.monthLabel, notes } : null,
+    salesRegister: buildSalesRegisterContent(
+      salesInvoices.map((sale) => sale.content),
+      { period: params.monthLabel },
+    ),
   };
 }

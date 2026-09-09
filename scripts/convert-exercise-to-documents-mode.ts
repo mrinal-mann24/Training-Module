@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { GeneratedExerciseSchema } from '@/lib/schemas/exercise';
-import { renderSourceDocumentPdf } from '@/lib/documents/render-source-document';
+import { renderSourceDocument } from '@/lib/documents/render-source-document';
 import { applyDocumentsMode } from '@/lib/tutor/documents-mode';
 import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
 
@@ -89,13 +89,14 @@ async function main(): Promise<void> {
     const toRender = [
       ...plan.salesInvoices.map(({ sequence, content }) => ({ document: { doc_type: 'sales_invoice' as const, content }, seed: `sales:${sequence}` })),
       ...(plan.monthEndNotes ? [{ document: { doc_type: 'month_end_note' as const, content: plan.monthEndNotes }, seed: 'month-end-notes' }] : []),
+      ...(plan.salesRegister ? [{ document: { doc_type: 'sales_register' as const, content: plan.salesRegister }, seed: 'sales-register' }] : []),
     ];
     for (const { document, seed } of toRender) {
-      const pdf = await renderSourceDocumentPdf(document, `${folder}:${seed}`);
-      const storagePath = `${folder}/${crypto.randomUUID()}.pdf`;
+      const rendered = await renderSourceDocument(document, `${folder}:${seed}`);
+      const storagePath = `${folder}/${crypto.randomUUID()}.${rendered.extension}`;
       const { error: uploadError } = await supabase.storage
         .from('exercise-documents')
-        .upload(storagePath, pdf, { contentType: 'application/pdf' });
+        .upload(storagePath, rendered.bytes, { contentType: rendered.contentType });
       if (uploadError) throw uploadError;
       const { error: insertError } = await supabase
         .from('exercise_source_documents')

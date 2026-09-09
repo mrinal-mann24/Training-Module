@@ -18,6 +18,7 @@ const FORMAT_COUNT_BY_DOC_TYPE: Record<SourceDocumentType, number> = {
   bank_statement: BANK_STATEMENT_FORMAT_COUNT,
   sales_invoice: 1,
   month_end_note: 1,
+  sales_register: 1,
 };
 
 export function formatCountForDocType(docType: SourceDocumentType): number {

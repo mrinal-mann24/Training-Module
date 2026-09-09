@@ -11,6 +11,8 @@ import { BankStatementHdfcDocument } from '@/lib/documents/templates/bank-statem
 import { SalesInvoiceDocument } from '@/lib/documents/templates/sales-invoice';
 import { MonthEndNotesDocument } from '@/lib/documents/templates/month-end-notes';
 import { pickFormatIndex } from '@/lib/documents/pick-template';
+import { renderSalesRegisterCsv } from '@/lib/documents/build-sales-register';
+import { SOURCE_DOCUMENT_FILE_FORMAT } from '@/lib/schemas/source-document';
 import type { GeneratedSourceDocument, VendorInvoiceContent, BankStatementContent } from '@/lib/schemas/source-document';
 
 // Index order is part of the determinism contract: reordering these arrays
@@ -54,7 +56,31 @@ export async function renderSourceDocumentPdf(
     case 'month_end_note':
       element = MonthEndNotesDocument({ content: generated.content });
       break;
+    case 'sales_register':
+      throw new Error('sales_register is a CSV, not a PDF — use renderSourceDocument.');
   }
 
   return renderToBuffer(element);
+}
+
+export type RenderedSourceDocument = {
+  bytes: Buffer;
+  extension: 'pdf' | 'csv';
+  contentType: string;
+};
+
+// Format-aware entry point: PDF for every document type except the sales
+// register, which AI Accountant only accepts as CSV. Callers use extension
+// and contentType for the storage path and upload, so a new non-PDF type
+// only ever has to be added here and in SOURCE_DOCUMENT_FILE_FORMAT.
+export async function renderSourceDocument(
+  generated: GeneratedSourceDocument,
+  formatSeed: string,
+): Promise<RenderedSourceDocument> {
+  const format = SOURCE_DOCUMENT_FILE_FORMAT[generated.doc_type];
+  const bytes =
+    generated.doc_type === 'sales_register'
+      ? renderSalesRegisterCsv(generated.content)
+      : await renderSourceDocumentPdf(generated, formatSeed);
+  return { bytes, extension: format.extension, contentType: format.contentType };
 }

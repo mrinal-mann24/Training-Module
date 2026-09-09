@@ -77,9 +77,14 @@ const DOC_TYPE_LABEL: Record<SourceDocumentType, string> = {
   bank_statement: 'Bank Statement',
   sales_invoice: 'Sales Invoice',
   month_end_note: 'Month-end Notes',
+  sales_register: 'Sales Register',
 };
 
 function deriveDocumentName(docType: SourceDocumentType, structuredData: unknown): string {
+  if (docType === 'sales_register') {
+    const period = (structuredData as { period?: string }).period;
+    return period ? `${DOC_TYPE_LABEL.sales_register} — ${period}.csv` : `${DOC_TYPE_LABEL.sales_register}.csv`;
+  }
   if (docType === 'vendor_invoice') {
     const vendorName = (structuredData as { vendorName?: string }).vendorName;
     return vendorName ? `${DOC_TYPE_LABEL.vendor_invoice} — ${vendorName}.pdf` : `${DOC_TYPE_LABEL.vendor_invoice}.pdf`;

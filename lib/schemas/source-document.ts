@@ -4,8 +4,23 @@ import { z } from 'zod';
 // once a learner has mastered enough concepts every transaction is delivered
 // as paperwork — our own sales invoice / cash memo copy, and a month-end
 // notes sheet for the journals that have no third-party document.
-export const SOURCE_DOCUMENT_TYPES = ['vendor_invoice', 'bank_statement', 'sales_invoice', 'month_end_note'] as const;
+//
+// sales_register (2026-09-09): AI Accountant's sales screen takes CSV/XLS,
+// not PDFs, so a documents-mode batch with any sale also ships one CSV
+// register of that month's sales invoices, built by code from the same
+// figures as the invoices. The only non-PDF document type.
+export const SOURCE_DOCUMENT_TYPES = ['vendor_invoice', 'bank_statement', 'sales_invoice', 'month_end_note', 'sales_register'] as const;
 export type SourceDocumentType = (typeof SOURCE_DOCUMENT_TYPES)[number];
+
+// Storage file format per document type. Everything renders to PDF except
+// the sales register, which is a CSV for upload into AI Accountant.
+export const SOURCE_DOCUMENT_FILE_FORMAT: Record<SourceDocumentType, { extension: 'pdf' | 'csv'; contentType: string }> = {
+  vendor_invoice: { extension: 'pdf', contentType: 'application/pdf' },
+  bank_statement: { extension: 'pdf', contentType: 'application/pdf' },
+  sales_invoice: { extension: 'pdf', contentType: 'application/pdf' },
+  month_end_note: { extension: 'pdf', contentType: 'application/pdf' },
+  sales_register: { extension: 'csv', contentType: 'text/csv' },
+};
 
 // Content schemas below validate only what a real physical document would
 // show — raw commercial facts and figures a vendor/bank actually prints.
@@ -86,6 +101,31 @@ export const MonthEndNotesContentSchema = z.object({
 });
 export type MonthEndNotesContent = z.infer<typeof MonthEndNotesContentSchema>;
 
+// One row per sales invoice / cash memo of the month, for upload into AI
+// Accountant's sales screen. Derived by code from the batch's
+// SalesInvoiceContent, so every figure equals the invoice PDF and the key.
+export const SalesRegisterRowSchema = z.object({
+  invoiceNumber: z.string(),
+  invoiceDate: z.string(),
+  customerName: z.string(),
+  placeOfSupply: z.string(),
+  isCashMemo: z.boolean(),
+  taxableValue: z.number(),
+  cgst: z.number(),
+  sgst: z.number(),
+  igst: z.number(),
+  total: z.number(),
+});
+export type SalesRegisterRow = z.infer<typeof SalesRegisterRowSchema>;
+
+export const SalesRegisterContentSchema = z.object({
+  sellerName: z.string(),
+  sellerGSTIN: z.string(),
+  period: z.string(),
+  rows: z.array(SalesRegisterRowSchema).min(1),
+});
+export type SalesRegisterContent = z.infer<typeof SalesRegisterContentSchema>;
+
 // Discriminated union validated against the raw LLM response for a single
 // source-document generation call — doc_type picks which content shape is
 // expected, so a mismatched pairing fails validation rather than silently
@@ -95,5 +135,6 @@ export const GeneratedSourceDocumentSchema = z.discriminatedUnion('doc_type', [
   z.object({ doc_type: z.literal('bank_statement'), content: BankStatementContentSchema }),
   z.object({ doc_type: z.literal('sales_invoice'), content: SalesInvoiceContentSchema }),
   z.object({ doc_type: z.literal('month_end_note'), content: MonthEndNotesContentSchema }),
+  z.object({ doc_type: z.literal('sales_register'), content: SalesRegisterContentSchema }),
 ]);
 export type GeneratedSourceDocument = z.infer<typeof GeneratedSourceDocumentSchema>;

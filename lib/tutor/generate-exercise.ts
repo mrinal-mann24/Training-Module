@@ -39,7 +39,7 @@ import { BOOKS_BEGIN_MONTH_INDEX, BOOKS_BEGIN_YEAR } from "@/lib/tutor/timeline"
 import {
   generateVendorInvoiceDocument,
 } from "@/lib/documents/generate-source-document";
-import { renderSourceDocumentPdf } from "@/lib/documents/render-source-document";
+import { renderSourceDocument } from "@/lib/documents/render-source-document";
 import type {
   BankStatementLineInput,
   VendorInvoiceInput,
@@ -175,14 +175,16 @@ async function prepareSourceDocuments(
     docType: SourceDocumentType,
     formatSeed: string,
   ): Promise<PreparedSourceDocument> {
-    const pdfBuffer = await renderSourceDocumentPdf(generated, formatSeed);
+    // PDF for every type except the sales register, which is a CSV
+    // (2026-09-09): the renderer says which, and the path/upload follow it.
+    const rendered = await renderSourceDocument(generated, formatSeed);
 
     const docId = crypto.randomUUID();
-    const storagePath = `${learnerId}/${batchId}/${docId}.pdf`;
+    const storagePath = `${learnerId}/${batchId}/${docId}.${rendered.extension}`;
 
     const { error: uploadError } = await supabase.storage
       .from("exercise-documents")
-      .upload(storagePath, pdfBuffer, { contentType: "application/pdf" });
+      .upload(storagePath, rendered.bytes, { contentType: rendered.contentType });
 
     if (uploadError) {
       throw uploadError;
@@ -1226,6 +1228,11 @@ export async function generateAdaptiveExercise(
         })),
         ...(documentsPlan.monthEndNotes
           ? [{ document: { doc_type: "month_end_note" as const, content: documentsPlan.monthEndNotes }, seed: "month-end-notes" }]
+          : []),
+        // Sales register CSV for AI Accountant's sales upload (2026-09-09):
+        // same figures as the sales invoices, one file per batch.
+        ...(documentsPlan.salesRegister
+          ? [{ document: { doc_type: "sales_register" as const, content: documentsPlan.salesRegister }, seed: "sales-register" }]
           : []),
       ]
     : [];

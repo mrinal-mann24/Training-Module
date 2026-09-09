@@ -47,7 +47,7 @@ export const AIA_ONBOARDING_STEPS: AiaOnboardingStep[] = [
     id: 'monthly',
     title: 'How each month works from now on',
     body:
-      '1. Download the documents from the exercise message.\n2. Upload the invoices, cash memos and the bank statement to AI Accountant.\n3. Review every voucher it proposes: ledger, side, amount, GST, bill reference. Fix anything wrong before you sync.\n4. Sync to Tally.\n5. Post the month-end notes by hand in Tally.\n6. Export the Day Book and Trial Balance and upload them here as usual.',
+      '1. Download the documents from the exercise message.\n2. Upload the vendor invoices and the bank statement to AI Accountant. For sales, upload the Sales Register CSV to its sales screen (it does not read the sales invoice PDFs; those are for you to check against).\n3. Review every voucher it proposes: ledger, side, amount, GST, bill reference. Fix anything wrong before you sync.\n4. Sync to Tally.\n5. Post the month-end notes by hand in Tally.\n6. Export the Day Book and Trial Balance and upload them here as usual.',
     buttonLabel: 'Next',
   },
   {

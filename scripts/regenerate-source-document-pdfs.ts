@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { renderSourceDocumentPdf } from '@/lib/documents/render-source-document';
+import { renderSourceDocument } from '@/lib/documents/render-source-document';
 import { GeneratedSourceDocumentSchema } from '@/lib/schemas/source-document';
 
 function loadEnv(): void {
@@ -72,10 +72,12 @@ async function main(): Promise<void> {
     for (const doc of docs ?? []) {
       const generated = GeneratedSourceDocumentSchema.parse({ doc_type: doc.doc_type, content: doc.structured_data });
       // The seed only picks the visual template; keep it stable per document.
-      const pdf = await renderSourceDocumentPdf(generated, `${exercise.id}:${doc.id}`);
+      // Format-aware (2026-09-09): the sales register re-renders as CSV, the
+      // rest as PDF. The stored path already carries the right extension.
+      const output = await renderSourceDocument(generated, `${exercise.id}:${doc.id}`);
       const { error: uploadError } = await supabase.storage
         .from('exercise-documents')
-        .upload(doc.storage_path as string, pdf, { contentType: 'application/pdf', upsert: true });
+        .upload(doc.storage_path as string, output.bytes, { contentType: output.contentType, upsert: true });
       if (uploadError) throw uploadError;
       rendered += 1;
       const label = doc.doc_type === 'bank_statement'
@@ -84,7 +86,7 @@ async function main(): Promise<void> {
       console.log(`  ${(exercise.learner_id as string).slice(0, 8)} ${(exercise.id as string).slice(0, 8)} ${exercise.kind}: ${label}`);
     }
   }
-  console.log(`Re-rendered ${rendered} PDF(s).`);
+  console.log(`Re-rendered ${rendered} document(s).`);
 }
 
 main().catch((error) => {

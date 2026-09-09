@@ -178,6 +178,18 @@ describe('applyDocumentsMode', () => {
     expect(plan.generated.scenario).toContain('Documents mode');
   });
 
+  it('ships one sales register CSV carrying the same figures as the sales invoices', () => {
+    expect(plan.salesRegister?.period).toBe('March 2025');
+    expect(plan.salesRegister?.rows.map((r) => [r.invoiceNumber, r.customerName, r.taxableValue, r.cgst, r.sgst, r.igst, r.total])).toEqual([
+      ['INV-062', 'Karnataka Emporium', 60000, 5400, 5400, 0, 70800],
+      ['CM-250305-02', 'Cash (walk-in customer)', 2000, 180, 180, 0, 2360],
+    ]);
+    expect(plan.generated.scenario).toContain('sales register CSV');
+    // A batch with no sale ships no register.
+    const noSales = { ...batch(), transactions: batch().transactions.filter((t) => t.sequence > 2), answer_key: { entries: batch().answer_key.entries.filter((e) => e.sequence > 2) } };
+    expect(applyDocumentsMode(noSales, { companyName: COMPANY, monthLabel: 'March 2025' }).salesRegister).toBeNull();
+  });
+
   it('keeps the invoice generator and the statement builder on their own document types', () => {
     const sourcePlan = planSourceDocuments(plan.generated);
     expect(sourcePlan.invoices.map((i) => i.legs[0].sequence)).toEqual([3]);
