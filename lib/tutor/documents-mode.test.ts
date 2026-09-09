@@ -6,6 +6,7 @@ import {
   buildSalesInvoiceContent,
   documentTypeForVoucher,
   isDocumentsModeUnlocked,
+  isAiaOnboardingDue,
 } from './documents-mode';
 import { planSourceDocuments } from './generate-exercise';
 
@@ -193,5 +194,17 @@ describe('checkMonthEndNoteDetails', () => {
     const generated = batch();
     generated.transactions[5].description = 'On 15-Mar-2025, accrue the March rent: post it from the notes.';
     expect(checkMonthEndNoteDetails(generated)).toMatch(/transaction 6 is a journal-type entry/);
+  });
+});
+
+describe('isAiaOnboardingDue', () => {
+  const mastered = [{ status: 'mastered' }, { status: 'mastered' }, { status: 'mastered' }];
+  it('is due once the walkthrough is done, documents mode is unlocked and the flow has not been completed', () => {
+    expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: null, mastery: mastered })).toBe(true);
+  });
+  it('is not due before the first-day walkthrough, below the threshold, or after completion', () => {
+    expect(isAiaOnboardingDue({ walkthroughCompleted: false, aiaOnboardingCompletedAt: null, mastery: mastered })).toBe(false);
+    expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: null, mastery: mastered.slice(0, 2) })).toBe(false);
+    expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: '2026-09-09T05:00:00Z', mastery: mastered })).toBe(false);
   });
 });

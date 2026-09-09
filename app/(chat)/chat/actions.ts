@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import {
   completeWalkthrough,
+  completeAiaOnboarding,
   getLearnerProfile,
   hasCompletedWalkthrough,
 } from '@/lib/db/queries/learner-profile';
@@ -81,6 +82,27 @@ export async function refreshDocumentUrl(
   return kind === 'pack-file'
     ? freshSignedUrlForPackFile(supabase, documentId)
     : freshSignedUrlForDocument(supabase, documentId);
+}
+
+// Documents mode (2026-09-09): records that the learner finished the one-time
+// AI Accountant setup popup. Idempotent; nothing else happens here — the
+// next batch already comes out in documents mode based on mastery.
+export async function confirmAiaOnboarding(): Promise<{ status: 'ok' } | { status: 'error'; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect('/login');
+  }
+
+  try {
+    await completeAiaOnboarding(supabase, user.id);
+  } catch {
+    return { status: 'error', error: "I couldn't save that just now. Press the button again." };
+  }
+  return { status: 'ok' };
 }
 
 export type ConfirmWalkthroughResult =

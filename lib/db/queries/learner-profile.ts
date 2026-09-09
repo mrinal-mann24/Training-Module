@@ -11,6 +11,10 @@ export type LearnerProfile = {
   full_name: string | null;
   onboarded_at: string | null;
   walkthrough_completed_at: string | null;
+  // Documents mode (2026-09-09): when the learner finished the one-time AI
+  // Accountant setup flow. Null until then; the flow is shown once the
+  // learner has mastered enough concepts (isAiaOnboardingDue).
+  aia_onboarding_completed_at: string | null;
   created_at: string;
 };
 
@@ -21,7 +25,7 @@ export async function getLearnerProfile(
   const { data, error } = await supabase
     .from('learner_profile')
     .select(
-      'id, license_mode, books_begin_date, full_name, onboarded_at, walkthrough_completed_at, created_at',
+      'id, license_mode, books_begin_date, full_name, onboarded_at, walkthrough_completed_at, aia_onboarding_completed_at, created_at',
     )
     .eq('id', userId)
     .maybeSingle();
@@ -58,6 +62,22 @@ export async function completeWalkthrough(
     .update({ walkthrough_completed_at: new Date().toISOString() })
     .eq('id', userId)
     .is('walkthrough_completed_at', null);
+
+  if (error) {
+    throw error;
+  }
+}
+
+// Idempotent like completeWalkthrough: only the first call writes the stamp.
+export async function completeAiaOnboarding(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('learner_profile')
+    .update({ aia_onboarding_completed_at: new Date().toISOString() })
+    .eq('id', userId)
+    .is('aia_onboarding_completed_at', null);
 
   if (error) {
     throw error;

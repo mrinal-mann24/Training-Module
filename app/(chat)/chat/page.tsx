@@ -3,8 +3,9 @@ import { createClient } from '@/lib/supabase/server';
 import { getLearnerProfile, isLearnerOnboarded } from '@/lib/db/queries/learner-profile';
 import { getLatestExercise } from '@/lib/db/queries/exercises';
 import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
-import { getModuleNumber } from '@/lib/db/queries/mastery';
+import { getConceptMasteryMap, getModuleNumber } from '@/lib/db/queries/mastery';
 import { buildChatTimeline } from '@/lib/chat/build-timeline';
+import { isAiaOnboardingDue } from '@/lib/tutor/documents-mode';
 import { ChatShell } from './ChatShell';
 
 export default async function ChatPage() {
@@ -31,10 +32,19 @@ export default async function ChatPage() {
     ? await getLatestExercise(supabase, user.id)
     : null;
 
-  const [initialHintDepth, initialModuleNumber] = await Promise.all([
+  const [initialHintDepth, initialModuleNumber, masteryMap] = await Promise.all([
     initialExercise ? getHintDepthForExercise(supabase, user.id, initialExercise.id) : Promise.resolve(0),
     getModuleNumber(supabase, user.id),
+    getConceptMasteryMap(supabase, user.id),
   ]);
+
+  // Documents mode (2026-09-09): once three concepts are mastered the learner
+  // gets the one-time AI Accountant setup popup before anything else.
+  const aiaOnboardingDue = isAiaOnboardingDue({
+    walkthroughCompleted,
+    aiaOnboardingCompletedAt: profile.aia_onboarding_completed_at,
+    mastery: masteryMap.values(),
+  });
 
   // Chat-history rebuild (2026-08-24): the FULL conversation — every
   // exercise, submission, feedback, hint, and Q&A exchange — is reassembled
@@ -47,6 +57,7 @@ export default async function ChatPage() {
     <ChatShell
       licenseMode={profile.license_mode}
       walkthroughCompleted={walkthroughCompleted}
+      aiaOnboardingDue={aiaOnboardingDue}
       initialExercise={initialExercise}
       initialHintDepth={initialHintDepth}
       initialModuleNumber={initialModuleNumber}

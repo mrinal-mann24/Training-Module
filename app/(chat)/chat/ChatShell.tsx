@@ -10,7 +10,8 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { Composer } from './Composer';
 import { PendingSubmission } from './PendingSubmission';
 import { getWalkthroughSteps } from './walkthrough-config';
-import { askQuestion, confirmWalkthrough, requestHint, submitFiles, submitTextPart } from './actions';
+import { askQuestion, confirmAiaOnboarding, confirmWalkthrough, requestHint, submitFiles, submitTextPart } from './actions';
+import { AiaOnboarding } from './AiaOnboarding';
 import { logOut } from '@/app/dashboard/actions';
 import type { ChatMessage } from './message';
 
@@ -49,6 +50,9 @@ function exerciseToMessages(
 type ChatShellProps = {
   licenseMode: LicenseMode;
   walkthroughCompleted: boolean;
+  // Documents mode (2026-09-09): show the one-time AI Accountant setup popup
+  // before the learner can do anything else this session.
+  aiaOnboardingDue: boolean;
   initialExercise: ExerciseForLearner | null;
   // Prior hint_requests count for initialExercise, fetched server-side so the
   // hint button's label is correct on first render/reload, not just after a
@@ -66,6 +70,7 @@ type ChatShellProps = {
 export function ChatShell({
   licenseMode,
   walkthroughCompleted,
+  aiaOnboardingDue,
   initialExercise,
   initialHintDepth,
   initialModuleNumber,
@@ -75,6 +80,7 @@ export function ChatShell({
 
   const [stepIndex, setStepIndex] = useState(0);
   const [showWalkthrough, setShowWalkthrough] = useState(!walkthroughCompleted);
+  const [showAiaOnboarding, setShowAiaOnboarding] = useState(aiaOnboardingDue);
   const [exercise, setExercise] = useState<ExerciseForLearner | null>(initialExercise);
   const [moduleNumber, setModuleNumber] = useState(initialModuleNumber);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -384,6 +390,16 @@ export function ChatShell({
 
   return (
     <div className="flex h-screen flex-col bg-bg-canvas">
+      {showAiaOnboarding && (
+        <AiaOnboarding
+          onComplete={async () => {
+            const result = await confirmAiaOnboarding();
+            if (result.status === 'error') return result.error;
+            setShowAiaOnboarding(false);
+            return null;
+          }}
+        />
+      )}
       {/* Slim persistent header so the learner always has a visible,
           unambiguous Log out — the chat screen previously had none, and the
           only logout lived on the dashboard (2026-08-31). */}
@@ -455,7 +471,7 @@ export function ChatShell({
       </div>
 
       <Composer
-        disabled={showWalkthrough || exercise === null}
+        disabled={showWalkthrough || showAiaOnboarding || exercise === null}
         onSend={handleSend}
         isSending={isSubmittingFiles || isSubmittingTextPart}
         requiredParts={exercise?.requiredParts ?? []}

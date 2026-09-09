@@ -28,6 +28,19 @@ export function isDocumentsModeUnlocked(mastery: Iterable<{ status: string }>): 
   return mastered >= DOCUMENTS_MODE_MASTERY_THRESHOLD;
 }
 
+// The one-time AI Accountant setup flow (app/(chat)/chat/AiaOnboarding.tsx)
+// is due as soon as documents mode is unlocked, after the first-day
+// walkthrough, until the learner has completed it. Evaluated server-side on
+// every chat load, so it also catches learners who crossed the threshold
+// before the feature shipped.
+export function isAiaOnboardingDue(params: {
+  walkthroughCompleted: boolean;
+  aiaOnboardingCompletedAt: string | null;
+  mastery: Iterable<{ status: string }>;
+}): boolean {
+  return params.walkthroughCompleted && params.aiaOnboardingCompletedAt === null && isDocumentsModeUnlocked(params.mastery);
+}
+
 type Entry = GeneratedExercise['answer_key']['entries'][number];
 
 export type DocumentsModePlan = {
