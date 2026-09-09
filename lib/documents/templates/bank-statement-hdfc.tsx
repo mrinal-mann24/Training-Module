@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { BankStatementContent } from "@/lib/schemas/source-document";
+import { COMPANY_BANK_ACCOUNT, formatStatementAmount, summarizeStatement } from "@/lib/documents/bank-account-details";
 
 // HDFC-style statement variant (Phase 4, spec 16): mirrors a real bank
 // export's column order — Date, Narration, Chq./Ref.No., Withdrawal,
@@ -66,10 +67,31 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: "#5c5c64",
   },
+  openingRow: {
+    flexDirection: "row",
+    borderBottom: "0.5pt solid #dedee2",
+    backgroundColor: "#f7f9fc",
+    fontFamily: "Helvetica-Oblique",
+  },
+  summary: {
+    marginTop: 10,
+    alignSelf: "flex-end",
+    width: "46%",
+    borderTop: "0.75pt solid #9a9aa2",
+    paddingTop: 4,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 2,
+  },
+  summaryTotal: {
+    fontFamily: "Helvetica-Bold",
+  },
 });
 
 function formatAmount(amount: number | null): string {
-  return amount === null ? "" : amount.toFixed(2);
+  return amount === null ? "" : formatStatementAmount(amount);
 }
 
 // First reference-like token printed in the narration itself (4+ digit run,
@@ -84,6 +106,7 @@ type Props = {
 };
 
 export function BankStatementHdfcDocument({ content }: Props) {
+  const summary = summarizeStatement(content);
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -101,6 +124,26 @@ export function BankStatementHdfcDocument({ content }: Props) {
             {content.period}
           </Text>
         </View>
+        <View style={styles.metaRow}>
+          <Text>
+            <Text style={styles.metaLabel}>Account No: </Text>
+            {COMPANY_BANK_ACCOUNT.accountNumber}
+          </Text>
+          <Text>
+            <Text style={styles.metaLabel}>IFSC: </Text>
+            {COMPANY_BANK_ACCOUNT.ifsc}
+          </Text>
+        </View>
+        <View style={styles.metaRow}>
+          <Text>
+            <Text style={styles.metaLabel}>Branch: </Text>
+            {COMPANY_BANK_ACCOUNT.branch}
+          </Text>
+          <Text>
+            <Text style={styles.metaLabel}>Account Type: </Text>
+            {COMPANY_BANK_ACCOUNT.accountType}
+          </Text>
+        </View>
 
         <Text style={styles.statementTitle}>Statement of Account</Text>
 
@@ -111,6 +154,14 @@ export function BankStatementHdfcDocument({ content }: Props) {
           <Text style={styles.colDebit}>Withdrawal Amt.</Text>
           <Text style={styles.colCredit}>Deposit Amt.</Text>
           <Text style={styles.colBalance}>Closing Balance</Text>
+        </View>
+        <View style={styles.openingRow}>
+          <Text style={styles.colDate}>{content.transactions[0].date}</Text>
+          <Text style={styles.colNarration}>Opening Balance</Text>
+          <Text style={styles.colRef} />
+          <Text style={styles.colDebit} />
+          <Text style={styles.colCredit} />
+          <Text style={styles.colBalance}>{formatStatementAmount(summary.openingBalance)}</Text>
         </View>
         {content.transactions.map((transaction, index) => (
           <View key={index} style={styles.tableRow}>
@@ -130,6 +181,25 @@ export function BankStatementHdfcDocument({ content }: Props) {
             </Text>
           </View>
         ))}
+
+        <View style={styles.summary}>
+          <View style={styles.summaryRow}>
+            <Text>Opening Balance</Text>
+            <Text>{formatStatementAmount(summary.openingBalance)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text>Total Withdrawals</Text>
+            <Text>{formatStatementAmount(summary.totalDebits)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text>Total Deposits</Text>
+            <Text>{formatStatementAmount(summary.totalCredits)}</Text>
+          </View>
+          <View style={[styles.summaryRow, styles.summaryTotal]}>
+            <Text>Closing Balance</Text>
+            <Text>{formatStatementAmount(summary.closingBalance)}</Text>
+          </View>
+        </View>
 
         <Text style={styles.footer}>
           This is a computer generated statement for training practice and does

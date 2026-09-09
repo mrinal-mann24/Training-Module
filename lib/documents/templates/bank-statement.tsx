@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { BankStatementContent } from '@/lib/schemas/source-document';
+import { COMPANY_BANK_ACCOUNT, formatStatementAmount, summarizeStatement } from '@/lib/documents/bank-account-details';
 
 // Deterministic, code-based layout — same BankStatementContent always
 // produces the same rendered PDF. No LLM involvement at this step.
@@ -43,10 +44,32 @@ const styles = StyleSheet.create({
   colDebit: { width: '13%', textAlign: 'right' },
   colCredit: { width: '13%', textAlign: 'right' },
   colBalance: { width: '14%', textAlign: 'right' },
+  openingRow: {
+    flexDirection: 'row',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottom: '0.5pt solid #ECECEE',
+    fontFamily: 'Helvetica-Oblique',
+  },
+  summary: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    width: '45%',
+    borderTop: '1pt solid #DEDEE2',
+    paddingTop: 6,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  summaryTotal: {
+    fontFamily: 'Helvetica-Bold',
+  },
 });
 
 function formatAmount(amount: number | null): string {
-  return amount === null ? '-' : amount.toFixed(2);
+  return amount === null ? '-' : formatStatementAmount(amount);
 }
 
 type BankStatementDocumentProps = {
@@ -54,6 +77,7 @@ type BankStatementDocumentProps = {
 };
 
 export function BankStatementDocument({ content }: BankStatementDocumentProps) {
+  const summary = summarizeStatement(content);
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -62,6 +86,16 @@ export function BankStatementDocument({ content }: BankStatementDocumentProps) {
           <View style={styles.metaRow}>
             <Text>{content.accountHolderName}</Text>
             <Text>Period: {content.period}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text>
+              {COMPANY_BANK_ACCOUNT.bankName}, {COMPANY_BANK_ACCOUNT.branch}
+            </Text>
+            <Text>Account No: {COMPANY_BANK_ACCOUNT.accountNumber}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text>{COMPANY_BANK_ACCOUNT.accountType}</Text>
+            <Text>IFSC: {COMPANY_BANK_ACCOUNT.ifsc}</Text>
           </View>
         </View>
 
@@ -72,6 +106,13 @@ export function BankStatementDocument({ content }: BankStatementDocumentProps) {
           <Text style={styles.colCredit}>Credit</Text>
           <Text style={styles.colBalance}>Balance</Text>
         </View>
+        <View style={styles.openingRow}>
+          <Text style={styles.colDate}>{content.transactions[0].date}</Text>
+          <Text style={styles.colNarration}>Opening Balance</Text>
+          <Text style={styles.colDebit} />
+          <Text style={styles.colCredit} />
+          <Text style={styles.colBalance}>{formatStatementAmount(summary.openingBalance)}</Text>
+        </View>
         {content.transactions.map((transaction, index) => (
           <View key={index} style={styles.tableRow}>
             <Text style={styles.colDate}>{transaction.date}</Text>
@@ -81,6 +122,25 @@ export function BankStatementDocument({ content }: BankStatementDocumentProps) {
             <Text style={styles.colBalance}>{formatAmount(transaction.balance)}</Text>
           </View>
         ))}
+
+        <View style={styles.summary}>
+          <View style={styles.summaryRow}>
+            <Text>Opening Balance</Text>
+            <Text>{formatStatementAmount(summary.openingBalance)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text>Total Debits</Text>
+            <Text>{formatStatementAmount(summary.totalDebits)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text>Total Credits</Text>
+            <Text>{formatStatementAmount(summary.totalCredits)}</Text>
+          </View>
+          <View style={[styles.summaryRow, styles.summaryTotal]}>
+            <Text>Closing Balance</Text>
+            <Text>{formatStatementAmount(summary.closingBalance)}</Text>
+          </View>
+        </View>
       </Page>
     </Document>
   );
