@@ -1,6 +1,6 @@
 import type { ParsedDayBook, ParsedTrialBalance, Voucher, LedgerEntry } from '@/lib/schemas/voucher';
 import type { AnswerKey, AnswerKeyEntry, ConceptTag } from '@/lib/schemas/exercise';
-import type { ScoringErrorCode, ScoringResult, ScoredField, VoucherDiff, ConceptResult } from '@/lib/schemas/scoring';
+import type { ScoringErrorCode, ScoringResult, ScoredField, VoucherDiff, ConceptResult, TieOutMismatch } from '@/lib/schemas/scoring';
 
 // Weighted-score thresholds for overall_result. Defined here, not scattered as
 // magic numbers in the diff/weighting logic below.
@@ -763,7 +763,7 @@ function computeWeightedScore(diffs: VoucherDiff[]): number {
   return totalWeight === 0 ? 0 : earnedWeight / totalWeight;
 }
 
-function computeOverallResult(weightedScore: number, tbTieOut: boolean): 'pass' | 'partial' | 'fail' {
+export function computeOverallResult(weightedScore: number, tbTieOut: boolean): 'pass' | 'partial' | 'fail' {
   if (!tbTieOut) {
     return weightedScore >= PASS_THRESHOLD ? 'partial' : 'fail';
   }
@@ -776,94 +776,142 @@ function computeOverallResult(weightedScore: number, tbTieOut: boolean): 'pass' 
   return 'fail';
 }
 
-// Would the correct posting (per the answer key) produce the same TB closing
-// balances the learner's TB export shows? Groups the answer key's expected
-// entries by account, nets Dr/Cr into a signed closing balance per account,
-// and compares against the parsed Trial Balance's closing balances.
-// GST- and TDS-named accounts are exempt from the comparison: the answer
-// key's leg model carries GST/TDS as voucher-level METADATA (scored per
-// voucher by diffGst/diffTds), not as ledger legs, so the key cannot
-// reproduce the learner's real Output/Input GST or TDS Payable ledger
-// balances - comparing them would fail every correct submission. Opening
-// balances (authored packs) seed each account so closing = opening +
-// movements; a fully-settled account legitimately absent from the learner's
-// TB only fails when its expected closing is non-zero.
+// Trial Balance tie-out (movement-based since 2026-09-09).
+//
+// Does the learner's Trial Balance move the way the correct postings would
+// have moved it? With a previous scored Trial Balance available, each
+// account's MOVEMENT (this export's closing minus the previous export's
+// closing) is compared to the batch's answer-key legs netted per account.
+// Past mistakes sit in both the opening and the closing and cancel out, so
+// a clean month ties out even in books that drifted months ago. The
+// closing-balance comparison it replaces failed every learner forever
+// after their first slip (all three interns were capped at 'partial' for
+// the whole programme, and the Trial Balance concept could never be
+// mastered). Without a previous Trial Balance (the first scored
+// submission) the closing comparison still applies: opening balances from
+// the authored pack plus this key's legs must equal the export's closing.
+//
+// GST- and TDS-named accounts are exempt: learners name and split those
+// ledgers in every way ("CGST" for both input and output, "Input CGST 9%"),
+// and GST/TDS correctness is scored per voucher by diffGst/diffTds. A
+// fully-settled account legitimately absent from the export only fails when
+// its expected figure is non-zero. Mismatches are returned by ledger with
+// the size of the gap, never the expected figure.
 const TIE_OUT_EXEMPT_PATTERN = /gst|tds/i;
+// Whole-rupee tolerance: Tally rounds TDS/GST legs, and a movement is the
+// difference of two rounded closings.
+const TIE_OUT_TOLERANCE = 1;
 
-function checkTrialBalanceTieOut(trialBalance: ParsedTrialBalance, answerKey: AnswerKey): boolean {
-  const expectedClosingBalances = new Map<string, number>();
+export type TrialBalanceTieOut = { tieOut: boolean; mismatches: TieOutMismatch[] };
 
-  for (const opening of answerKey.opening_balances ?? []) {
-    const key = opening.account.trim().toLowerCase();
-    const signedAmount = opening.dr_cr === 'Dr' ? opening.amount : -opening.amount;
-    expectedClosingBalances.set(key, (expectedClosingBalances.get(key) ?? 0) + signedAmount);
+function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
+  return rows.reduce((sum, row) => sum + (row.closingDebit - row.closingCredit), 0);
+}
+
+// Every export row that stands for `account`: exact name (or alias) matches,
+// plus the fuzzy rows no other expected account has claimed exactly. A
+// learner may split one logical account across ledgers ("Credit Sales A/c"
+// + "Cash Sales A/c" where the key says "Sales"; "Deccan Traders" +
+// "Deccan Traders Debtor" for a party that both buys and sells, Praveen
+// 2026-09-09) — their SUM is what must tie out. Exact claims come first so
+// "Sales" never swallows a "Sales Returns" row the key expects separately
+// (2026-09-02); an unclaimed returns row cannot be swallowed either, since
+// accountNamesMatch refuses to equate a returns ledger with its base.
+const MIN_CONTAINMENT_CHARS = 5;
+
+function rowsForAccount(
+  trialBalance: ParsedTrialBalance,
+  acceptableNames: string[],
+  exactlyClaimed: Set<string>,
+): ParsedTrialBalance['ledgers'] {
+  const normalizedNames = acceptableNames.map(normalizeAccountName);
+  const exactRows = trialBalance.ledgers.filter((ledger) => normalizedNames.includes(normalizeAccountName(ledger.ledgerName)));
+  const unclaimed = trialBalance.ledgers.filter((ledger) => !exactlyClaimed.has(ledger.ledgerName));
+  if (exactRows.length > 0) {
+    // Alongside an exact row, only rows whose name EMBEDS the account name
+    // count as the same account split in two ("Deccan Traders Debtor" for
+    // "Deccan Traders"). The wider typo/token matching is too loose to add
+    // to a row already found by name.
+    const embedding = unclaimed.filter((ledger) => {
+      const rowName = normalizeAccountName(ledger.ledgerName);
+      return (
+        !exactRows.includes(ledger) &&
+        acceptableNames.some((name) => {
+          const needle = normalizeAccountName(name);
+          return needle.length >= MIN_CONTAINMENT_CHARS && rowName.includes(needle) && RETURNS_TOKEN.test(ledger.ledgerName) === RETURNS_TOKEN.test(name);
+        })
+      );
+    });
+    return [...exactRows, ...embedding];
   }
+  return unclaimed.filter((ledger) => acceptableNames.some((name) => accountNamesMatch(ledger.ledgerName, name)));
+}
 
+// A previous export with fewer rows than this is a collapsed, group-level
+// Trial Balance (the pilot diagnostic exports were two-group files), not a
+// per-ledger baseline: measuring this month's movement from it would read
+// every ledger as having started at zero. Such a baseline is ignored and
+// the closing comparison applies instead.
+const MIN_BASELINE_ROWS = 12;
+
+function exactlyClaimedRows(trialBalance: ParsedTrialBalance, namesByAccount: Map<string, string[]>): Set<string> {
+  const claimed = new Set<string>();
+  for (const names of namesByAccount.values()) {
+    const normalized = names.map(normalizeAccountName);
+    for (const ledger of trialBalance.ledgers) {
+      if (normalized.includes(normalizeAccountName(ledger.ledgerName))) claimed.add(ledger.ledgerName);
+    }
+  }
+  return claimed;
+}
+
+export function evaluateTrialBalanceTieOut(
+  trialBalance: ParsedTrialBalance,
+  answerKey: AnswerKey,
+  previousExport: ParsedTrialBalance | null,
+): TrialBalanceTieOut {
+  const previousTrialBalance = previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
+  const movementBased = previousTrialBalance !== null;
+  const expected = new Map<string, number>();
   const aliasesByAccount = new Map<string, string[]>();
+
+  if (!movementBased) {
+    for (const opening of answerKey.opening_balances ?? []) {
+      const key = opening.account.trim().toLowerCase();
+      expected.set(key, (expected.get(key) ?? 0) + (opening.dr_cr === 'Dr' ? opening.amount : -opening.amount));
+    }
+  }
   for (const entry of answerKey.entries) {
     const key = entry.correct_account.trim().toLowerCase();
-    const signedAmount = entry.dr_cr === 'Dr' ? entry.amount : -entry.amount;
-    expectedClosingBalances.set(key, (expectedClosingBalances.get(key) ?? 0) + signedAmount);
-    if (entry.account_aliases?.length) {
-      aliasesByAccount.set(key, entry.account_aliases);
-    }
+    expected.set(key, (expected.get(key) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
+    if (entry.account_aliases?.length) aliasesByAccount.set(key, entry.account_aliases);
   }
 
-  // TB rows that are an EXACT name match for some expected account belong to
-  // that account and nothing else. Without this, containment matching let a
-  // short name swallow a longer, genuinely different one: "Sales" matched
-  // both "Sales" and "Sales Returns", so BOTH accounts were compared against
-  // the sum of the two and tie-out could never succeed (found 2026-09-02
-  // while verifying the carried-forward openings fix — it had been quietly
-  // failing every submission that used a returns ledger).
-  const exactlyClaimed = new Set<string>();
-  for (const account of expectedClosingBalances.keys()) {
-    const names = [account, ...(aliasesByAccount.get(account) ?? [])].map(normalizeAccountName);
-    for (const ledger of trialBalance.ledgers) {
-      if (names.includes(normalizeAccountName(ledger.ledgerName))) {
-        exactlyClaimed.add(ledger.ledgerName);
+  const namesByAccount = new Map<string, string[]>();
+  for (const account of expected.keys()) namesByAccount.set(account, [account, ...(aliasesByAccount.get(account) ?? [])]);
+  const claimedNow = exactlyClaimedRows(trialBalance, namesByAccount);
+  const claimedBefore = previousTrialBalance ? exactlyClaimedRows(previousTrialBalance, namesByAccount) : new Set<string>();
+
+  const mismatches: TieOutMismatch[] = [];
+  for (const [account, expectedFigure] of expected) {
+    if (TIE_OUT_EXEMPT_PATTERN.test(account)) continue;
+    const names = namesByAccount.get(account) ?? [account];
+    const rowsNow = rowsForAccount(trialBalance, names, claimedNow);
+    const rowsBefore = previousTrialBalance ? rowsForAccount(previousTrialBalance, names, claimedBefore) : [];
+    if (rowsNow.length === 0 && rowsBefore.length === 0) {
+      if (Math.abs(expectedFigure) >= TIE_OUT_TOLERANCE) {
+        mismatches.push({ account, status: 'missing', difference: -expectedFigure });
       }
-    }
-  }
-
-  for (const [account, expectedBalance] of expectedClosingBalances) {
-    if (TIE_OUT_EXEMPT_PATTERN.test(account)) {
       continue;
     }
-    // Aggregate every TB row matching this account: a learner may split one
-    // logical account across ledgers (e.g. "Credit Sales A/c" + "Cash Sales
-    // A/c" where the key says "Sales") — their SUM is what must tie out.
-    // Exact matches win outright; the fuzzy split-account fallback only
-    // considers rows no other expected account has claimed exactly.
-    const acceptableNames = [account, ...(aliasesByAccount.get(account) ?? [])];
-    const normalizedNames = acceptableNames.map(normalizeAccountName);
-    const exactRows = trialBalance.ledgers.filter((ledger) =>
-      normalizedNames.includes(normalizeAccountName(ledger.ledgerName)),
-    );
-    const matchingRows =
-      exactRows.length > 0
-        ? exactRows
-        : trialBalance.ledgers.filter(
-            (ledger) =>
-              !exactlyClaimed.has(ledger.ledgerName) &&
-              acceptableNames.some((name) => accountNamesMatch(ledger.ledgerName, name)),
-          );
-    if (matchingRows.length === 0) {
-      if (amountsMatch(0, expectedBalance)) {
-        continue;
-      }
-      return false;
-    }
-    const actualBalance = matchingRows.reduce(
-      (sum, row) => sum + (row.closingDebit - row.closingCredit),
-      0,
-    );
-    if (!amountsMatch(actualBalance, expectedBalance)) {
-      return false;
+    const actual = signedClosing(rowsNow) - (movementBased ? signedClosing(rowsBefore) : 0);
+    const difference = Math.round((actual - expectedFigure) * 100) / 100;
+    if (Math.abs(difference) >= TIE_OUT_TOLERANCE) {
+      mismatches.push({ account, status: 'off', difference });
     }
   }
 
-  return true;
+  return { tieOut: mismatches.length === 0, mismatches };
 }
 
 // Rolls per-voucher diffs up to a per-concept pass/fail (Unit 09). A
@@ -893,6 +941,7 @@ const CONCEPT_FIELDS: Record<ConceptTag, ScoredField[]> = {
 function computeConceptResults(
   diffs: VoucherDiff[],
   transactionGroups: AnswerKeyEntry[][],
+  tbTieOut: boolean,
 ): ConceptResult[] {
   // A concept is judged on the FIELDS it is about, not on every field of the
   // voucher. A payment whose only slip was a thin narration used to fail
@@ -929,10 +978,23 @@ function computeConceptResults(
     }
   }
 
-  return [...conceptCounts.entries()].map(([concept_tag, counts]) => ({
+  const results: ConceptResult[] = [...conceptCounts.entries()].map(([concept_tag, counts]) => ({
     concept_tag,
     result: counts.passed / counts.total >= CONCEPT_PASS_RATIO ? 'pass' : 'fail',
   }));
+
+  // The Trial Balance concept is about the Trial Balance (2026-09-09): every
+  // scored posting logs an attempt on it, and it can only pass when the
+  // export actually ties out. Before this it was judged only on the
+  // structure of transactions that happened to carry the tag, so the flag
+  // the learner saw in every feedback never reached their mastery.
+  const tieOutIndex = results.findIndex((result) => result.concept_tag === 'trial_balance_tie_out');
+  const structurePass = tieOutIndex === -1 ? true : results[tieOutIndex].result === 'pass';
+  const tieOutResult: ConceptResult = { concept_tag: 'trial_balance_tie_out', result: tbTieOut && structurePass ? 'pass' : 'fail' };
+  if (tieOutIndex === -1) results.push(tieOutResult);
+  else results[tieOutIndex] = tieOutResult;
+
+  return results;
 }
 
 // Pairs each expected transaction with the submitted voucher that best
@@ -1062,6 +1124,10 @@ export function scoreSubmission(
   dayBook: ParsedDayBook,
   trialBalance: ParsedTrialBalance,
   answerKey: AnswerKey,
+  // The learner's previous scored Trial Balance export, when one exists:
+  // switches the tie-out to the movement comparison (see
+  // evaluateTrialBalanceTieOut). Omitted/null on the first scored posting.
+  options: { previousTrialBalance?: ParsedTrialBalance | null } = {},
 ): ScoringResult {
   const perVoucherDiffs: VoucherDiff[] = [];
 
@@ -1072,14 +1138,15 @@ export function scoreSubmission(
     perVoucherDiffs.push(...diffVoucherAgainstAnswerKey(matchedVouchers[index], expectedLegs));
   });
 
-  const tbTieOut = checkTrialBalanceTieOut(trialBalance, answerKey);
+  const tieOut = evaluateTrialBalanceTieOut(trialBalance, answerKey, options.previousTrialBalance ?? null);
   const weightedScore = computeWeightedScore(perVoucherDiffs);
-  const overallResult = computeOverallResult(weightedScore, tbTieOut);
-  const conceptResults = computeConceptResults(perVoucherDiffs, transactionGroups);
+  const overallResult = computeOverallResult(weightedScore, tieOut.tieOut);
+  const conceptResults = computeConceptResults(perVoucherDiffs, transactionGroups, tieOut.tieOut);
 
   return {
     per_voucher_diffs: perVoucherDiffs,
-    tb_tie_out: tbTieOut,
+    tb_tie_out: tieOut.tieOut,
+    tb_tie_out_mismatches: tieOut.mismatches,
     weighted_score: weightedScore,
     overall_result: overallResult,
     concept_results: conceptResults,
@@ -1101,15 +1168,17 @@ export function rebuildScoringResult(
   diffs: VoucherDiff[],
   tbTieOut: boolean,
   answerKey: AnswerKey,
+  tbTieOutMismatches: TieOutMismatch[] = [],
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
   const weightedScore = computeWeightedScore(diffs);
   const overallResult = computeOverallResult(weightedScore, tbTieOut);
-  const conceptResults = computeConceptResults(diffs, transactionGroups);
+  const conceptResults = computeConceptResults(diffs, transactionGroups, tbTieOut);
 
   return {
     per_voucher_diffs: diffs,
     tb_tie_out: tbTieOut,
+    tb_tie_out_mismatches: tbTieOutMismatches,
     weighted_score: weightedScore,
     overall_result: overallResult,
     concept_results: conceptResults,

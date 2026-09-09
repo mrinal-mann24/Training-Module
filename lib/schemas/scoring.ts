@@ -126,9 +126,24 @@ export type VoucherDiff = z.infer<typeof VoucherDiffSchema>;
 export const OVERALL_RESULTS = ['pass', 'partial', 'fail'] as const;
 export type OverallResult = (typeof OVERALL_RESULTS)[number];
 
+// One ledger the Trial Balance tie-out could not reconcile (2026-09-09,
+// movement-based tie-out): the learner's ledger moved by `difference` more
+// (positive) or less (negative) than the correct postings would have moved
+// it this month, or the ledger is missing from the export altogether. Never
+// the expected figure itself — the coaching only says which ledger is off
+// and by how much, which is diagnostic, not the answer.
+export const TieOutMismatchSchema = z.object({
+  account: z.string(),
+  status: z.enum(['off', 'missing']),
+  difference: z.number(),
+});
+export type TieOutMismatch = z.infer<typeof TieOutMismatchSchema>;
+
 export const ScoringResultSchema = z.object({
   per_voucher_diffs: z.array(VoucherDiffSchema),
   tb_tie_out: z.boolean(),
+  // Optional so results stored before the field existed still parse.
+  tb_tie_out_mismatches: z.array(TieOutMismatchSchema).optional(),
   weighted_score: z.number(),
   overall_result: z.enum(OVERALL_RESULTS),
   // Per-concept roll-up (Unit 09): whether every scored field belonging to a

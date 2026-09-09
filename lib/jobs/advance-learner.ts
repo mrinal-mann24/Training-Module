@@ -14,6 +14,33 @@ import { getModuleProgress, upsertModuleProgress } from '@/lib/db/queries/module
 import { deriveNextModuleProgress } from '@/lib/tutor/module-progress';
 import { classifyRectificationsForExercise, type RectificationResult } from '@/lib/tutor/rectification';
 import type { ScoringResult } from '@/lib/schemas/scoring';
+import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
+import { getPreviousScoredTrialBalancePath } from '@/lib/db/queries/submissions';
+import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
+
+// The previous scored Trial Balance for the movement-based tie-out
+// (2026-09-09), shared by both scoring jobs. Null on the first scored
+// posting, or when the earlier file cannot be read — the tie-out then falls
+// back to the closing comparison rather than failing the submission.
+export async function loadPreviousTrialBalance(
+  supabase: SupabaseClient,
+  learnerId: string,
+  beforeCreatedAt: string,
+): Promise<ParsedTrialBalance | null> {
+  const storagePath = await getPreviousScoredTrialBalancePath(supabase, learnerId, beforeCreatedAt);
+  if (!storagePath) {
+    return null;
+  }
+  const download = await supabase.storage.from('submissions').download(storagePath);
+  if (download.error || !download.data) {
+    return null;
+  }
+  try {
+    return parseTrialBalanceXml(Buffer.from(await download.data.arrayBuffer()));
+  } catch {
+    return null;
+  }
+}
 
 // The post-scoring pipeline every scored submission goes through, shared by
 // BOTH scoring jobs. Until 2026-09-02 only run-scoring.ts (the two-file

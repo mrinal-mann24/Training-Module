@@ -166,6 +166,52 @@ export async function updateSubmissionStatus(
 }
 
 // Chat-history rebuild: every submission, oldest first.
+// The Trial Balance file of the learner's most recent scored submission
+// before `beforeCreatedAt` (2026-09-09, movement-based tie-out): its closing
+// balances are the baseline this month's movement is measured from. Reads
+// submissions.trialbalance_path first and falls back to the
+// trialbalance_xml submission part, since the multi-part path records the
+// file there. Null when this is the learner's first scored posting.
+export async function getPreviousScoredTrialBalancePath(
+  supabase: SupabaseClient,
+  learnerId: string,
+  beforeCreatedAt: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('id, trialbalance_path')
+    .eq('learner_id', learnerId)
+    .eq('status', 'scored')
+    .lt('created_at', beforeCreatedAt)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error) {
+    throw error;
+  }
+
+  for (const row of data ?? []) {
+    if (row.trialbalance_path) {
+      return row.trialbalance_path as string;
+    }
+    const { data: part, error: partError } = await supabase
+      .from('submission_parts')
+      .select('content')
+      .eq('submission_id', row.id)
+      .eq('part_type', 'trialbalance_xml')
+      .maybeSingle();
+    if (partError) {
+      throw partError;
+    }
+    const storagePath = (part?.content as { storage_path?: string } | null)?.storage_path;
+    if (storagePath) {
+      return storagePath;
+    }
+  }
+
+  return null;
+}
+
 export async function getSubmissionsForLearner(
   supabase: SupabaseClient,
   learnerId: string,

@@ -117,6 +117,9 @@ export type QualitativeCoachingSignal = {
 export type CoachingSignal = {
   overallResult: "pass" | "partial" | "fail";
   tbTieOut: boolean | null;
+  // Ledgers the tie-out could not reconcile, in plain words with the size
+  // of the gap (2026-09-09). Empty/absent when the tie-out matched.
+  tbMismatchDescriptions?: string[];
   weightedScorePercent: number | null;
   // Concept-level descriptions only — never the internal error code or the
   // literal expected value. e.g. "GST head was miscategorized on the purchase
@@ -143,6 +146,9 @@ function buildUserMessage(signal: CoachingSignal): string {
     signal.tbTieOut === null
       ? null
       : `Trial Balance tie-out: ${signal.tbTieOut ? "matched" : "did not match"}`,
+    signal.tbTieOut === false && (signal.tbMismatchDescriptions?.length ?? 0) > 0
+      ? `Trial Balance ledgers that did not reconcile this month (compared as the month's movement, so earlier months' balances do not matter — name the ledger and the gap, do not state what the figure should be): ${signal.tbMismatchDescriptions!.join("; ")}`
+      : null,
     signal.weightedScorePercent === null
       ? null
       : `Weighted score: ${signal.weightedScorePercent} percent. This number IS learner-visible: open the opening_line with it.`,

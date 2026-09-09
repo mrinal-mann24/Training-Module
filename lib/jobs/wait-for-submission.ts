@@ -19,6 +19,7 @@ import {
   recomputeMasteryAndModuleProgress,
   generateNextExercise,
   describeRectification,
+  loadPreviousTrialBalance,
 } from '@/lib/jobs/advance-learner';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
 import type { ScoringResult } from '@/lib/schemas/scoring';
@@ -176,7 +177,10 @@ export const waitForSubmission = inngest.createFunction(
             if (!answerKey) {
               throw new Error(`Answer key for exercise ${exercise.id} not found.`);
             }
-            const engineResult = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey);
+            // Movement-based tie-out (2026-09-09): measured against the
+            // learner's previous scored Trial Balance.
+            const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
+            const engineResult = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
             // Hybrid scoring (2026-08-20): same engine-finds/LLM-judges pass
             // as run-scoring.ts — fail-safe to the engine's verdicts.
             return adjudicateScoringResult(submission.learner_id, parsed.dayBook, answerKey, engineResult);

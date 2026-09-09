@@ -204,7 +204,10 @@ describe('scoreSubmission', () => {
 
     // Every scored field on the sample transaction is correct (narration is
     // extracted since the 2026-08-19 parser fix), so the concept passes.
-    expect(result.concept_results).toEqual([{ concept_tag: 'gst_classification', result: 'pass' }]);
+    expect(result.concept_results).toEqual([
+      { concept_tag: 'gst_classification', result: 'pass' },
+      { concept_tag: 'trial_balance_tie_out', result: 'pass' },
+    ]);
   });
 
   it('reports concept_results as fail when any scored field on the transaction is wrong', () => {
@@ -214,7 +217,10 @@ describe('scoreSubmission', () => {
 
     const result = scoreSubmission(dayBook, trialBalanceMatchingAnswerKey(), answerKey);
 
-    expect(result.concept_results).toEqual([{ concept_tag: 'gst_classification', result: 'fail' }]);
+    expect(result.concept_results).toEqual([
+      { concept_tag: 'gst_classification', result: 'fail' },
+      { concept_tag: 'trial_balance_tie_out', result: 'pass' },
+    ]);
   });
 
   it('a concept tagged on multiple transactions fails overall if any occurrence fails', () => {
@@ -314,7 +320,11 @@ describe('scoreSubmission', () => {
 
     const result = scoreSubmission(dayBook, { ledgers: [] }, answerKey);
 
-    expect(result.concept_results).toEqual([{ concept_tag: 'sales_voucher_basics', result: 'fail' }]);
+    expect(result.concept_results).toEqual([
+      { concept_tag: 'sales_voucher_basics', result: 'fail' },
+      // An empty Trial Balance export never ties out.
+      { concept_tag: 'trial_balance_tie_out', result: 'fail' },
+    ]);
   });
 
 
@@ -1198,12 +1208,131 @@ describe('concept rollup judges each concept on its own fields (Yeshas June, 202
       { concept_tag: 'payment_voucher_basics', result: 'pass' },
       { concept_tag: 'bill_by_bill_referencing', result: 'pass' },
       { concept_tag: 'narration_discipline', result: 'fail' },
+      { concept_tag: 'trial_balance_tie_out', result: 'fail' },
     ]);
   });
 
   it('a missing voucher still fails the voucher-basics concept', () => {
     const result = scoreSubmission({ vouchers: [] }, { ledgers: [] }, key);
     expect(result.concept_results.find((c) => c.concept_tag === 'payment_voucher_basics')?.result).toBe('fail');
+  });
+});
+
+// Movement-based tie-out (2026-09-09): with a previous scored Trial Balance,
+// each ledger's change over the month is compared to the batch's correct
+// postings, so earlier months' drift no longer fails every submission.
+describe('Trial Balance tie-out by movement (2026-09-09)', () => {
+  const dayBook = parseDayBookXml(readFileSync(sampleDayBookPath));
+  // The sample month: Material purchase Dr 4,23,000; Parekh Cr 4,44,150.
+  const key = correctAnswerKey();
+  // Enough unrelated ledgers to read as a real per-ledger export (a
+  // collapsed group-level file is ignored as a baseline, tested below).
+  const filler: ParsedTrialBalance['ledgers'] = Array.from({ length: 10 }, (_, i) => ({
+    ledgerName: `Other Ledger ${i + 1}`,
+    closingDebit: 1000 * (i + 1),
+    closingCredit: 0,
+  }));
+  const previous: ParsedTrialBalance = {
+    ledgers: [
+      // Drifted books: an old mistake left Material purchase 10,000 high and
+      // Parekh 10,000 high, and an unrelated ledger sits at any balance.
+      { ledgerName: 'Material purchase', closingDebit: 210000, closingCredit: 0 },
+      { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 310000 },
+      { ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 },
+      ...filler,
+    ],
+  };
+
+  it('ties out when every ledger moved by exactly the correct postings, whatever it started at', () => {
+    const current: ParsedTrialBalance = {
+      ledgers: [
+        { ledgerName: 'Material purchase', closingDebit: 633000, closingCredit: 0 },
+        { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 754150 },
+        { ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 },
+      ],
+    };
+    const result = scoreSubmission(dayBook, current, key, { previousTrialBalance: previous });
+    expect(result.tb_tie_out).toBe(true);
+    expect(result.tb_tie_out_mismatches).toEqual([]);
+    expect(result.overall_result).toBe('pass');
+    expect(result.concept_results.find((c) => c.concept_tag === 'trial_balance_tie_out')?.result).toBe('pass');
+    // The same closing balances fail the old closing comparison, which is
+    // exactly the trap the movement comparison removes.
+    expect(scoreSubmission(dayBook, current, key).tb_tie_out).toBe(false);
+  });
+
+  it('names the ledger and the size of the gap when a movement is off, without the expected figure', () => {
+    const current: ParsedTrialBalance = {
+      ledgers: [
+        // Moved 4,08,000 instead of 4,23,000: 15,000 short.
+        { ledgerName: 'Material purchase', closingDebit: 618000, closingCredit: 0 },
+        { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 754150 },
+        { ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 },
+      ],
+    };
+    const result = scoreSubmission(dayBook, current, key, { previousTrialBalance: previous });
+    expect(result.tb_tie_out).toBe(false);
+    expect(result.tb_tie_out_mismatches).toEqual([{ account: 'material purchase', status: 'off', difference: -15000 }]);
+    expect(result.overall_result).toBe('partial');
+    expect(result.concept_results.find((c) => c.concept_tag === 'trial_balance_tie_out')?.result).toBe('fail');
+  });
+
+  it('ignores sub-rupee rounding between two exports', () => {
+    const current: ParsedTrialBalance = {
+      ledgers: [
+        { ledgerName: 'Material purchase', closingDebit: 633000.4, closingCredit: 0 },
+        { ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 },
+      ],
+    };
+    expect(scoreSubmission(dayBook, current, key, { previousTrialBalance: previous }).tb_tie_out).toBe(true);
+  });
+
+  it('reports a ledger that is in neither export as missing, with the movement it should have shown', () => {
+    const current: ParsedTrialBalance = { ledgers: [{ ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 }] };
+    const withoutMaterial: ParsedTrialBalance = { ledgers: previous.ledgers.filter((l) => !/Material/.test(l.ledgerName)) };
+    const result = scoreSubmission(dayBook, current, key, { previousTrialBalance: withoutMaterial });
+    expect(result.tb_tie_out).toBe(false);
+    expect(result.tb_tie_out_mismatches).toEqual([{ account: 'material purchase', status: 'missing', difference: -423000 }]);
+  });
+
+  it('sums a party split across two ledgers, exact plus unclaimed fuzzy rows (Deccan Traders + Deccan Traders Debtor)', () => {
+    const split = correctAnswerKey();
+    split.entries.push({ ...split.entries[0], correct_account: 'Deccan Traders', dr_cr: 'Dr', amount: 70800, gst_head: null, gst_rate: null });
+    const before: ParsedTrialBalance = {
+      ledgers: [
+        ...previous.ledgers,
+        { ledgerName: 'Deccan Traders', closingDebit: 0, closingCredit: 244600 },
+        { ledgerName: 'Deccan Traders Debtor', closingDebit: 212400, closingCredit: 0 },
+      ],
+    };
+    const after: ParsedTrialBalance = {
+      ledgers: [
+        { ledgerName: 'Material purchase', closingDebit: 633000, closingCredit: 0 },
+        { ledgerName: 'Parekh Integrated Services Pvt Ltd', closingDebit: 0, closingCredit: 754150 },
+        { ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 },
+        { ledgerName: 'Deccan Traders', closingDebit: 0, closingCredit: 244600 },
+        // The sale of 70,800 landed on the debtor ledger.
+        { ledgerName: 'Deccan Traders Debtor', closingDebit: 283200, closingCredit: 0 },
+      ],
+    };
+    expect(scoreSubmission(dayBook, after, split, { previousTrialBalance: before }).tb_tie_out).toBe(true);
+  });
+
+  it('ignores a collapsed group-level previous export as a baseline and falls back to the closing comparison', () => {
+    const groupLevel: ParsedTrialBalance = { ledgers: [{ ledgerName: 'Purchase Accounts', closingDebit: 210000, closingCredit: 0 }] };
+    // Closing comparison: 4,23,000 movement only, no openings → the plain
+    // movements-only fixture ties out, the drifted one does not.
+    expect(scoreSubmission(dayBook, trialBalanceMatchingAnswerKey(), key, { previousTrialBalance: groupLevel }).tb_tie_out).toBe(true);
+    const drifted: ParsedTrialBalance = { ledgers: [{ ledgerName: 'Material purchase', closingDebit: 633000, closingCredit: 0 }, ...trialBalanceMatchingAnswerKey().ledgers.slice(1)] };
+    expect(scoreSubmission(dayBook, drifted, key, { previousTrialBalance: groupLevel }).tb_tie_out).toBe(false);
+  });
+
+  it('a ledger dropped from this export is measured as having moved to zero', () => {
+    // Material purchase stood at 2,10,000 last month and is absent now:
+    // movement −2,10,000 against an expected +4,23,000 → off by 6,33,000.
+    const current: ParsedTrialBalance = { ledgers: [{ ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 }] };
+    const result = scoreSubmission(dayBook, current, key, { previousTrialBalance: previous });
+    expect(result.tb_tie_out_mismatches).toEqual([{ account: 'material purchase', status: 'off', difference: -633000 }]);
   });
 });
 

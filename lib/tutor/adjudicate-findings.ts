@@ -123,5 +123,5 @@ export function applyAdjudicationVerdicts(
     return { ...diff, is_correct: true, error_code: null };
   });
 
-  return rebuildScoringResult(adjustedDiffs, scoringResult.tb_tie_out, answerKey);
+  return rebuildScoringResult(adjustedDiffs, scoringResult.tb_tie_out, answerKey, scoringResult.tb_tie_out_mismatches ?? []);
 }

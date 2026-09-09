@@ -88,7 +88,12 @@ describe('applyAdjudicationVerdicts', () => {
     );
     expect(adjusted.per_voucher_diffs.every((d) => d.is_correct)).toBe(true);
     expect(adjusted.weighted_score).toBeCloseTo(1, 5);
-    expect(adjusted.concept_results).toEqual([{ concept_tag: 'purchase_voucher_basics', result: 'pass' }]);
+    expect(adjusted.concept_results).toEqual([
+      { concept_tag: 'purchase_voucher_basics', result: 'pass' },
+      // The rebuilt result carries the tie-out concept (2026-09-09), which
+      // follows the engine's tb_tie_out flag: true in this fixture.
+      { concept_tag: 'trial_balance_tie_out', result: 'pass' },
+    ]);
   });
 
   it('verdicts for the wrong sequence or field change nothing', () => {
@@ -100,6 +105,12 @@ describe('applyAdjudicationVerdicts', () => {
       ],
       answerKey(),
     );
-    expect(adjusted).toEqual(engineResult());
+    // Rebuilt, so the derived fields are recomputed (which adds the tie-out
+    // concept and an empty mismatch list), but no diff and no score moved.
+    expect(adjusted.per_voucher_diffs).toEqual(engineResult().per_voucher_diffs);
+    expect(adjusted.weighted_score).toBe(engineResult().weighted_score);
+    expect(adjusted.tb_tie_out).toBe(engineResult().tb_tie_out);
+    expect(adjusted.overall_result).toBe(engineResult().overall_result);
+    expect(adjusted.concept_results.find((c) => c.concept_tag === 'purchase_voucher_basics')?.result).toBe('fail');
   });
 });

@@ -8,6 +8,7 @@ import {
   recomputeMasteryAndModuleProgress,
   generateNextExercise,
   describeRectification,
+  loadPreviousTrialBalance,
 } from '@/lib/jobs/advance-learner';
 import { parseDayBookXml, DayBookParseError } from '@/lib/parsing/daybook';
 import { parseTrialBalanceXml, TrialBalanceParseError } from '@/lib/parsing/trialbalance';
@@ -115,7 +116,10 @@ export const runScoring = inngest.createFunction(
       if (!answerKey) {
         throw new Error(`Answer key for exercise ${exercise.id} not found.`);
       }
-      return scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey);
+      // Movement-based tie-out (2026-09-09): measured against the learner's
+      // previous scored Trial Balance.
+      const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
+      return scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
     });
 
     // Hybrid scoring (2026-08-20): the engine's findings are adjudicated by

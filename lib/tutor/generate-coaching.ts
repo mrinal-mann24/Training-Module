@@ -7,7 +7,7 @@ import {
   type QualitativeCoachingSignal,
 } from '@/lib/llm/prompts/coaching';
 import { CoachingSchema, type Coaching } from '@/lib/schemas/coaching';
-import type { ScoringResult, OverallResult, VoucherDiff, ScoredField } from '@/lib/schemas/scoring';
+import type { ScoringResult, OverallResult, VoucherDiff, ScoredField, TieOutMismatch } from '@/lib/schemas/scoring';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
 
@@ -233,6 +233,7 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
   return {
     overallResult: scoringResult.overall_result,
     tbTieOut: scoringResult.tb_tie_out,
+    tbMismatchDescriptions: describeTieOutMismatches(scoringResult.tb_tie_out_mismatches ?? []),
     weightedScorePercent: Math.round(scoringResult.weighted_score * 100),
     incorrectConceptDescriptions,
     correctConceptDescriptions,
@@ -240,6 +241,27 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
     missingPartDescriptions: [],
     rectificationDescriptions: [],
   };
+}
+
+// Which ledgers the Trial Balance could not reconcile and by how much
+// (2026-09-09, movement-based tie-out). The gap is the learner's own
+// figure against the correct movement, never the expected figure, so the
+// coaching can point at the ledger without handing over the answer. Capped
+// so a badly exported Trial Balance does not flood the prompt.
+const MAX_TIE_OUT_MISMATCHES = 6;
+
+export function describeTieOutMismatches(mismatches: TieOutMismatch[]): string[] {
+  const lines = mismatches.slice(0, MAX_TIE_OUT_MISMATCHES).map((mismatch) => {
+    const rupees = `Rs ${Math.abs(Math.round(mismatch.difference)).toLocaleString('en-IN')}`;
+    if (mismatch.status === 'missing') {
+      return `${mismatch.account} does not appear in the Trial Balance export at all (it should have moved by ${rupees} this month)`;
+    }
+    return `${mismatch.account} moved by ${rupees} ${mismatch.difference > 0 ? 'more' : 'less'} than the month's correct postings would move it`;
+  });
+  if (mismatches.length > MAX_TIE_OUT_MISMATCHES) {
+    lines.push(`and ${mismatches.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) are off`);
+  }
+  return lines;
 }
 
 // Plain-language buckets for each qualitative subscore — never a number, per
