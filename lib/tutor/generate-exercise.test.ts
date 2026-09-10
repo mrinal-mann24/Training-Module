@@ -103,11 +103,12 @@ describe('checkBatchComposition (Phase 2 live-fix)', () => {
     expect(checkBatchComposition(short, plan, false)).toContain('6 transactions');
   });
 
-  it('skips the check entirely under escalation', () => {
+  it('under escalation only the size floor applies: 8 to 12 transactions, no split or trading mix (2026-09-10)', () => {
+    const narrow = batch(Array.from({ length: 8 }, () => ['contra_voucher_basics' as ConceptTag]));
+    expect(checkBatchComposition(narrow, plan, true)).toBeNull();
     const tiny = batch(Array.from({ length: 3 }, () => ['contra_voucher_basics' as ConceptTag]));
-    expect(checkBatchComposition(tiny, plan, true)).toBe(null);
+    expect(checkBatchComposition(tiny, plan, true)).toContain('needs 8 to 12');
   });
-
   it('allows a one-sided batch when the learner has no strengths yet, but still enforces count and trading mix', () => {
     const noStrengths = { strengths: [] as ConceptTag[], weaknesses: ['contra_voucher_basics'] as ConceptTag[] };
     const tenOneSided = batch(

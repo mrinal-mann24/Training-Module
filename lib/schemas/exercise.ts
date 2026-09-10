@@ -50,8 +50,29 @@ export const CONCEPT_TAGS = [
   'bill_by_bill_referencing',
   'narration_discipline',
   'trial_balance_tie_out',
+  // Rulebook-section concepts (2026-09-10 meeting): the topics the interns
+  // named as never tested, each its own concept so it cannot pass inside a
+  // broad tag. Three clean instances for a pass, like every concept.
+  'customer_advance',
+  'supplier_advance',
+  'on_account_reference',
+  'multi_bill_settlement',
+  'tds_on_receipt',
+  'gst_set_off',
+  'gst_payment',
+  // Once-only tier: one clean instance is enough.
+  'rcm_and_late_fee',
+  'fixed_assets_depreciation',
 ] as const;
 export type ConceptTag = (typeof CONCEPT_TAGS)[number];
+
+// Mastery streak per concept (2026-09-10): three consecutive clean passes
+// for every concept, except the once-only tier the meeting settled on.
+export const DEFAULT_MASTERY_STREAK_TARGET = 3;
+export const ONCE_ONLY_CONCEPT_TAGS = ['rcm_and_late_fee', 'fixed_assets_depreciation'] as const satisfies readonly ConceptTag[];
+export function masteryStreakTargetFor(tag: string): number {
+  return (ONCE_ONLY_CONCEPT_TAGS as readonly string[]).includes(tag) ? 1 : DEFAULT_MASTERY_STREAK_TARGET;
+}
 
 // Retired concepts (2026-09-10): narration is no longer scored, so
 // narration_discipline is never assessed, targeted, counted towards module

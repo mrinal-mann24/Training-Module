@@ -31,6 +31,7 @@ import {
   partyLegOf,
   type OpenBill,
   type PartyTaxClass,
+  loadAnswerKeys,
 } from "@/lib/db/queries/company";
 import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/build-bank-statement";
 import type { BankStatementContent } from "@/lib/schemas/source-document";
@@ -46,6 +47,8 @@ import type {
 } from "@/lib/llm/prompts/source-document";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
 import { applyDocumentsMode, checkMonthEndNoteDetails } from "@/lib/tutor/documents-mode";
+import { checkBillNumberUniqueness, checkGstArithmetic, checkTdsThresholds, priorBillReferences, tdsHistoryFromKeys } from "@/lib/tutor/generation-checks";
+import { appendMonthEndJournals } from "@/lib/tutor/month-end-journals";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -329,6 +332,7 @@ export async function generateDiagnosticExercise(
 // re-enters the generation retry loop with the violation as the error, so
 // the model gets told exactly what to fix. Returns null when compliant.
 const MIN_TRANSACTIONS_PER_BATCH = 10;
+const MIN_ESCALATION_TRANSACTIONS = 8;
 const MAX_TRANSACTIONS_PER_BATCH = 12;
 const MIN_TRANSACTIONS_PER_SIDE = 4;
 // Trading-mix floor (2026-09-01, user's 5-point batch review #2): the
@@ -346,9 +350,18 @@ export function checkBatchComposition(
   batchPlan: { strengths: ConceptTag[]; weaknesses: ConceptTag[] } | null,
   escalationActive: boolean,
 ): string | null {
-  // Escalation batches are deliberately narrow (2-4 single-concept
-  // transactions); no plan means the caller didn't want composition.
-  if (escalationActive || !batchPlan) {
+  // Escalation batches are narrow, not small (2026-09-10): at least
+  // MIN_ESCALATION_TRANSACTIONS, most of them on the target concept. The
+  // 50/50 split and the trading mix are not enforced on them. No plan means
+  // the caller didn't want composition.
+  if (escalationActive) {
+    const count = generated.transactions.length;
+    if (count < MIN_ESCALATION_TRANSACTIONS || count > MAX_TRANSACTIONS_PER_BATCH) {
+      return `The escalation batch has ${count} transactions; it needs ${MIN_ESCALATION_TRANSACTIONS} to ${MAX_TRANSACTIONS_PER_BATCH}, at least half of them on the primary target concept.`;
+    }
+    return null;
+  }
+  if (!batchPlan) {
     return null;
   }
 
@@ -1055,6 +1068,16 @@ export async function generateAdaptiveExercise(
     partyTaxClasses,
   } = await getCompanyState(supabase, learnerId);
 
+  // Every answer key so far (2026-09-10): bill numbers already used, this
+  // year's TDS totals per payee, and the GST position the month-end
+  // journals are computed from. exerciseOrdinal is 1-based (1 = the April
+  // pack), the keys 0-based, so this financial year's keys start at index
+  // floor((ordinal - 1) / 12) * 12.
+  const priorKeys = await loadAnswerKeys(supabase, learnerId);
+  const yearStartIndex = Math.floor((exerciseOrdinal - 1) / 12) * 12;
+  const priorRefs = priorBillReferences(priorKeys);
+  const tdsHistory = tdsHistoryFromKeys(priorKeys.slice(yearStartIndex));
+
   const promptParams = {
     targetConceptTag: target.conceptTag,
     batchStrengthConcepts:
@@ -1134,7 +1157,13 @@ export async function generateAdaptiveExercise(
       // Documents mode: journal-type lines must keep their figures — that
       // text becomes the month-end notes sheet (documents-mode.ts).
       const notesError = documentsMode ? checkMonthEndNoteDetails(parsed.data) : null;
-      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError]
+      // Generation hygiene (2026-09-10 audits): reused bill numbers, GST
+      // legs off the rate, TDS deducted below or missed above the year's
+      // threshold. All hard: the key itself would be wrong.
+      const uniquenessError = checkBillNumberUniqueness(parsed.data, priorRefs);
+      const gstArithmeticError = checkGstArithmetic(parsed.data);
+      const tdsThresholdError = checkTdsThresholds(parsed.data, tdsHistory);
+      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError]
         .filter(Boolean)
         .join(" ");
       const batchError = [
@@ -1147,6 +1176,9 @@ export async function generateAdaptiveExercise(
         settlementError,
         partyTaxError,
         notesError,
+        uniquenessError,
+        gstArithmeticError,
+        tdsThresholdError,
       ]
         .filter(Boolean)
         .join(" ");
@@ -1175,6 +1207,28 @@ export async function generateAdaptiveExercise(
       `Adaptive exercise generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
     );
   }
+
+  // Month-end GST journals with figures from the ledger (2026-09-10): the
+  // set-off and the payment to the government are appended here when the
+  // batch's concepts call for them, replacing anything the model wrote.
+  const batchConcepts: ConceptTag[] = [
+    target.conceptTag,
+    ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
+  ];
+  const bankAccount = openingBalances.find((opening) => isBankLedger(opening.account))?.account ?? "HDFC Bank — 1234";
+  const bankAfterBatch =
+    cashPosition.bank +
+    generated.answer_key.entries
+      .filter((entry) => isBankLedger(entry.correct_account))
+      .reduce((sum, entry) => sum + (entry.dr_cr === "Dr" ? entry.amount : -entry.amount), 0);
+  generated = appendMonthEndJournals(generated, {
+    priorKeys,
+    concepts: batchConcepts,
+    month: exerciseMonth,
+    licenseMode,
+    bankAccount,
+    bankAfterBatch,
+  }).generated;
 
   generated = stampOpeningPosition(
     scrubOpeningFigureSentences(stripDuplicateTransactionList(generated), cashPosition),

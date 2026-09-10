@@ -768,6 +768,16 @@ const CONCEPT_FIELDS: Record<ConceptTag, ScoredField[]> = {
   bill_by_bill_referencing: ['bill_reference'],
   narration_discipline: ['narration'],
   trial_balance_tie_out: VOUCHER_STRUCTURE_FIELDS,
+  // Rulebook-section concepts (2026-09-10).
+  customer_advance: [...VOUCHER_STRUCTURE_FIELDS, 'bill_reference', 'gst'],
+  supplier_advance: [...VOUCHER_STRUCTURE_FIELDS, 'bill_reference', 'tds'],
+  on_account_reference: [...VOUCHER_STRUCTURE_FIELDS, 'bill_reference'],
+  multi_bill_settlement: [...VOUCHER_STRUCTURE_FIELDS, 'bill_reference'],
+  tds_on_receipt: [...VOUCHER_STRUCTURE_FIELDS, 'tds', 'bill_reference'],
+  gst_set_off: [...VOUCHER_STRUCTURE_FIELDS, 'gst'],
+  gst_payment: VOUCHER_STRUCTURE_FIELDS,
+  rcm_and_late_fee: [...VOUCHER_STRUCTURE_FIELDS, 'gst'],
+  fixed_assets_depreciation: [...VOUCHER_STRUCTURE_FIELDS, 'gst'],
 };
 
 function computeConceptResults(

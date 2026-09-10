@@ -53,6 +53,57 @@ export type AdaptiveExerciseParams = {
   documentsMode?: boolean;
 };
 
+// House practice per concept, from the Karbon rulebook (2026-09-10): the
+// briefs for every concept in the batch are pasted into the prompt so the
+// model writes the topic the way the house books it. The set-off and the
+// GST payment are appended by code (month-end-journals.ts), never written
+// by the model.
+export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
+  sales_voucher_basics:
+    'Credit sale: Sales voucher, Dr customer (total, New Ref invoice number), Cr Sales (base), Cr Output GST per the customer state. Cash counter sale: Dr Cash instead of a customer.',
+  purchase_voucher_basics:
+    'Purchase or expense bill: Purchase voucher, Dr Purchases or the expense ledger (base), Dr Input GST, Cr vendor (total, New Ref bill number); TDS at booking where the section applies.',
+  payment_voucher_basics:
+    'Payment from the bank: Dr party or expense, Cr bank, Against Ref the bill being paid; the narration carries the bank reference.',
+  receipt_voucher_basics: 'Receipt into the bank: Dr bank, Cr customer, Against Ref the invoice being settled.',
+  contra_voucher_basics: 'Cash to bank or bank to cash only, sized to the balances actually held.',
+  journal_voucher_basics:
+    'Month-end adjustments: accruals to Outstanding Expenses, prepaid transfers, depreciation, and corrections by a reversal entry plus a fresh entry (never by editing history).',
+  gst_classification:
+    'Intra-state CGST plus SGST at half the rate each, inter-state IGST at the full rate, decided by the party state; Input on purchases, Output on sales; every GST figure is base times rate exactly.',
+  tds_classification:
+    'TDS at booking on the taxable base, never the GST-inclusive total: 194J professional 10%, 194C contractor 1%/2% (30,000 single or 1,00,000 aggregate), 194I rent 10% (2,40,000 aggregate), 194H commission 5%; only once the year threshold is crossed for that payee; vendor credited net, TDS Payable per section.',
+  bill_by_bill_referencing:
+    'Every party leg carries a reference: New Ref when a bill is raised, Against Ref (each bill named) when it is settled, Advance for money before a bill, On Account only when no bill can be identified.',
+  narration_discipline: 'Retired: narration is not scored beyond the bank reference on bank vouchers.',
+  trial_balance_tie_out: 'Nothing separate to write: every posting must leave the books consistent.',
+  customer_advance:
+    'Advance received before any invoice (rulebook 9): Receipt Dr bank, Cr customer with a NEW reference of type Advance (bill_reference like "ADV-C01 (Advance)"). GOODS: no GST on the advance. SERVICE: the receipt credits the customer for the base and Output CGST on Advance plus Output SGST on Advance (or Output IGST on Advance) for the GST portion. When the invoice is raised, the Sales voucher allocates Against Ref ADV-C01 for the advance and New Ref for the balance; for a service advance add a journal Dr Output CGST on Advance / Dr Output SGST on Advance, Cr Output CGST / Cr Output SGST for the GST now recognised on the invoice. Include the advance and the invoice that adjusts it.',
+  supplier_advance:
+    'Advance paid to a supplier before the bill (rulebook 10): Payment Dr supplier with a NEW Advance reference (bill_reference like "ADV-S01 (Advance)"), Cr bank; no Input GST at payment. When the bill arrives, the Purchase voucher allocates Against Ref ADV-S01 for the advance and New Ref for the balance. With TDS on a service advance: Dr supplier (gross, Advance ref), Cr TDS Payable of the section, Cr bank (net); the later bill deducts TDS only on the remaining base.',
+  on_account_reference:
+    'A receipt or payment that cannot be tied to a specific bill (rulebook 4): the party allocation is On Account, bill_reference "On Account", and the text says why no bill can be identified. Never for a bill that exists.',
+  multi_bill_settlement:
+    'One payment or receipt across several bills (rulebook 6.4/7.4): one bank leg; the party allocation names EACH bill it clears with its amount, bill_reference like "MS-101, MS-102". A part payment allocates Against Ref for the amount paid and the balance stays open.',
+  tds_on_receipt:
+    'The customer pays net of TDS (rulebook 7.2): Receipt Dr bank (net), Dr TDS Receivable of the section (the TDS the customer withheld: 10% of the base for professional services under 194J, 2% under 194C), Cr customer (gross, Against Ref the invoice); tds_section and tds_base on the TDS Receivable leg. Also include a receipt paid in full where no TDS applies.',
+  gst_set_off:
+    'Do NOT write the set-off: the system appends the month-end GST set-off journal with figures taken from the ledger. Give the month enough GST sales and purchases for a set-off to matter.',
+  gst_payment:
+    'Do NOT write the payment: the system appends the payment of the previous month GST liability from the bank when one exists.',
+  rcm_and_late_fee:
+    'Reverse charge (rulebook 13): a service from an unregistered supplier or a goods transport agency: Purchase Dr expense / Cr vendor (no vendor GST), plus a journal Dr Input CGST RCM and Dr Input SGST RCM / Cr Output CGST RCM and Cr Output SGST RCM for the tax the company pays itself. A late fee or interest on a delayed GST payment: Payment Dr GST Late Fee and Interest (indirect expense) / Cr bank.',
+  fixed_assets_depreciation:
+    'A capital purchase goes to the asset ledger (Office Equipment, Furniture, Computers), never Purchases, with Input GST claimed in full in the month of purchase; depreciation at year end by journal Dr Depreciation / Cr the asset ledger at the stated rate.',
+};
+
+function buildConceptBriefsBlock(params: AdaptiveExerciseParams): string {
+  const tags = [...new Set([params.targetConceptTag, ...params.batchStrengthConcepts, ...params.batchWeaknessConcepts])];
+  return `CONCEPT BRIEFS (house practice from the rulebook; follow them exactly for the concepts in this batch):
+${tags.map((tag) => `- ${tag}: ${CONCEPT_BRIEFS[tag]}`).join('\n')}
+`;
+}
+
 function buildPartyStatesBlock(classes: Map<string, PartyTaxClass>): string {
   if (classes.size === 0) return '';
   const lines = [...classes.entries()]
@@ -138,9 +189,11 @@ recently. Slow the pacing down — use a single, isolated, unambiguous transacti
 for this concept rather than mixing it with distractors, and make the scenario
 prose more explicit about what's being asked, with more scaffolding context than
 usual (without stating the answer). This is more hand-holding than a normal
-exercise at this difficulty level, not a harder one. Escalation OVERRIDES the
-batch composition rules: ignore the 10-12 count and the 50/50 split, produce
-2 to 4 focused transactions on the primary target concept only.`
+exercise at this difficulty level, not a harder one. Escalation narrows the batch
+rather than shrinking it (2026-09-10: batches of 3 or 4 entries were the
+interns' loudest complaint): keep 8 to 10 transactions, at least half of them
+clean, unambiguous reps of the primary target concept, the rest ordinary
+trading activity; the 50/50 strength/weakness split does not apply.`
     : `Escalation is not active for this concept — generate a normal exercise at the
 stated difficulty level, no extra scaffolding needed.`;
 
@@ -212,6 +265,8 @@ Recently strong areas (for the opening line): ${
 
 Difficulty level: ${params.difficultyLevel}.
 
+${buildConceptBriefsBlock(params)}
+
 ANSWER KEY SHAPE (hard requirement): answer_key.entries holds EVERY ledger leg
 of every transaction's Tally voucher, one entry per leg, all sharing that
 transaction's sequence — never a single summary entry per transaction. At
@@ -222,6 +277,16 @@ equal the credits. Examples of the required shape:
 - Purchase with TDS: Dr expense (gross) / Cr TDS Payable / Cr vendor (net).
 - Payment: Dr party or expense / Cr the bank. Receipt: Dr the bank / Cr customer.
 - Contra: Dr the bank / Cr Cash, or the reverse.
+- Customer advance (goods): Receipt Dr the bank / Cr customer, bill_reference "ADV-C01 (Advance)".
+- Customer advance (service): Receipt Dr the bank (total) / Cr customer (base, Advance ref) / Cr Output CGST on Advance / Cr Output SGST on Advance.
+- Supplier advance: Payment Dr supplier (Advance ref "ADV-S01 (Advance)") / Cr the bank; with TDS: Dr supplier (gross) / Cr TDS Payable — u/s 194J / Cr the bank (net).
+- Receipt net of TDS: Dr the bank (net) / Dr TDS Receivable — u/s 194J / Cr customer (gross, Against Ref the invoice).
+- Multi-bill payment: Dr supplier (total, bill_reference "MS-101, MS-102") / Cr the bank.
+- On Account receipt: Dr the bank / Cr customer, bill_reference "On Account".
+
+MONTH-END GST (hard rule): never write a GST set-off journal or a GST payment
+to the government yourself. When the batch calls for them, the system appends
+both with figures taken from the ledger, dated inside the month.
 GST and TDS are real ledger legs ("Output IGST", "Input CGST", "TDS Payable — u/s 194J"),
 not just metadata; gst_head/tds_section on the tax leg say which head.
 

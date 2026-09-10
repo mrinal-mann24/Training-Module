@@ -1,4 +1,4 @@
-import type { ConceptTag } from '@/lib/schemas/exercise';
+import { masteryStreakTargetFor, type ConceptTag } from '@/lib/schemas/exercise';
 import type { StatePatch } from '@/lib/schemas/state-patch';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 
@@ -16,8 +16,8 @@ import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 // Named constant per the spec's explicit "not a magic number" instruction.
 export const CLEAN_HELP_STEP_THRESHOLD = 3;
 
-// A concept is "mastered" after this many consecutive clean passes.
-const MASTERY_STREAK_TARGET = 3;
+// A concept is "mastered" after masteryStreakTargetFor(tag) consecutive
+// clean passes: three by default, one for the once-only tier (2026-09-10).
 
 // Window size for the reinforcement rule ("2 of the last 3 attempts failed").
 const REINFORCEMENT_WINDOW = 3;
@@ -84,7 +84,7 @@ export function recomputeMastery(input: MasteryRecomputeInput): StatePatch {
       }
     }
 
-    const newStatus = consecutiveCleanCount >= MASTERY_STREAK_TARGET ? 'mastered' : 'developing';
+    const newStatus = consecutiveCleanCount >= masteryStreakTargetFor(conceptTag) ? 'mastered' : 'developing';
 
     conceptMasteryDeltas.push({
       concept_tag: conceptTag,
