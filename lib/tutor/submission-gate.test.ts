@@ -204,7 +204,15 @@ describe('no month-day rule (Phase 3, spec 15)', () => {
 describe('voucher dates may run ahead of the wall clock when the exercise month does (2026-09-03)', () => {
   const futureExercise = { ...makeExercise(1), transactions: [{ sequence: 1, description: 'On 15-Dec-2030, pay office rent by bank transfer.' }] };
   const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
-  const dayBookOn = (date: string) => ({ vouchers: [{ voucherType: 'Payment', date, narration: 'rent', ledgerEntries: [] }] });
+  const dayBookOn = (date: string) => ({
+    vouchers: [{
+      voucherType: 'Payment', date, narration: 'rent',
+      ledgerEntries: [
+        { ledgerName: 'Rent', amount: 25000, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'HDFC Bank', amount: 25000, drOrCr: 'Cr' as const, billAllocations: [] },
+      ],
+    }],
+  });
 
   it('accepts a voucher inside the exercise month even though it is in the future', () => {
     expect(runValidityGate(dayBookOn('20301221'), trialBalance, futureExercise, '2026-04-01').status).toBe('valid');
@@ -213,5 +221,29 @@ describe('voucher dates may run ahead of the wall clock when the exercise month 
   it('still rejects a voucher beyond the exercise month', () => {
     const result = runValidityGate(dayBookOn('20310105'), trialBalance, futureExercise, '2026-04-01');
     expect(result.status).toBe('invalid');
+  });
+});
+
+describe('blank vouchers are bounced at the gate (2026-09-10)', () => {
+  const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
+  const exercise = { ...makeExercise(2), transactions: [
+    { sequence: 1, description: 'On 05-Apr-2026, pay office rent by bank transfer.' },
+    { sequence: 2, description: 'On 06-Apr-2026, pay office rent by bank transfer.' },
+  ] };
+
+  it('names the blank voucher and rejects the upload', () => {
+    const dayBook = { vouchers: [
+      { voucherType: 'Payment', date: '20260405', narration: 'rent', ledgerEntries: [
+        { ledgerName: 'Rent', amount: 25000, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'HDFC Bank', amount: 25000, drOrCr: 'Cr' as const, billAllocations: [] },
+      ] },
+      { voucherType: 'Purchase', date: '20260406', narration: '', ledgerEntries: [] },
+    ] };
+    const result = runValidityGate(dayBook, trialBalance, exercise, '2026-04-01');
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      const blank = result.errors.find((error) => error.code === 'blank_vouchers');
+      expect(blank?.message).toContain('Purchase voucher no. 2 dated 20260406');
+    }
   });
 });

@@ -77,7 +77,7 @@ describe('applyAdjudicationVerdicts', () => {
     expect(adjusted.per_voucher_diffs.find((d) => d.field === 'gst')?.is_correct).toBe(false);
   });
 
-  it('dismissing every finding produces a clean rebuilt result', () => {
+  it('a dismiss on a GST finding is ignored: only naming and reference findings can be excused (2026-09-10)', () => {
     const adjusted = applyAdjudicationVerdicts(
       engineResult(),
       [
@@ -86,14 +86,50 @@ describe('applyAdjudicationVerdicts', () => {
       ],
       answerKey(),
     );
-    expect(adjusted.per_voucher_diffs.every((d) => d.is_correct)).toBe(true);
-    expect(adjusted.weighted_score).toBeCloseTo(1, 5);
-    expect(adjusted.concept_results).toEqual([
-      { concept_tag: 'purchase_voucher_basics', result: 'pass' },
-      // The rebuilt result carries the tie-out concept (2026-09-09), which
-      // follows the engine's tb_tie_out flag: true in this fixture.
-      { concept_tag: 'trial_balance_tie_out', result: 'pass' },
-    ]);
+    expect(adjusted.per_voucher_diffs.find((d) => d.field === 'account')?.is_correct).toBe(true);
+    const gstDiff = adjusted.per_voucher_diffs.find((d) => d.field === 'gst');
+    expect(gstDiff?.is_correct).toBe(false);
+    expect(gstDiff?.error_code).toBe('GST_HEAD_WRONG');
+    // account (1) + amount (1) earned of account 1 + gst 2 + amount 1.
+    expect(adjusted.weighted_score).toBeCloseTo(2 / 4, 5);
+    // The purchase concept owns account/side/amount/type, all correct after the
+    // naming dismissal; the GST finding belongs to gst_classification.
+    expect(adjusted.concept_results.find((c) => c.concept_tag === 'purchase_voucher_basics')?.result).toBe('pass');
+  });
+
+  it('never excuses a missing voucher', () => {
+    const missing: ScoringResult = {
+      ...engineResult(),
+      per_voucher_diffs: [
+        { voucherRef: 1, field: 'account', expected_masked: true, is_correct: false, error_code: 'VOUCHER_MISSING' },
+      ],
+    };
+    const adjusted = applyAdjudicationVerdicts(
+      missing,
+      [{ sequence: 1, field: 'account', verdict: 'dismiss', reason: 'posted differently' }],
+      answerKey(),
+    );
+    expect(adjusted.per_voucher_diffs[0].is_correct).toBe(false);
+    expect(adjusted.per_voucher_diffs[0].error_code).toBe('VOUCHER_MISSING');
+  });
+
+  it('carries the submission-level facts through the rebuild', () => {
+    const withFacts: ScoringResult = {
+      ...engineResult(),
+      unmatched_vouchers: [{ position: 3, date: '20260405', voucher_type: 'Payment', ledgers: ['Suspense'], amount: 18000, kind: 'extra' }],
+      ledger_findings: [{ code: 'GST_LEDGER_NO_SIDE', ledgers: ['CGST'] }],
+      composite_matches: [{ kind: 'split', sequences: [1], positions: [1, 2] }],
+    };
+    const adjusted = applyAdjudicationVerdicts(
+      withFacts,
+      [{ sequence: 1, field: 'account', verdict: 'dismiss', reason: 'naming' }],
+      answerKey(),
+    );
+    expect(adjusted.unmatched_vouchers).toEqual(withFacts.unmatched_vouchers);
+    expect(adjusted.ledger_findings).toEqual(withFacts.ledger_findings);
+    expect(adjusted.composite_matches).toEqual(withFacts.composite_matches);
+    // The ledger finding costs one standard weight: account 1 + amount 1 earned of 1 + 2 + 1 + 1 penalty.
+    expect(adjusted.weighted_score).toBeCloseTo(2 / 5, 5);
   });
 
   it('verdicts for the wrong sequence or field change nothing', () => {

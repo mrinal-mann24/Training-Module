@@ -1,6 +1,20 @@
 import type { ParsedDayBook, ParsedTrialBalance, Voucher, LedgerEntry } from '@/lib/schemas/voucher';
 import { isRetiredConcept, type AnswerKey, type AnswerKeyEntry, type ConceptTag } from '@/lib/schemas/exercise';
-import type { ScoringErrorCode, ScoringResult, ScoredField, VoucherDiff, ConceptResult, TieOutMismatch } from '@/lib/schemas/scoring';
+import type {
+  ScoringErrorCode,
+  ScoringResult,
+  ScoredField,
+  VoucherDiff,
+  ConceptResult,
+  TieOutMismatch,
+  UnmatchedVoucher,
+  LedgerFinding,
+  CompositeMatch,
+} from '@/lib/schemas/scoring';
+import { findLedgerFindings } from './ledger-findings';
+import { accountNamesMatch, gstHeadOf, normalizeAccountName, RETURNS_TOKEN } from './account-names';
+
+export { accountNamesMatch, normalizeAccountName };
 
 // Weighted-score thresholds for overall_result. Defined here, not scattered as
 // magic numbers in the diff/weighting logic below.
@@ -30,132 +44,6 @@ const FIELD_WEIGHT: Record<ScoredField, number> = {
 // ASSUMPTION: matches on ledger name text, per Unit 06 spec discussion — the
 // parsed voucher shape carries no structured GST/TDS fields, so classification
 // is inferred here rather than extending Unit 05's parser.
-// Ledger-name comparison is normalized and containment-tolerant: learners
-// write "Balaji Interiors (firm)", "HDFC Bank", "Credit Sales A/c" where the
-// key says "Balaji Interiors", "HDFC Bank — 1234", "Sales". Normalization
-// strips case/punctuation; containment (min 5 significant chars, to keep
-// short names like "Cash" exact) accepts one name embedding the other. The
-// answer key can also list explicit account_aliases per leg.
-function normalizeAccountName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-// Small edit-distance for typo tolerance ("Elecrticity Charges" — a real
-// ledger name from the pilot submission). Capped early for performance.
-function editDistanceAtMost(a: string, b: string, max: number): boolean {
-  if (Math.abs(a.length - b.length) > max) {
-    return false;
-  }
-  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const current = [i];
-    let rowMin = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
-      rowMin = Math.min(rowMin, current[j]);
-    }
-    if (rowMin > max) {
-      return false;
-    }
-    previous = current;
-  }
-  return previous[b.length] <= max;
-}
-
-// GST ledgers are matched by tax HEAD, not by exact wording: the authored
-// pack (and Tally's own defaults) name them plainly "IGST"/"CGST"/"SGST",
-// generated keys say "Output IGST"/"Input CGST", and a 4-letter name can
-// never clear the 5-char containment floor below — so a learner posting the
-// right head to the right side was scored ACCOUNT_WRONG on every tax leg
-// (Garima's Level 2, 2026-09-02). Input-vs-output side is still judged by
-// diffGst, so this leniency only removes the naming penalty.
-const GST_HEAD_TOKEN = /\b(cgst|sgst|igst)\b/i;
-
-function gstHeadOf(name: string): string | null {
-  const match = GST_HEAD_TOKEN.exec(name);
-  return match ? match[1].toLowerCase() : null;
-}
-
-// Ledger names are the learner's own. The same expense head is "Rent" in
-// the key, "Office Rent" in one learner's Tally and "Rent A/c" in another's;
-// "Salaries" vs "SALARY AC"; "Electricity Charges" vs "Electricity Bill".
-// Whole-name comparison flagged all three as ACCOUNT_WRONG on Praveen's
-// Level 4 (2026-09-03) for postings that were right. Names match when,
-// after dropping filler words (office, bill, charges, a/c, account,
-// expenses…) and plural endings, their remaining words are IDENTICAL —
-// equality, not overlap, so "Petty Cash" ≠ "Cash", "Sales Returns" ≠
-// "Sales", "Warehouse Rent" ≠ "Office Rent".
-const FILLER_TOKENS = new Set([
-  'a', 'ac', 'acc', 'account', 'accounts', 'ledger', 'office', 'bill', 'bills',
-  'charge', 'charges', 'expense', 'expenses', 'exp', 'payable', 'payables',
-  'the', 'of', 'and', 'for', 'to', 'general', 'misc', 'sundry',
-]);
-
-function stemToken(token: string): string {
-  if (token.length > 4 && token.endsWith('ies')) return token.slice(0, -3) + 'y';
-  if (token.length > 4 && token.endsWith('es') && !token.endsWith('ses')) return token.slice(0, -2);
-  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
-  return token;
-}
-
-function significantTokens(name: string): string[] {
-  return name
-    .toLowerCase()
-    .replace(/a\/c/g, ' ac ')
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length > 0 && !FILLER_TOKENS.has(token))
-    .map(stemToken)
-    .sort();
-}
-
-function significantTokensMatch(actual: string, expected: string): boolean {
-  const a = significantTokens(actual);
-  const b = significantTokens(expected);
-  return a.length > 0 && a.length === b.length && a.every((token, index) => token === b[index]);
-}
-
-const RETURNS_TOKEN = /\breturns?\b/i;
-
-function accountNamesMatch(actual: string, expected: string): boolean {
-  const a = normalizeAccountName(actual);
-  const b = normalizeAccountName(expected);
-  if (a === b) {
-    return true;
-  }
-  const actualHead = gstHeadOf(actual);
-  if (actualHead !== null && actualHead === gstHeadOf(expected)) {
-    return true;
-  }
-  if (significantTokensMatch(actual, expected)) {
-    return true;
-  }
-  // "Sales Returns" embeds "Sales" and "Purchase Returns" embeds
-  // "Purchases": containment/typo tolerance below must never equate a
-  // returns ledger with its base ledger (a credit note posted to Sales is
-  // exactly the error the key is trying to catch). Same rule the TB tie-out
-  // applies via exact-first matching.
-  if (RETURNS_TOKEN.test(actual) !== RETURNS_TOKEN.test(expected)) {
-    return false;
-  }
-  const shorter = a.length <= b.length ? a : b;
-  const longer = a.length <= b.length ? b : a;
-  if (shorter.length >= 5 && longer.includes(shorter)) {
-    return true;
-  }
-  // Typo tolerance scaled to name length — names of 8+ significant chars
-  // allow 2 edits (a transposed pair costs 2 in plain Levenshtein and is the
-  // most common real typo — "Purchsaes"), medium names 1, short names none
-  // (too collision-prone).
-  // Long names (14+ chars) allow 3 edits: "Office Maintanece" for "Office
-  // Maintenance" is 3 edits and was scored ACCOUNT_WRONG on a correct
-  // posting (Praveen's Level 3, 2026-09-03), and at that length a 3-edit
-  // collision between two genuinely different ledgers does not occur in
-  // the pack ("Karnataka Emporium" vs "Kolkata Emporium" is 4+).
-  const maxEdits = shorter.length >= 14 ? 3 : shorter.length >= 8 ? 2 : shorter.length >= 6 ? 1 : 0;
-  return maxEdits > 0 && editDistanceAtMost(a, b, maxEdits);
-}
-
 function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry): boolean {
   if (accountNamesMatch(entry.ledgerName, leg.correct_account)) {
     return true;
@@ -405,10 +293,47 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   diffs.push(diffGst(voucher, expected, expectedLegs, sequence));
   diffs.push(diffTds(voucher, expected, expectedLegs, sequence));
   diffs.push(diffBillReference(voucher, expected, sequence));
-  // Narration is not scored (2026-09-10): no narration diff, no
-  // NARRATION_MISSING/WEAK, and narration_discipline is a retired concept.
+  // Narration is scored for ONE thing only (2026-09-10 meeting): a bank
+  // voucher's narration must carry the bank statement's transaction
+  // reference, copied as printed. Nothing else about narration is judged,
+  // and narration_discipline stays a retired concept.
+  const bankReferenceDiff = diffBankReference(voucher, expectedLegs, sequence);
+  if (bankReferenceDiff) {
+    diffs.push(bankReferenceDiff);
+  }
 
   return diffs;
+}
+
+// The statement reference the key's narration was rewritten to carry
+// (build-bank-statement.ts applyBankReferences: "... via bank, Ref
+// NEFT/N24042601/KAREMP/INV-005."). Only transactions whose key narration
+// names such a reference are checked; a text-mode batch has none.
+// Only a statement-shaped reference counts: it carries the stamp (the
+// N/CD/CW code with the date and line number). "Ref INV-012" in a key
+// narration is a bill number, not a bank reference, and is not checked.
+const KEY_BANK_REFERENCE = /\bRef\s+([A-Z0-9][A-Z0-9 \/\-]*?(?:N|CD|CW)\d{8}[A-Z0-9 \/\-]*?)(?=[,.]|$)/;
+// The learner may paste the whole reference or just its distinctive stamp.
+const REFERENCE_STAMP = /\b(?:N|CD|CW)\d{8}\b/i;
+
+function diffBankReference(voucher: Voucher, expectedLegs: AnswerKeyEntry[], voucherRef: number): VoucherDiff | null {
+  const keyNarration = expectedLegs.map((leg) => leg.narration ?? '').find((text) => KEY_BANK_REFERENCE.test(text));
+  if (!keyNarration) {
+    return null;
+  }
+  const reference = KEY_BANK_REFERENCE.exec(keyNarration)![1].trim();
+  const stamp = REFERENCE_STAMP.exec(reference)?.[0] ?? null;
+  const posted = voucher.narration.replace(/\s+/g, '').toLowerCase();
+  const present =
+    posted.includes(reference.replace(/\s+/g, '').toLowerCase()) ||
+    (stamp !== null && posted.includes(stamp.toLowerCase()));
+  return {
+    voucherRef,
+    field: 'narration',
+    expected_masked: true,
+    is_correct: present,
+    error_code: present ? null : 'NARRATION_MISSING',
+  };
 }
 
 // Inference for the "unexpected tax" checks must ignore ledger entries that
@@ -646,8 +571,17 @@ function amountsMatch(actual: number, expected: number): boolean {
   return Math.abs(actual - expected) < 0.005;
 }
 
-function computeWeightedScore(diffs: VoucherDiff[]): number {
-  let totalWeight = 0;
+// Submission-level penalties (2026-09-10): every ledger set-up finding and
+// every blank or duplicate voucher costs one standard field's weight, added
+// to the denominator and never earned. Extra and reversal vouchers are
+// reported but cost nothing: they may be legitimate corrections.
+function submissionPenaltyWeight(unmatched: UnmatchedVoucher[], findings: LedgerFinding[]): number {
+  const voucherPenalties = unmatched.filter((voucher) => voucher.kind === 'blank' || voucher.kind === 'duplicate').length;
+  return (voucherPenalties + findings.length) * STANDARD_WEIGHT;
+}
+
+function computeWeightedScore(diffs: VoucherDiff[], penaltyWeight = 0): number {
+  let totalWeight = penaltyWeight;
   let earnedWeight = 0;
 
   for (const diff of diffs) {
@@ -937,6 +871,19 @@ export function matchVouchersToTransactions(
   vouchers: Voucher[],
   transactionGroups: AnswerKeyEntry[][],
 ): (Voucher | undefined)[] {
+  return matchVouchersToTransactionsDetailed(vouchers, transactionGroups).matched;
+}
+
+export type VoucherMatching = {
+  matched: (Voucher | undefined)[];
+  matchedIndexes: (number | undefined)[];
+  usedIndexes: Set<number>;
+};
+
+export function matchVouchersToTransactionsDetailed(
+  vouchers: Voucher[],
+  transactionGroups: AnswerKeyEntry[][],
+): VoucherMatching {
   const used = new Set<number>();
 
   function similarity(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): number {
@@ -997,7 +944,283 @@ export function matchVouchersToTransactions(
     });
   }
 
-  return assigned.map((voucherIndex) => (voucherIndex === undefined ? undefined : vouchers[voucherIndex]));
+  return {
+    matched: assigned.map((voucherIndex) => (voucherIndex === undefined ? undefined : vouchers[voucherIndex])),
+    matchedIndexes: assigned,
+    usedIndexes: used,
+  };
+}
+
+// Composite postings (2026-09-10). One-to-one matching cannot see two
+// correct ways of recording the same thing: a transaction posted as TWO
+// vouchers (Yeshas booked every April purchase without TDS and deducted the
+// TDS in a separate journal: the purchase scored TDS_MISSING and the
+// journals were invisible), or two transactions posted as ONE voucher
+// (Praveen's software JV: Dr Software Subscription 3,000, Dr Prepaid
+// Software 15,000, Cr Bank 18,000 is exactly the 18,000 payment plus the
+// 15,000 prepaid transfer, and scored one wrong voucher plus one missing).
+// After the one-to-one pass and its diffs, every transaction still carrying
+// an error is tried again: as a SPLIT (its matched voucher plus one unused
+// voucher, or two unused vouchers when nothing matched), then as a COMBINED
+// posting (paired with another erroneous transaction against one voucher).
+// A candidate is accepted only when the NET ledger effect is identical,
+// account by account, and the rescored diffs carry fewer errors. A split
+// is scored as the merged voucher; a combined voucher scores every
+// structural field of both transactions correct and still judges GST, TDS
+// and the bill reference on the voucher as posted.
+// Bounds keep the pair search cheap on a 100-voucher pack: every erroneous
+// transaction is still tried (Yeshas's April had well over a dozen); the
+// pool of unused vouchers is what is capped.
+const MAX_COMPOSITE_ERRONEOUS = 60;
+const MAX_COMPOSITE_UNUSED = 20;
+const COMPOSITE_TOLERANCE = 1;
+
+const TAX_LEDGER_PATTERN = /gst|tds/i;
+
+function signedAmount(entry: LedgerEntry): number {
+  return entry.drOrCr === 'Dr' ? entry.amount : -entry.amount;
+}
+
+function errorCount(diffs: VoucherDiff[]): number {
+  return diffs.filter((diff) => !diff.is_correct).length;
+}
+
+function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[]): boolean {
+  const expected = new Map<string, { leg: AnswerKeyEntry; net: number }>();
+  for (const leg of legs) {
+    const key = normalizeAccountName(leg.correct_account);
+    const current = expected.get(key) ?? { leg, net: 0 };
+    current.net += leg.dr_cr === 'Dr' ? leg.amount : -leg.amount;
+    expected.set(key, current);
+  }
+  // Exact names claim their entries first, the lenient match only serves
+  // accounts left with nothing: the typo tolerance would otherwise let the
+  // "Input CGST" leg absorb the posted "Input SGST" line as well (one edit
+  // apart) and the effect could never balance.
+  const remaining = [...entries];
+  const actualByAccount = new Map<string, number>();
+  for (const key of expected.keys()) {
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      if (normalizeAccountName(remaining[i].ledgerName) === key) {
+        actualByAccount.set(key, (actualByAccount.get(key) ?? 0) + signedAmount(remaining[i]));
+        remaining.splice(i, 1);
+      }
+    }
+  }
+  for (const [key, { leg }] of expected) {
+    if (actualByAccount.has(key)) continue;
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      if (legMatchesEntry(remaining[i], leg)) {
+        actualByAccount.set(key, (actualByAccount.get(key) ?? 0) + signedAmount(remaining[i]));
+        remaining.splice(i, 1);
+      }
+    }
+  }
+  for (const [key, { net }] of expected) {
+    if (Math.abs((actualByAccount.get(key) ?? 0) - net) > COMPOSITE_TOLERANCE) {
+      return false;
+    }
+  }
+  // Leftover GST/TDS lines are tolerated: the authored pack key carries
+  // tax as metadata on the party leg, not as legs, so a correct posting
+  // always has tax lines the key never lists. Their correctness is judged
+  // by diffGst/diffTds on the merged voucher, never here.
+  const leftover = new Map<string, number>();
+  for (const entry of remaining) {
+    if (TAX_LEDGER_PATTERN.test(entry.ledgerName)) continue;
+    const key = normalizeAccountName(entry.ledgerName);
+    leftover.set(key, (leftover.get(key) ?? 0) + signedAmount(entry));
+  }
+  return [...leftover.values()].every((value) => Math.abs(value) <= COMPOSITE_TOLERANCE);
+}
+
+// The merged voucher a split posting amounts to: one entry per ledger with
+// the net side and amount, bill allocations carried over, the type taken
+// from whichever part carries the expected voucher type.
+function mergeVouchers(parts: Voucher[], expectedType: string): Voucher {
+  const primary =
+    parts.find((part) => part.voucherType.trim().toLowerCase() === expectedType.trim().toLowerCase()) ?? parts[0];
+  const byLedger = new Map<string, { name: string; signed: number; allocations: LedgerEntry['billAllocations'] }>();
+  for (const part of parts) {
+    for (const entry of part.ledgerEntries) {
+      const key = normalizeAccountName(entry.ledgerName);
+      const current = byLedger.get(key) ?? { name: entry.ledgerName, signed: 0, allocations: [] };
+      current.signed += signedAmount(entry);
+      current.allocations = [...current.allocations, ...entry.billAllocations];
+      byLedger.set(key, current);
+    }
+  }
+  const ledgerEntries: LedgerEntry[] = [...byLedger.values()]
+    .filter((ledger) => Math.abs(ledger.signed) >= 0.005)
+    .map((ledger) => ({
+      ledgerName: ledger.name,
+      amount: round2(Math.abs(ledger.signed)),
+      drOrCr: ledger.signed > 0 ? 'Dr' : 'Cr',
+      billAllocations: ledger.allocations,
+    }));
+  return {
+    voucherType: primary.voucherType,
+    date: primary.date,
+    narration: parts.map((part) => part.narration).filter((text) => text.trim().length > 0).join(' | '),
+    ledgerEntries,
+  };
+}
+
+// The voucher-level expectation of a transaction: GST/TDS/bill reference
+// read from whichever leg states them (see diffVoucherAgainstAnswerKey).
+function voucherLevelExpectation(expectedLegs: AnswerKeyEntry[]): AnswerKeyEntry {
+  const gstLeg = expectedLegs.find((leg) => leg.gst_head !== null) ?? expectedLegs[0];
+  const tdsLeg = expectedLegs.find((leg) => leg.tds_section !== null) ?? expectedLegs[0];
+  const referenceLeg = expectedLegs.find((leg) => leg.bill_reference !== null) ?? expectedLegs[0];
+  return {
+    ...expectedLegs[0],
+    gst_head: gstLeg.gst_head,
+    gst_rate: gstLeg.gst_rate,
+    tds_section: tdsLeg.tds_section,
+    tds_rate: tdsLeg.tds_rate,
+    tds_base: tdsLeg.tds_base,
+    bill_reference: referenceLeg.bill_reference,
+  };
+}
+
+function diffsForCombinedVoucher(voucher: Voucher, expectedLegs: AnswerKeyEntry[], allLegs: AnswerKeyEntry[]): VoucherDiff[] {
+  const sequence = expectedLegs[0].sequence;
+  const diffs: VoucherDiff[] = [];
+  for (let i = 0; i < consolidateExpectedLegs(expectedLegs).length; i++) {
+    for (const field of ['account', 'dr_cr', 'amount'] as const) {
+      diffs.push({ voucherRef: sequence, field, expected_masked: true, is_correct: true, error_code: null });
+    }
+  }
+  diffs.push({ voucherRef: sequence, field: 'voucher_type', expected_masked: true, is_correct: true, error_code: null });
+  const expected = voucherLevelExpectation(expectedLegs);
+  diffs.push(diffGst(voucher, expected, allLegs, sequence));
+  diffs.push(diffTds(voucher, expected, allLegs, sequence));
+  diffs.push(diffBillReference(voucher, expected, sequence));
+  const bankReferenceDiff = diffBankReference(voucher, expectedLegs, sequence);
+  if (bankReferenceDiff) {
+    diffs.push(bankReferenceDiff);
+  }
+  return diffs;
+}
+
+type CompositeState = {
+  matchedIndexes: (number | undefined)[];
+  matched: (Voucher | undefined)[];
+  used: Set<number>;
+  diffs: VoucherDiff[][];
+  composites: CompositeMatch[];
+};
+
+function resolveComposites(vouchers: Voucher[], transactionGroups: AnswerKeyEntry[][], state: CompositeState): void {
+  const erroneous = () => transactionGroups.map((_, index) => index).filter((index) => errorCount(state.diffs[index]) > 0);
+  const unused = () => vouchers.map((_, index) => index).filter((index) => !state.used.has(index));
+  if (erroneous().length === 0 || erroneous().length > MAX_COMPOSITE_ERRONEOUS || unused().length > MAX_COMPOSITE_UNUSED) {
+    return;
+  }
+
+  // Splits.
+  for (const index of erroneous()) {
+    const legs = transactionGroups[index];
+    const matchedIndex = state.matchedIndexes[index];
+    const parts: [number, number][] =
+      matchedIndex !== undefined
+        ? unused().map((j) => [matchedIndex, j] as [number, number])
+        : unused().flatMap((a, i, all) => all.slice(i + 1).map((b) => [a, b] as [number, number]));
+    for (const [a, b] of parts) {
+      const pieces = [vouchers[a], vouchers[b]];
+      if (!ledgerEffectMatches(pieces.flatMap((piece) => piece.ledgerEntries), legs)) continue;
+      const merged = mergeVouchers(pieces, legs[0].voucher_type);
+      const diffs = diffVoucherAgainstAnswerKey(merged, legs);
+      if (errorCount(diffs) >= errorCount(state.diffs[index])) continue;
+      state.matched[index] = merged;
+      state.matchedIndexes[index] = a;
+      state.used.add(a);
+      state.used.add(b);
+      state.diffs[index] = diffs;
+      state.composites.push({ kind: 'split', sequences: [legs[0].sequence], positions: [a + 1, b + 1].sort((x, y) => x - y) });
+      break;
+    }
+  }
+
+  // Combined.
+  const candidates = erroneous();
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const first = candidates[i];
+      const second = candidates[j];
+      if (errorCount(state.diffs[first]) === 0 || state.matchedIndexes[first] === state.matchedIndexes[second] && state.matchedIndexes[first] !== undefined) continue;
+      if (errorCount(state.diffs[second]) === 0) continue;
+      const allLegs = [...transactionGroups[first], ...transactionGroups[second]];
+      const voucherCandidates = [state.matchedIndexes[first], state.matchedIndexes[second], ...unused()].filter(
+        (index): index is number => index !== undefined,
+      );
+      for (const voucherIndex of voucherCandidates) {
+        if (!ledgerEffectMatches(vouchers[voucherIndex].ledgerEntries, allLegs)) continue;
+        const firstDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[first], allLegs);
+        const secondDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[second], allLegs);
+        if (errorCount(firstDiffs) + errorCount(secondDiffs) >= errorCount(state.diffs[first]) + errorCount(state.diffs[second])) continue;
+        for (const index of [first, second]) {
+          const previous = state.matchedIndexes[index];
+          if (previous !== undefined && previous !== voucherIndex) state.used.delete(previous);
+          state.matchedIndexes[index] = voucherIndex;
+          state.matched[index] = vouchers[voucherIndex];
+        }
+        state.used.add(voucherIndex);
+        state.diffs[first] = firstDiffs;
+        state.diffs[second] = secondDiffs;
+        state.composites.push({
+          kind: 'combined',
+          sequences: [transactionGroups[first][0].sequence, transactionGroups[second][0].sequence],
+          positions: [voucherIndex + 1],
+        });
+        break;
+      }
+    }
+  }
+}
+
+// Every voucher no transaction claimed, described for the feedback
+// (2026-09-10): blank (no ledger line, or nothing but zeros), a duplicate of
+// another voucher in the export, the exact reversal of another voucher, or
+// simply extra.
+const MAX_LISTED_LEDGERS = 4;
+
+function legsSignature(voucher: Voucher, flipped = false): string {
+  return voucher.ledgerEntries
+    .map((entry) => {
+      const side = flipped ? (entry.drOrCr === 'Dr' ? 'Cr' : 'Dr') : entry.drOrCr;
+      return `${normalizeAccountName(entry.ledgerName)}:${side}:${round2(entry.amount)}`;
+    })
+    .sort()
+    .join(',');
+}
+
+export function describeUnmatchedVouchers(vouchers: Voucher[], usedIndexes: Set<number>): UnmatchedVoucher[] {
+  const signatures = vouchers.map((voucher) => `${voucher.voucherType.trim().toLowerCase()}|${legsSignature(voucher)}`);
+  const flippedSignatures = vouchers.map((voucher) => legsSignature(voucher, true));
+  const plainSignatures = vouchers.map((voucher) => legsSignature(voucher));
+  const unmatched: UnmatchedVoucher[] = [];
+  vouchers.forEach((voucher, index) => {
+    if (usedIndexes.has(index)) return;
+    const blank = voucher.ledgerEntries.length === 0 || voucher.ledgerEntries.every((entry) => Math.abs(entry.amount) < 0.005);
+    let kind: UnmatchedVoucher['kind'] = 'extra';
+    if (blank) {
+      kind = 'blank';
+    } else if (signatures.some((signature, other) => other !== index && signature === signatures[index])) {
+      kind = 'duplicate';
+    } else if (plainSignatures.some((signature, other) => other !== index && signature === flippedSignatures[index])) {
+      kind = 'reversal';
+    }
+    unmatched.push({
+      position: index + 1,
+      date: voucher.date,
+      voucher_type: voucher.voucherType,
+      ledgers: [...new Set(voucher.ledgerEntries.map((entry) => entry.ledgerName))].slice(0, MAX_LISTED_LEDGERS),
+      amount: voucher.ledgerEntries.reduce((max, entry) => Math.max(max, entry.amount), 0),
+      kind,
+    });
+  });
+  return unmatched;
 }
 
 // Groups answer key entries by sequence: a transaction's answer key is real
@@ -1028,17 +1251,22 @@ export function scoreSubmission(
   // evaluateTrialBalanceTieOut). Omitted/null on the first scored posting.
   options: { previousTrialBalance?: ParsedTrialBalance | null } = {},
 ): ScoringResult {
-  const perVoucherDiffs: VoucherDiff[] = [];
-
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
-  const matchedVouchers = matchVouchersToTransactions(dayBook.vouchers, transactionGroups);
+  const matching = matchVouchersToTransactionsDetailed(dayBook.vouchers, transactionGroups);
+  const state: CompositeState = {
+    matchedIndexes: [...matching.matchedIndexes],
+    matched: [...matching.matched],
+    used: new Set(matching.usedIndexes),
+    diffs: transactionGroups.map((expectedLegs, index) => diffVoucherAgainstAnswerKey(matching.matched[index], expectedLegs)),
+    composites: [],
+  };
+  resolveComposites(dayBook.vouchers, transactionGroups, state);
+  const perVoucherDiffs = state.diffs.flat();
 
-  transactionGroups.forEach((expectedLegs, index) => {
-    perVoucherDiffs.push(...diffVoucherAgainstAnswerKey(matchedVouchers[index], expectedLegs));
-  });
-
+  const unmatchedVouchers = describeUnmatchedVouchers(dayBook.vouchers, state.used);
+  const ledgerFindings = findLedgerFindings(dayBook.vouchers, answerKey);
   const tieOut = evaluateTrialBalanceTieOut(trialBalance, answerKey, options.previousTrialBalance ?? null);
-  const weightedScore = computeWeightedScore(perVoucherDiffs);
+  const weightedScore = computeWeightedScore(perVoucherDiffs, submissionPenaltyWeight(unmatchedVouchers, ledgerFindings));
   const overallResult = computeOverallResult(weightedScore, tieOut.tieOut);
   const conceptResults = computeConceptResults(perVoucherDiffs, transactionGroups, tieOut.tieOut);
 
@@ -1046,6 +1274,9 @@ export function scoreSubmission(
     per_voucher_diffs: perVoucherDiffs,
     tb_tie_out: tieOut.tieOut,
     tb_tie_out_mismatches: tieOut.mismatches,
+    unmatched_vouchers: unmatchedVouchers,
+    ledger_findings: ledgerFindings,
+    composite_matches: state.composites,
     weighted_score: weightedScore,
     overall_result: overallResult,
     concept_results: conceptResults,
@@ -1060,24 +1291,36 @@ export function collectErrorCodes(scoringResult: ScoringResult): ScoringErrorCod
 
 // Recomputes the derived fields of a ScoringResult from a (possibly
 // adjudicated) diff list. Kept here so weighted-score thresholds, GST/TDS
-// weighting, and the concept rollup live in exactly one place — the
-// adjudicator (adjudicate-findings.ts) flips dismissed findings to correct
-// and calls this, never re-implementing any scoring math.
+// weighting, submission-level penalties and the concept rollup live in
+// exactly one place — the adjudicator (adjudicate-findings.ts) flips
+// dismissed findings to correct and calls this, never re-implementing any
+// scoring math. `carried` are the submission-level facts the diffs do not
+// encode (tie-out mismatches, extra vouchers, ledger findings, composites).
+export type CarriedScoringFacts = Pick<
+  ScoringResult,
+  'tb_tie_out_mismatches' | 'unmatched_vouchers' | 'ledger_findings' | 'composite_matches'
+>;
+
 export function rebuildScoringResult(
   diffs: VoucherDiff[],
   tbTieOut: boolean,
   answerKey: AnswerKey,
-  tbTieOutMismatches: TieOutMismatch[] = [],
+  carried: CarriedScoringFacts = {},
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
-  const weightedScore = computeWeightedScore(diffs);
+  const unmatchedVouchers = carried.unmatched_vouchers ?? [];
+  const ledgerFindings = carried.ledger_findings ?? [];
+  const weightedScore = computeWeightedScore(diffs, submissionPenaltyWeight(unmatchedVouchers, ledgerFindings));
   const overallResult = computeOverallResult(weightedScore, tbTieOut);
   const conceptResults = computeConceptResults(diffs, transactionGroups, tbTieOut);
 
   return {
     per_voucher_diffs: diffs,
     tb_tie_out: tbTieOut,
-    tb_tie_out_mismatches: tbTieOutMismatches,
+    tb_tie_out_mismatches: carried.tb_tie_out_mismatches ?? [],
+    unmatched_vouchers: unmatchedVouchers,
+    ledger_findings: ledgerFindings,
+    composite_matches: carried.composite_matches ?? [],
     weighted_score: weightedScore,
     overall_result: overallResult,
     concept_results: conceptResults,

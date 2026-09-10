@@ -6,7 +6,7 @@ import {
 } from '@/lib/llm/prompts/adjudication';
 import { AdjudicationSchema, type AdjudicationVerdict } from '@/lib/schemas/adjudication';
 import type { AnswerKey } from '@/lib/schemas/exercise';
-import type { ScoringResult, VoucherDiff } from '@/lib/schemas/scoring';
+import type { ScoredField, ScoringResult, VoucherDiff } from '@/lib/schemas/scoring';
 import type { ParsedDayBook } from '@/lib/schemas/voucher';
 import {
   groupAnswerKeyEntriesBySequence,
@@ -15,6 +15,18 @@ import {
 } from '@/lib/tutor/score-submission';
 
 const MAX_ATTEMPTS = 3;
+
+// What the judge may excuse (2026-09-10 meeting): naming and reference
+// FORMAT only. Amount, GST, TDS, voucher type and Dr/Cr findings are never
+// sent to it and a dismiss verdict on them is ignored. In March 2025 the
+// judge waved through Garima's TDS at double the rate and a freight line
+// split out of a composite sale; from here on those stand as the engine
+// found them. A wholly missing voucher is not a naming question either.
+const DISMISSABLE_FIELDS: readonly ScoredField[] = ['account', 'bill_reference'];
+
+export function isDismissable(diff: VoucherDiff): boolean {
+  return DISMISSABLE_FIELDS.includes(diff.field) && diff.error_code !== 'VOUCHER_MISSING';
+}
 
 // A submission with more flagged transactions than this isn't suffering from
 // checker rigidity — it's genuinely broken (wrong period, wrong company,
@@ -36,7 +48,7 @@ export async function adjudicateScoringResult(
   answerKey: AnswerKey,
   scoringResult: ScoringResult,
 ): Promise<ScoringResult> {
-  const flaggedDiffs = scoringResult.per_voucher_diffs.filter((diff) => !diff.is_correct);
+  const flaggedDiffs = scoringResult.per_voucher_diffs.filter((diff) => !diff.is_correct && isDismissable(diff));
   if (flaggedDiffs.length === 0) {
     return scoringResult;
   }
@@ -117,11 +129,16 @@ export function applyAdjudicationVerdicts(
   }
 
   const adjustedDiffs: VoucherDiff[] = scoringResult.per_voucher_diffs.map((diff) => {
-    if (diff.is_correct || !dismissed.has(`${diff.voucherRef}:${diff.field}`)) {
+    if (diff.is_correct || !isDismissable(diff) || !dismissed.has(`${diff.voucherRef}:${diff.field}`)) {
       return diff;
     }
     return { ...diff, is_correct: true, error_code: null };
   });
 
-  return rebuildScoringResult(adjustedDiffs, scoringResult.tb_tie_out, answerKey, scoringResult.tb_tie_out_mismatches ?? []);
+  return rebuildScoringResult(adjustedDiffs, scoringResult.tb_tie_out, answerKey, {
+    tb_tie_out_mismatches: scoringResult.tb_tie_out_mismatches ?? [],
+    unmatched_vouchers: scoringResult.unmatched_vouchers ?? [],
+    ledger_findings: scoringResult.ledger_findings ?? [],
+    composite_matches: scoringResult.composite_matches ?? [],
+  });
 }

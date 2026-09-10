@@ -41,6 +41,9 @@ job: for EACH flagged finding, decide "uphold" (a genuine accounting error the
 trainee should be coached on) or "dismiss" (an acceptable variation the checker
 was too rigid about).
 
+You are shown ONLY ledger-naming and bill-reference findings. Amount, GST,
+TDS, voucher-type and debit/credit findings are decided by the checker and
+are never yours to excuse (house decision, 2026-09-10).
 UPHOLD real errors:
 - Wrong GST regime (IGST vs CGST/SGST) or wrong GST side (Output GST reversed
   through Input, or vice versa)

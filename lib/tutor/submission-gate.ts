@@ -54,6 +54,10 @@ export function runValidityGate(
   if (voucherCountError) {
     errors.push(voucherCountError);
   }
+  const blankVoucherError = checkBlankVouchers(dayBook);
+  if (blankVoucherError) {
+    errors.push(blankVoucherError);
+  }
 
   if (errors.length > 0) {
     return { status: 'invalid', errors };
@@ -157,4 +161,29 @@ function checkVoucherCount(
   }
 
   return null;
+}
+
+// A saved voucher with no ledger line, or nothing but zero amounts, is not a
+// posting (Garima's 1 April purchase no. 3, Yeshas's April payment,
+// 2026-09-10 audits). It never matches a transaction and only muddies the
+// count, so the upload is bounced with the voucher named: deleting it takes
+// seconds and the scored export is then real.
+function checkBlankVouchers(dayBook: ParsedDayBook): ValidityError | null {
+  const blank = dayBook.vouchers
+    .map((voucher, index) => ({ voucher, position: index + 1 }))
+    .filter(
+      ({ voucher }) =>
+        voucher.ledgerEntries.length === 0 || voucher.ledgerEntries.every((entry) => Math.abs(entry.amount) < 0.005),
+    );
+  if (blank.length === 0) {
+    return null;
+  }
+  const named = blank
+    .slice(0, 3)
+    .map(({ voucher, position }) => `${voucher.voucherType} voucher no. ${position} dated ${voucher.date}`)
+    .join(', ');
+  return {
+    code: 'blank_vouchers',
+    message: `The Day Book contains ${blank.length === 1 ? 'a blank voucher' : `${blank.length} blank vouchers`} with no ledger lines (${named}). Delete ${blank.length === 1 ? 'it' : 'them'} in Tally, re-export and upload again.`,
+  };
 }

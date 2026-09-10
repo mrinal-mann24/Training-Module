@@ -139,11 +139,53 @@ export const TieOutMismatchSchema = z.object({
 });
 export type TieOutMismatch = z.infer<typeof TieOutMismatchSchema>;
 
+// A Day Book voucher that matched no transaction of the batch (2026-09-10,
+// the "extra vouchers" the audits found invisible: Garima's blank purchase,
+// Praveen's Suspense detour and its reversal, Yeshas's separate TDS
+// journals before split matching). `kind` is what the engine could tell
+// about it; `ledgers` and `amount` let the coaching name it.
+export const UNMATCHED_VOUCHER_KINDS = ['blank', 'duplicate', 'reversal', 'extra'] as const;
+export const UnmatchedVoucherSchema = z.object({
+  position: z.number().int().positive(),
+  date: z.string(),
+  voucher_type: z.string(),
+  ledgers: z.array(z.string()),
+  amount: z.number(),
+  kind: z.enum(UNMATCHED_VOUCHER_KINDS),
+});
+export type UnmatchedVoucher = z.infer<typeof UnmatchedVoucherSchema>;
+
+// Ledger set-up findings, reported once per submission rather than per
+// voucher (2026-09-10 meeting): a GST ledger whose name states no Input/
+// Output side, a second bank ledger for a one-bank company, two ledgers
+// for the same party. Each costs one standard field's weight.
+export const LEDGER_FINDING_CODES = ['GST_LEDGER_NO_SIDE', 'SECOND_BANK_LEDGER', 'DUPLICATE_PARTY_LEDGER'] as const;
+export const LedgerFindingSchema = z.object({
+  code: z.enum(LEDGER_FINDING_CODES),
+  ledgers: z.array(z.string()),
+});
+export type LedgerFinding = z.infer<typeof LedgerFindingSchema>;
+
+// A transaction (or two) accepted through a composite posting: one voucher
+// whose ledger effect equals two key transactions combined (Praveen's
+// software JV), or two vouchers whose combined effect equals one key
+// transaction (Yeshas's purchase + separate TDS journal). Informational;
+// the diffs for those sequences are scored on the combined effect.
+export const CompositeMatchSchema = z.object({
+  kind: z.enum(['split', 'combined']),
+  sequences: z.array(z.number().int().positive()),
+  positions: z.array(z.number().int().positive()),
+});
+export type CompositeMatch = z.infer<typeof CompositeMatchSchema>;
+
 export const ScoringResultSchema = z.object({
   per_voucher_diffs: z.array(VoucherDiffSchema),
   tb_tie_out: z.boolean(),
   // Optional so results stored before the field existed still parse.
   tb_tie_out_mismatches: z.array(TieOutMismatchSchema).optional(),
+  unmatched_vouchers: z.array(UnmatchedVoucherSchema).optional(),
+  ledger_findings: z.array(LedgerFindingSchema).optional(),
+  composite_matches: z.array(CompositeMatchSchema).optional(),
   weighted_score: z.number(),
   overall_result: z.enum(OVERALL_RESULTS),
   // Per-concept roll-up (Unit 09): whether every scored field belonging to a

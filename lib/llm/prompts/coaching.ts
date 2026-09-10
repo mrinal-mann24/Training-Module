@@ -61,8 +61,9 @@ Write, in order:
   it matters, pilot-style. Never generic encouragement, never praise for
   anything the signal does not list. Empty array only if nothing was correct.
 - needs_work: bullet points drawn only from what the signal says was wrong.
-  At most 4 entries and never more than the number of areas listed in the
-  signal: one entry per listed area, restated in your own words. KEEP the
+  At most 6 entries and never more than the number of areas listed in the
+  signal (concept areas, extra vouchers, ledger set-up findings): one entry
+  per listed area, restated in your own words. KEEP the
   specific identifiers the signal gives (invoice/bill numbers, party names):
   "take another look at the GST treatment on INV-012" is right, "the GST
   treatment in the relevant transactions" is too vague to act on and is not
@@ -126,6 +127,16 @@ export type CoachingSignal = {
   // voucher", not "GST_HEAD_WRONG: expected IGST, got CGST".
   incorrectConceptDescriptions: string[];
   correctConceptDescriptions: string[];
+  // Day Book vouchers that matched no transaction of the batch, described
+  // with date, type, amount and ledgers (2026-09-10). Empty when every
+  // voucher was accounted for.
+  unmatchedVoucherDescriptions?: string[];
+  // Ledger set-up findings, one plain line each (GST ledger with no side,
+  // second bank ledger, two ledgers for one party). Empty when clean.
+  ledgerFindingDescriptions?: string[];
+  // Composite postings the engine accepted (a split or combined voucher
+  // whose ledger effect matched). Good news, stated as such.
+  compositeDescriptions?: string[];
   // Present only for explain/review exercises — see
   // score-qualitative.ts/combine-scoring. null for plain direct-entry exercises.
   qualitative: QualitativeCoachingSignal | null;
@@ -161,6 +172,15 @@ function buildUserMessage(signal: CoachingSignal): string {
     signal.incorrectConceptDescriptions.length > 0
       ? `Concepts to flag (${signal.incorrectConceptDescriptions.length} area(s), concept-level only, do not state the fix). Produce exactly one flagged_areas entry per area listed here, no more: ${signal.incorrectConceptDescriptions.join("; ")}`
       : "Concepts to flag: none — this was a clean pass",
+    (signal.unmatchedVoucherDescriptions?.length ?? 0) > 0
+      ? `Extra vouchers: these Day Book vouchers match no transaction of this batch. Add ONE needs_work entry that lists them plainly (date, type, amount, ledgers) and asks the learner to check whether each is a duplicate, a blank, a reversal or a posting that does not belong: ${signal.unmatchedVoucherDescriptions!.join("; ")}`
+      : null,
+    (signal.ledgerFindingDescriptions?.length ?? 0) > 0
+      ? `Ledger set-up findings (one needs_work entry each, name the ledgers exactly as given): ${signal.ledgerFindingDescriptions!.join("; ")}`
+      : null,
+    (signal.compositeDescriptions?.length ?? 0) > 0
+      ? `Accepted as posted (mention in went_well in one short line): ${signal.compositeDescriptions!.join("; ")}`
+      : null,
     signal.qualitative
       ? `Free-text answer quality — recall: ${signal.qualitative.recallDescription}; precision: ${signal.qualitative.precisionDescription}; reasoning: ${signal.qualitative.reasoningDescription}. Weave this into flagged_areas/praise in plain language — never state these as numbers or scores.`
       : null,

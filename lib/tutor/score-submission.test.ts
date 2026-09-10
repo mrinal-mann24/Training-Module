@@ -925,18 +925,18 @@ describe('multi-rate invoices: consolidated vs split GST lines (Garima Level 3 T
   }] });
 
   it('accepts the way Tally shows it: one combined CGST line and one SGST line', () => {
-    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 3300], ['SGST', 3300]]), { ledgers: [] }, answerKey);
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['Output CGST', 3300], ['Output SGST', 3300]]), { ledgers: [] }, answerKey);
     expect(result.per_voucher_diffs.filter((d) => !d.is_correct)).toEqual([]);
     expect(result.weighted_score).toBeCloseTo(1.0, 5);
   });
 
   it('equally accepts the split posting with a line per rate', () => {
-    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 2700], ['SGST', 2700], ['CGST', 600], ['SGST', 600]]), { ledgers: [] }, answerKey);
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['Output CGST', 2700], ['Output SGST', 2700], ['Output CGST', 600], ['Output SGST', 600]]), { ledgers: [] }, answerKey);
     expect(result.per_voucher_diffs.filter((d) => !d.is_correct)).toEqual([]);
   });
 
   it('still catches a missing SGST when CGST was posted twice', () => {
-    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['CGST', 3300], ['CGST', 3300]]), { ledgers: [] }, answerKey);
+    const result = scoreSubmission(voucher([['Mysore Decor', 46600], ['Sales', 40000], ['Output CGST', 3300], ['Output CGST', 3300]]), { ledgers: [] }, answerKey);
     expect(result.per_voucher_diffs.some((d) => d.error_code === 'GST_MISSING' || d.error_code === 'ACCOUNT_WRONG')).toBe(true);
   });
 });

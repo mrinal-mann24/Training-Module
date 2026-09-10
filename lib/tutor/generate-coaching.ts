@@ -7,7 +7,16 @@ import {
   type QualitativeCoachingSignal,
 } from '@/lib/llm/prompts/coaching';
 import { CoachingSchema, type Coaching } from '@/lib/schemas/coaching';
-import type { ScoringResult, OverallResult, VoucherDiff, ScoredField, TieOutMismatch } from '@/lib/schemas/scoring';
+import type {
+  ScoringResult,
+  OverallResult,
+  VoucherDiff,
+  ScoredField,
+  TieOutMismatch,
+  UnmatchedVoucher,
+  LedgerFinding,
+  CompositeMatch,
+} from '@/lib/schemas/scoring';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
 
@@ -146,7 +155,7 @@ export function groupDescriptionsByField(
 // asks for areas to re-look at, not an exhaustive error list. Highest-weighted
 // fields (GST/TDS, per score-submission.ts's FIELD_WEIGHT) sort first so the
 // most consequential errors survive the cap.
-const MAX_FLAGGED_AREAS = 4;
+const MAX_FLAGGED_AREAS = 6;
 
 const FIELD_FLAG_PRIORITY: Record<ScoredField, number> = {
   gst: 0,
@@ -234,6 +243,9 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
     overallResult: scoringResult.overall_result,
     tbTieOut: scoringResult.tb_tie_out,
     tbMismatchDescriptions: describeTieOutMismatches(scoringResult.tb_tie_out_mismatches ?? []),
+    unmatchedVoucherDescriptions: describeUnmatchedVouchers(scoringResult.unmatched_vouchers ?? []),
+    ledgerFindingDescriptions: describeLedgerFindings(scoringResult.ledger_findings ?? []),
+    compositeDescriptions: describeCompositeMatches(scoringResult.composite_matches ?? [], sequenceLabels),
     weightedScorePercent: Math.round(scoringResult.weighted_score * 100),
     incorrectConceptDescriptions,
     correctConceptDescriptions,
@@ -262,6 +274,57 @@ export function describeTieOutMismatches(mismatches: TieOutMismatch[]): string[]
     lines.push(`and ${mismatches.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) are off`);
   }
   return lines;
+}
+
+// Extra vouchers, ledger set-up findings and accepted composite postings
+// (2026-09-10), in plain words for the coaching call. Capped like the
+// tie-out list so a broken export cannot flood the prompt.
+const MAX_UNMATCHED_VOUCHERS = 6;
+
+function formatTallyDate(date: string): string {
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(date);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : date;
+}
+
+export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[] {
+  const kindText: Record<UnmatchedVoucher['kind'], string> = {
+    blank: 'a blank voucher with no ledger lines',
+    duplicate: 'a duplicate of another voucher in the export',
+    reversal: 'the exact reversal of another voucher in the export',
+    extra: 'a posting that matches nothing in this batch',
+  };
+  const lines = vouchers.slice(0, MAX_UNMATCHED_VOUCHERS).map((voucher) => {
+    const ledgers = voucher.ledgers.length > 0 ? `, ledgers ${voucher.ledgers.join(', ')}` : '';
+    const amount = voucher.amount > 0 ? `, Rs ${Math.round(voucher.amount).toLocaleString('en-IN')}` : '';
+    return `${voucher.voucher_type} voucher no. ${voucher.position} dated ${formatTallyDate(voucher.date)}${amount}${ledgers}: ${kindText[voucher.kind]}`;
+  });
+  if (vouchers.length > MAX_UNMATCHED_VOUCHERS) {
+    lines.push(`and ${vouchers.length - MAX_UNMATCHED_VOUCHERS} more voucher(s) matched nothing`);
+  }
+  return lines;
+}
+
+export function describeLedgerFindings(findings: LedgerFinding[]): string[] {
+  return findings.map((finding) => {
+    const names = finding.ledgers.join(', ');
+    switch (finding.code) {
+      case 'GST_LEDGER_NO_SIDE':
+        return `GST ledger(s) named without an Input or Output side (${names}); the house practice keeps a separate Input and Output ledger for each head`;
+      case 'SECOND_BANK_LEDGER':
+        return `more than one bank ledger in use (${names}) for a company with a single bank account; every bank entry belongs in one ledger`;
+      case 'DUPLICATE_PARTY_LEDGER':
+        return `two ledgers for the same party (${names}); receipts and payments must go to the ledger the invoice used, or the bills never clear`;
+    }
+  });
+}
+
+export function describeCompositeMatches(composites: CompositeMatch[], sequenceLabels?: Map<number, string>): string[] {
+  return composites.map((composite) => {
+    const labels = composite.sequences.map((sequence) => sequenceLabels?.get(sequence) ?? `transaction ${sequence}`);
+    return composite.kind === 'split'
+      ? `${labels[0]} was posted as two vouchers whose combined ledger effect is right, and was accepted as such`
+      : `${labels.join(' and ')} were posted as one combined voucher whose ledger effect is right, and were accepted as such`;
+  });
 }
 
 // Plain-language buckets for each qualitative subscore — never a number, per
