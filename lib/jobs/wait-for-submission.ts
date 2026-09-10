@@ -20,7 +20,9 @@ import {
   generateNextExercise,
   describeRectification,
   loadPreviousTrialBalance,
+  loadExpectedClosingBalances,
 } from '@/lib/jobs/advance-learner';
+import { evaluateBooksReconciliation } from '@/lib/tutor/books-reconciliation';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
 import type { ScoringResult } from '@/lib/schemas/scoring';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
@@ -180,7 +182,9 @@ export const waitForSubmission = inngest.createFunction(
             // Movement-based tie-out (2026-09-09): measured against the
             // learner's previous scored Trial Balance.
             const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
-            const engineResult = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+            const scored = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+            const expected = await loadExpectedClosingBalances(supabase, submission.learner_id, exercise.id);
+            const engineResult = { ...scored, books_reconciliation: evaluateBooksReconciliation(parsed.trialBalance, expected).differences };
             // Hybrid scoring (2026-08-20): same engine-finds/LLM-judges pass
             // as run-scoring.ts — fail-safe to the engine's verdicts.
             return adjudicateScoringResult(submission.learner_id, parsed.dayBook, answerKey, engineResult);

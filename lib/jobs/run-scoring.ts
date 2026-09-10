@@ -9,7 +9,9 @@ import {
   generateNextExercise,
   describeRectification,
   loadPreviousTrialBalance,
+  loadExpectedClosingBalances,
 } from '@/lib/jobs/advance-learner';
+import { evaluateBooksReconciliation } from '@/lib/tutor/books-reconciliation';
 import { parseDayBookXml, DayBookParseError } from '@/lib/parsing/daybook';
 import { parseTrialBalanceXml, TrialBalanceParseError } from '@/lib/parsing/trialbalance';
 import { runValidityGate, type ValidityError } from '@/lib/tutor/submission-gate';
@@ -119,7 +121,11 @@ export const runScoring = inngest.createFunction(
       // Movement-based tie-out (2026-09-09): measured against the learner's
       // previous scored Trial Balance.
       const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
-      return scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+      const result = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+      // Books reconciliation (2026-09-10): closing balances against the
+      // correct books, feedback only.
+      const expected = await loadExpectedClosingBalances(supabase, submission.learner_id, exercise.id);
+      return { ...result, books_reconciliation: evaluateBooksReconciliation(parsed.trialBalance, expected).differences };
     });
 
     // Hybrid scoring (2026-08-20): the engine's findings are adjudicated by

@@ -246,6 +246,10 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
     unmatchedVoucherDescriptions: describeUnmatchedVouchers(scoringResult.unmatched_vouchers ?? []),
     ledgerFindingDescriptions: describeLedgerFindings(scoringResult.ledger_findings ?? []),
     compositeDescriptions: describeCompositeMatches(scoringResult.composite_matches ?? [], sequenceLabels),
+    booksReconciliation:
+      scoringResult.books_reconciliation === undefined
+        ? null
+        : { clean: scoringResult.books_reconciliation.length === 0, descriptions: describeBooksReconciliation(scoringResult.books_reconciliation) },
     weightedScorePercent: Math.round(scoringResult.weighted_score * 100),
     incorrectConceptDescriptions,
     correctConceptDescriptions,
@@ -300,6 +304,23 @@ export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[
   });
   if (vouchers.length > MAX_UNMATCHED_VOUCHERS) {
     lines.push(`and ${vouchers.length - MAX_UNMATCHED_VOUCHERS} more voucher(s) matched nothing`);
+  }
+  return lines;
+}
+
+// Books reconciliation lines (2026-09-10): closing balance per ledger
+// against the correct books, year to date. Gap only, never the expected
+// figure. Same cap as the tie-out list.
+export function describeBooksReconciliation(differences: TieOutMismatch[]): string[] {
+  const lines = differences.slice(0, MAX_TIE_OUT_MISMATCHES).map((difference) => {
+    const rupees = `Rs ${Math.abs(Math.round(difference.difference)).toLocaleString('en-IN')}`;
+    if (difference.status === 'missing') {
+      return `${difference.account} has no ledger in the export although the correct books carry a balance of about ${rupees} on it`;
+    }
+    return `${difference.account} closes ${rupees} ${difference.difference > 0 ? 'more debit' : 'more credit'} than the correct books`;
+  });
+  if (differences.length > MAX_TIE_OUT_MISMATCHES) {
+    lines.push(`and ${differences.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) differ`);
   }
   return lines;
 }

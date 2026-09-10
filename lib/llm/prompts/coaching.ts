@@ -137,6 +137,10 @@ export type CoachingSignal = {
   // Composite postings the engine accepted (a split or combined voucher
   // whose ledger effect matched). Good news, stated as such.
   compositeDescriptions?: string[];
+  // Books reconciliation (2026-09-10): whether every ledger's closing
+  // balance agrees with the correct books year to date, and if not which
+  // ledgers differ and by how much. null when not evaluated.
+  booksReconciliation?: { clean: boolean; descriptions: string[] } | null;
   // Present only for explain/review exercises — see
   // score-qualitative.ts/combine-scoring. null for plain direct-entry exercises.
   qualitative: QualitativeCoachingSignal | null;
@@ -180,6 +184,11 @@ function buildUserMessage(signal: CoachingSignal): string {
       : null,
     (signal.compositeDescriptions?.length ?? 0) > 0
       ? `Accepted as posted (mention in went_well in one short line): ${signal.compositeDescriptions!.join("; ")}`
+      : null,
+    signal.booksReconciliation
+      ? signal.booksReconciliation.clean
+        ? "Books position: every ledger's closing balance agrees with the correct books year to date. State this in one line in went_well."
+        : `Books position (closing balances against the correct books, year to date; this is drift from earlier months as much as this month, so add ONE needs_work entry naming the ledgers and the gaps, never what the figure should be): ${signal.booksReconciliation.descriptions.join("; ")}`
       : null,
     signal.qualitative
       ? `Free-text answer quality — recall: ${signal.qualitative.recallDescription}; precision: ${signal.qualitative.precisionDescription}; reasoning: ${signal.qualitative.reasoningDescription}. Weave this into flagged_areas/praise in plain language — never state these as numbers or scores.`

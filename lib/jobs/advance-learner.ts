@@ -17,6 +17,8 @@ import type { ScoringResult } from '@/lib/schemas/scoring';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
 import { getPreviousScoredTrialBalancePath } from '@/lib/db/queries/submissions';
 import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
+import { expectedClosingBalances, type ExpectedClosing } from '@/lib/tutor/books-reconciliation';
+import type { AnswerKey } from '@/lib/schemas/exercise';
 
 // The previous scored Trial Balance for the movement-based tie-out
 // (2026-09-09), shared by both scoring jobs. Null on the first scored
@@ -40,6 +42,32 @@ export async function loadPreviousTrialBalance(
   } catch {
     return null;
   }
+}
+
+// The correct books at the point of the batch being scored, for the books
+// reconciliation (2026-09-10): every key of the learner in timeline order,
+// the batch's ordinal in that order (0 = the April pack). Empty when the
+// exercise is not found, so scoring never fails on this feedback-only step.
+export async function loadExpectedClosingBalances(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exerciseId: string,
+): Promise<ExpectedClosing[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, answer_key')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    throw error;
+  }
+  const rows = (data ?? []) as { id: string; answer_key: AnswerKey | null }[];
+  const ordinal = rows.findIndex((row) => row.id === exerciseId);
+  if (ordinal === -1) {
+    return [];
+  }
+  const keys = rows.slice(0, ordinal + 1).map((row) => row.answer_key ?? { entries: [] });
+  return expectedClosingBalances(keys, ordinal);
 }
 
 // The post-scoring pipeline every scored submission goes through, shared by

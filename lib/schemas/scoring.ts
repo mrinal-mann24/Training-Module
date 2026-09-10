@@ -186,6 +186,10 @@ export const ScoringResultSchema = z.object({
   unmatched_vouchers: z.array(UnmatchedVoucherSchema).optional(),
   ledger_findings: z.array(LedgerFindingSchema).optional(),
   composite_matches: z.array(CompositeMatchSchema).optional(),
+  // Closing balance per ledger against the correct books at this point,
+  // year to date (2026-09-10). Feedback only: absent when not evaluated,
+  // empty when every ledger agrees.
+  books_reconciliation: z.array(TieOutMismatchSchema).optional(),
   weighted_score: z.number(),
   overall_result: z.enum(OVERALL_RESULTS),
   // Per-concept roll-up (Unit 09): whether every scored field belonging to a

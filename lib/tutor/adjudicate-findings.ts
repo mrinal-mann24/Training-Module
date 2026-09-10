@@ -140,5 +140,6 @@ export function applyAdjudicationVerdicts(
     unmatched_vouchers: scoringResult.unmatched_vouchers ?? [],
     ledger_findings: scoringResult.ledger_findings ?? [],
     composite_matches: scoringResult.composite_matches ?? [],
+    books_reconciliation: scoringResult.books_reconciliation,
   });
 }

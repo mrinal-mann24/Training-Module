@@ -636,7 +636,7 @@ const TIE_OUT_TOLERANCE = 1;
 
 export type TrialBalanceTieOut = { tieOut: boolean; mismatches: TieOutMismatch[] };
 
-function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
+export function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
   return rows.reduce((sum, row) => sum + (row.closingDebit - row.closingCredit), 0);
 }
 
@@ -651,7 +651,7 @@ function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
 // accountNamesMatch refuses to equate a returns ledger with its base.
 const MIN_CONTAINMENT_CHARS = 5;
 
-function rowsForAccount(
+export function rowsForAccount(
   trialBalance: ParsedTrialBalance,
   acceptableNames: string[],
   exactlyClaimed: Set<string>,
@@ -686,7 +686,7 @@ function rowsForAccount(
 // the closing comparison applies instead.
 const MIN_BASELINE_ROWS = 12;
 
-function exactlyClaimedRows(trialBalance: ParsedTrialBalance, namesByAccount: Map<string, string[]>): Set<string> {
+export function exactlyClaimedRows(trialBalance: ParsedTrialBalance, namesByAccount: Map<string, string[]>): Set<string> {
   const claimed = new Set<string>();
   for (const names of namesByAccount.values()) {
     const normalized = names.map(normalizeAccountName);
@@ -1298,7 +1298,7 @@ export function collectErrorCodes(scoringResult: ScoringResult): ScoringErrorCod
 // encode (tie-out mismatches, extra vouchers, ledger findings, composites).
 export type CarriedScoringFacts = Pick<
   ScoringResult,
-  'tb_tie_out_mismatches' | 'unmatched_vouchers' | 'ledger_findings' | 'composite_matches'
+  'tb_tie_out_mismatches' | 'unmatched_vouchers' | 'ledger_findings' | 'composite_matches' | 'books_reconciliation'
 >;
 
 export function rebuildScoringResult(
@@ -1321,6 +1321,7 @@ export function rebuildScoringResult(
     unmatched_vouchers: unmatchedVouchers,
     ledger_findings: ledgerFindings,
     composite_matches: carried.composite_matches ?? [],
+    books_reconciliation: carried.books_reconciliation,
     weighted_score: weightedScore,
     overall_result: overallResult,
     concept_results: conceptResults,
