@@ -55,8 +55,8 @@ describe('scoreSubmission', () => {
     // expected, none present), bill_reference correct (none expected), and
     // narration present (the sample's NARRATION tag is extracted since the
     // 2026-08-19 parser fix — previously this always reported missing).
-    const narrationDiff = result.per_voucher_diffs.find((d) => d.field === 'narration');
-    expect(narrationDiff?.is_correct).toBe(true);
+    // Narration is not scored (2026-09-10): no narration diff at all.
+    expect(result.per_voucher_diffs.some((d) => d.field === 'narration')).toBe(false);
 
     expect(result.per_voucher_diffs.every((d) => d.is_correct)).toBe(true);
 
@@ -191,8 +191,9 @@ describe('scoreSubmission', () => {
     const gstErrorResult = scoreSubmission(dayBook, trialBalanceMatchingAnswerKey(), gstErrorAnswerKey);
 
     expect(cleanResult.weighted_score).toBeCloseTo(1.0, 5);
-    // GST (weight 2) wrong out of total weight 10 => earned 8/10 = 0.8.
-    expect(gstErrorResult.weighted_score).toBeCloseTo(0.8, 5);
+    // GST (weight 2) wrong out of total weight 9 (narration no longer
+    // scored, 2026-09-10) => earned 7/9.
+    expect(gstErrorResult.weighted_score).toBeCloseTo(7 / 9, 5);
     expect(gstErrorResult.weighted_score).toBeLessThan(cleanResult.weighted_score);
   });
 
@@ -755,108 +756,6 @@ describe('scoreSubmission', () => {
   });
 });
 
-describe('voucher-type-aware narration (Phase 3, spec 15)', () => {
-  const makeDayBook = (voucherType: string, narration: string, partyLedger = 'Parekh Integrated Services Pvt Ltd') => ({
-    vouchers: [
-      {
-        voucherType,
-        date: '20260405',
-        narration,
-        ledgerEntries: [
-          { ledgerName: partyLedger, amount: 5000, drOrCr: 'Dr' as const, billAllocations: [] },
-          { ledgerName: 'HDFC Bank', amount: 5000, drOrCr: 'Cr' as const, billAllocations: [] },
-        ],
-      },
-    ],
-  });
-  const makeKey = (voucherType: string, partyLedger = 'Parekh Integrated Services Pvt Ltd') => ({
-    entries: [
-      {
-        sequence: 1, correct_account: partyLedger, dr_cr: 'Dr' as const, amount: 5000,
-        voucher_type: voucherType, gst_head: null, gst_rate: null, tds_section: null,
-        tds_rate: null, tds_base: null, bill_reference: null, narration: 'required',
-        concept_tags: ['payment_voucher_basics' as const],
-        requires_source_document: false, source_document_type: null,
-      },
-      {
-        sequence: 1, correct_account: 'HDFC Bank', dr_cr: 'Cr' as const, amount: 5000,
-        voucher_type: voucherType, gst_head: null, gst_rate: null, tds_section: null,
-        tds_rate: null, tds_base: null, bill_reference: null, narration: null,
-        concept_tags: ['payment_voucher_basics' as const],
-        requires_source_document: false, source_document_type: null,
-      },
-    ],
-  });
-  const narrationDiff = (voucherType: string, narration: string, partyLedger?: string) =>
-    scoreSubmission(makeDayBook(voucherType, narration, partyLedger), { ledgers: [] }, makeKey(voucherType, partyLedger))
-      .per_voucher_diffs.find((d) => d.field === 'narration');
-
-  it('passes a payment narration carrying reference and party', () => {
-    const diff = narrationDiff('Payment', 'NEFT UTR 123456789 paid to Parekh against INV-012');
-    expect(diff?.is_correct).toBe(true);
-    expect(diff?.error_code).toBe(null);
-  });
-
-  it('flags a payment narration with a reference but no party as NARRATION_WEAK', () => {
-    const diff = narrationDiff('Payment', 'Being payment made, ref 123456');
-    expect(diff?.is_correct).toBe(false);
-    expect(diff?.error_code).toBe('NARRATION_WEAK');
-  });
-
-  it('flags a receipt narration with a party but no reference-like token', () => {
-    const diff = narrationDiff('Receipt', 'Amount received from Parekh in full settlement');
-    expect(diff?.is_correct).toBe(false);
-    expect(diff?.error_code).toBe('NARRATION_WEAK');
-  });
-
-  it('does not demand a party when the voucher has no party-like ledger', () => {
-    // A bank-charge payment: Bank Charges + HDFC Bank. Nothing to name, so
-    // the reference alone satisfies the standard.
-    const diff = narrationDiff('Payment', 'Bank charges for May, ref 445566', 'Bank Charges');
-    expect(diff?.is_correct).toBe(true);
-  });
-
-  it('keeps sales narration presence-only', () => {
-    const diff = narrationDiff('Sales', 'Being goods sold');
-    expect(diff?.is_correct).toBe(true);
-  });
-
-  it('flags a trivial journal narration and passes a real why', () => {
-    expect(narrationDiff('Journal', 'ok done')?.error_code).toBe('NARRATION_WEAK');
-    expect(narrationDiff('Journal', 'Being provision for audit fees for FY 2026-27')?.is_correct).toBe(true);
-  });
-
-  it('accepts the party as a bank-style abbreviation inside the reference (pilot calibration)', () => {
-    // Real pilot narration shape: "UPI/26040301/KAREMP/MARCH-INV" for a
-    // receipt from Karnataka Emporium. The reviewer accepted these.
-    const diff = narrationDiff('Receipt', 'UPI/26040301/KAREMP/MARCH-INV', 'Karnataka Emporium');
-    expect(diff?.is_correct).toBe(true);
-  });
-
-  it('does not demand a bank reference on a cash payment', () => {
-    const dayBook = {
-      vouchers: [
-        {
-          voucherType: 'Payment',
-          date: '20260405',
-          narration: 'Cash purchase packaging material, KRISHNA PACKERS',
-          ledgerEntries: [
-            { ledgerName: 'Krishna Packers', amount: 500, drOrCr: 'Dr' as const, billAllocations: [] },
-            { ledgerName: 'Cash', amount: 500, drOrCr: 'Cr' as const, billAllocations: [] },
-          ],
-        },
-      ],
-    };
-    const diff = scoreSubmission(dayBook, { ledgers: [] }, makeKey('Payment', 'Krishna Packers'))
-      .per_voucher_diffs.find((d) => d.field === 'narration');
-    expect(diff?.is_correct).toBe(true);
-  });
-
-  it('still reports a wholly absent narration as NARRATION_MISSING', () => {
-    const diff = narrationDiff('Payment', '   ');
-    expect(diff?.error_code).toBe('NARRATION_MISSING');
-  });
-});
 
 describe('Trial Balance tie-out account matching (2026-09-02)', () => {
   const leg = (
@@ -1201,13 +1100,12 @@ describe('concept rollup judges each concept on its own fields (Yeshas June, 202
     { ledgerName: 'HDFC Bank 1234', amount: 51500, drOrCr: 'Cr' as const, billAllocations: [] },
   ] }] };
 
-  it('a thin narration fails narration_discipline only', () => {
+  it('a thin narration costs nothing and the retired narration concept is never reported (2026-09-10)', () => {
     const result = scoreSubmission(dayBook, { ledgers: [] }, key);
-    expect(result.per_voucher_diffs.filter((d) => !d.is_correct).map((d) => d.field)).toEqual(['narration']);
+    expect(result.per_voucher_diffs.filter((d) => !d.is_correct)).toEqual([]);
     expect(result.concept_results).toEqual([
       { concept_tag: 'payment_voucher_basics', result: 'pass' },
       { concept_tag: 'bill_by_bill_referencing', result: 'pass' },
-      { concept_tag: 'narration_discipline', result: 'fail' },
       { concept_tag: 'trial_balance_tie_out', result: 'fail' },
     ]);
   });
@@ -1333,6 +1231,47 @@ describe('Trial Balance tie-out by movement (2026-09-09)', () => {
     const current: ParsedTrialBalance = { ledgers: [{ ledgerName: 'Cash', closingDebit: 777840, closingCredit: 0 }] };
     const result = scoreSubmission(dayBook, current, key, { previousTrialBalance: previous });
     expect(result.tb_tie_out_mismatches).toEqual([{ account: 'material purchase', status: 'off', difference: -633000 }]);
+  });
+});
+
+// GST amounts (2026-09-10): the right heads with the wrong tax figure used to
+// pass silently. On a sales/purchase-side voucher the posted total per head
+// must equal the key's GST legs per head.
+describe('GST amount check (GST_RATE_WRONG, 2026-09-10)', () => {
+  const leg = (account: string, drCr: 'Dr' | 'Cr', amount: number, gstHead: 'CGST' | 'SGST' | 'IGST' | null = null): AnswerKey['entries'][number] => ({
+    sequence: 1, correct_account: account, dr_cr: drCr, amount, voucher_type: 'Sales',
+    gst_head: gstHead, gst_rate: gstHead ? 9 : null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: 'INV-070', narration: null, concept_tags: ['sales_voucher_basics' as const, 'gst_classification' as const],
+    requires_source_document: false, source_document_type: null,
+  });
+  const key: AnswerKey = { entries: [
+    leg('Karnataka Emporium', 'Dr', 47200),
+    leg('Sales', 'Cr', 40000),
+    leg('Output CGST', 'Cr', 3600, 'CGST'),
+    leg('Output SGST', 'Cr', 3600, 'SGST'),
+  ] };
+  const entry = (ledgerName: string, amount: number, drOrCr: 'Dr' | 'Cr') => ({ ledgerName, amount, drOrCr, billAllocations: ledgerName === 'Karnataka Emporium' ? [{ name: 'INV-070', amount }] : [] });
+  const voucher = (cgst: number, sgst: number) => ({ vouchers: [{ voucherType: 'Sales', date: '20250402', narration: 'INV-070', ledgerEntries: [
+    entry('Karnataka Emporium', 40000 + cgst + sgst, 'Dr'), entry('Sales', 40000, 'Cr'), entry('Output CGST', cgst, 'Cr'), entry('Output SGST', sgst, 'Cr'),
+  ] }] });
+  const gstDiff = (cgst: number, sgst: number) => scoreSubmission(voucher(cgst, sgst), { ledgers: [] }, key).per_voucher_diffs.find((d) => d.field === 'gst');
+
+  it('passes the exact figures', () => {
+    expect(gstDiff(3600, 3600)?.is_correct).toBe(true);
+  });
+
+  it('flags the right heads with the wrong figure as GST_RATE_WRONG, not GST_HEAD_WRONG', () => {
+    // 12% charged instead of 18%: heads and side are right, the figure is not.
+    const diff = gstDiff(2400, 2400);
+    expect(diff?.is_correct).toBe(false);
+    expect(diff?.error_code).toBe('GST_RATE_WRONG');
+  });
+
+  it('still reports a wrong regime as GST_HEAD_WRONG ahead of any amount difference', () => {
+    const igstVoucher = { vouchers: [{ voucherType: 'Sales', date: '20250402', narration: 'INV-070', ledgerEntries: [
+      entry('Karnataka Emporium', 47200, 'Dr'), entry('Sales', 40000, 'Cr'), entry('Output IGST', 7200, 'Cr'),
+    ] }] };
+    expect(scoreSubmission(igstVoucher, { ledgers: [] }, key).per_voucher_diffs.find((d) => d.field === 'gst')?.error_code).toBe('GST_HEAD_WRONG');
   });
 });
 

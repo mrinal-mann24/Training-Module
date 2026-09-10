@@ -33,6 +33,12 @@ describe('deriveNextModuleProgress', () => {
     expect(result).toEqual({ currentModule: 2, currentLevel: 0 });
   });
 
+  it('passes straight through a module whose only concept is retired (narration, 2026-09-10)', () => {
+    const retiredModule = CONCEPT_TO_MODULE['narration_discipline'];
+    const result = deriveNextModuleProgress({ learner_id: 'learner-1', current_module: retiredModule, current_level: 1, updated_at: '2026-01-01T00:00:00.000Z' }, new Map());
+    expect(result).toEqual({ currentModule: retiredModule + 1, currentLevel: 0 });
+  });
+
   it('does not advance while a concept in the current module is not yet mastered', () => {
     const masteryMap = new Map([[MODULE_1_CONCEPT, mastery({ concept_tag: MODULE_1_CONCEPT, status: 'developing', escalation_active: false })]]);
 

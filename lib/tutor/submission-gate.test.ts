@@ -19,6 +19,7 @@ function makeExercise(transactionCount: number): ExerciseForLearner {
       description: `Transaction ${index + 1}`,
     })),
     reviewPacketItems: [],
+    documentsOnly: false,
     difficulty_level: 'L0',
     variant: 'A',
     requiredParts: ['daybook_xml', 'trialbalance_xml'],

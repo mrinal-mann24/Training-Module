@@ -38,8 +38,11 @@ export function assembleTimeline(rows: {
   const events: TimelineEvent[] = [];
 
   for (const exercise of rows.exercises) {
-    const itemLines =
-      exercise.reviewPacketItems.length > 0
+    // Documents-only batches (2026-09-10) show no transaction lines: the
+    // learner works from the attached documents alone.
+    const itemLines = exercise.documentsOnly
+      ? ''
+      : exercise.reviewPacketItems.length > 0
         ? exercise.reviewPacketItems.map((item) => `${item.sequence}. ${item.presented_text}`).join('\n')
         : exercise.transactions.map((transaction) => `${transaction.sequence}. ${transaction.description}`).join('\n');
     const sourceDocuments = rows.sourceDocumentsByExercise.get(exercise.id) ?? [];

@@ -26,8 +26,10 @@ function exerciseToMessages(
   moduleNumber: number,
   sourceDocuments: ExerciseSourceDocument[],
 ): ChatMessage[] {
-  const itemLines =
-    exercise.reviewPacketItems.length > 0
+  // Documents-only batches (2026-09-10) show no transaction lines.
+  const itemLines = exercise.documentsOnly
+    ? ''
+    : exercise.reviewPacketItems.length > 0
       ? exercise.reviewPacketItems.map((item) => `${item.sequence}. ${item.presented_text}`).join('\n')
       : exercise.transactions.map((transaction) => `${transaction.sequence}. ${transaction.description}`).join('\n');
 

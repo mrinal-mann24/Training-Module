@@ -1,4 +1,4 @@
-import type { GeneratedExercise } from '@/lib/schemas/exercise';
+import { isRetiredConcept, type GeneratedExercise } from '@/lib/schemas/exercise';
 import type { MonthEndNotesContent, SalesInvoiceContent, SalesRegisterContent, SourceDocumentType } from '@/lib/schemas/source-document';
 import { isBankLedger, partyLegOf, splitBillReferences } from '@/lib/db/queries/company';
 import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
@@ -20,12 +20,15 @@ import { partyDetailsFor } from '@/lib/documents/party-directory';
 // written by code, and the sales invoice figures come straight from the
 // legs — so the documents can never disagree with the key.
 
-export const DOCUMENTS_MODE_MASTERY_THRESHOLD = 3;
+// Two mastered concepts (2026-09-10, was three): from then on every batch is
+// documents only — no transaction text at all — and the AI Accountant setup
+// popup is due. Retired concepts never count.
+export const DOCUMENTS_MODE_MASTERY_THRESHOLD = 2;
 
-export function isDocumentsModeUnlocked(mastery: Iterable<{ status: string }>): boolean {
+export function isDocumentsModeUnlocked(mastery: Iterable<{ status: string; concept_tag?: string }>): boolean {
   let mastered = 0;
   for (const row of mastery) {
-    if (row.status === 'mastered') mastered += 1;
+    if (row.status === 'mastered' && !(row.concept_tag && isRetiredConcept(row.concept_tag))) mastered += 1;
   }
   return mastered >= DOCUMENTS_MODE_MASTERY_THRESHOLD;
 }
@@ -274,13 +277,20 @@ export function applyDocumentsMode(
     counts.bank > 0 ? 'one bank statement' : null,
     notes.length > 0 ? 'one month-end notes sheet' : null,
   ].filter((part): part is string => part !== null);
-  const coverNote = `Documents mode: this month arrives as paperwork, ${parts.join(', ')}. Every entry is posted from the attached documents; the list below only says what arrived and when.`;
+  // Documents only (2026-09-10): the learner sees this one line and the
+  // document cards, nothing else — no story, no opening position, no
+  // transaction list. The pointer lines built above are kept on the stored
+  // transactions for scoring labels and coaching, but never rendered
+  // (documents_only). Real work arrives as paperwork, not as a brief.
+  const documentCount = counts.invoices + counts.sales + (counts.bank > 0 ? 1 : 0) + (notes.length > 0 ? 1 : 0) + (counts.sales > 0 ? 1 : 0);
+  const coverNote = `${params.monthLabel}: ${documentCount} documents attached, ${parts.join(', ')}. Post every entry they contain in Tally, then export the month's Day Book and Trial Balance.`;
 
   return {
     generated: {
       ...generated,
-      scenario: `${generated.scenario}\n\n${coverNote}`,
+      scenario: coverNote,
       transactions,
+      documents_only: true,
       answer_key: { ...generated.answer_key, entries },
     },
     salesInvoices,

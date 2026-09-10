@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/lib/llm/client';
-import { CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
+import { ACTIVE_CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
 import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill, PartyTaxClass } from '@/lib/db/queries/company';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
@@ -168,7 +168,7 @@ their next set (this is the exact format proven in the pilot programme):
   narration standard (bank reference verbatim PLUS party name on every payment and
   receipt).
 
-Primary target concept: "${params.targetConceptTag}" (from the fixed vocabulary: ${CONCEPT_TAGS.join(', ')}).
+Primary target concept: "${params.targetConceptTag}" (from the fixed vocabulary: ${ACTIVE_CONCEPT_TAGS.join(', ')}).
 The primary target must genuinely appear in the batch; a scenario that never
 exercises it is wrong.
 

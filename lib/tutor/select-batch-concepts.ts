@@ -1,4 +1,4 @@
-import type { ConceptTag } from '@/lib/schemas/exercise';
+import { isRetiredConcept, type ConceptTag } from '@/lib/schemas/exercise';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 import type { WeakConceptTarget } from '@/lib/tutor/mastery';
 
@@ -37,7 +37,9 @@ export function selectBatchConcepts(
   const weaknessCandidates = [...latestResult.entries()]
     .filter(([, result]) => result === 'fail')
     .map(([tag]) => tag)
-    .filter((tag) => tag !== target.conceptTag)
+    // Retired concepts (narration, 2026-09-10) still have old attempt rows;
+    // they are never a weakness to dig into.
+    .filter((tag) => tag !== target.conceptTag && !isRetiredConcept(tag))
     .sort();
   for (const tag of weaknessCandidates) {
     if (weaknessSet.size >= MAX_CONCEPTS_PER_SIDE) {
@@ -49,6 +51,7 @@ export function selectBatchConcepts(
   const strengths = [...masteryMap.values()]
     .filter(
       (mastery) =>
+        !isRetiredConcept(mastery.concept_tag) &&
         !weaknessSet.has(mastery.concept_tag) &&
         !mastery.escalation_active &&
         (mastery.status === 'mastered' || mastery.consecutive_clean_count >= 2),

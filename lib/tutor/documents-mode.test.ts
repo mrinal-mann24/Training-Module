@@ -88,9 +88,10 @@ function batch(): GeneratedExercise {
 }
 
 describe('documents mode unlock', () => {
-  it('unlocks at three mastered concepts', () => {
-    expect(isDocumentsModeUnlocked([{ status: 'mastered' }, { status: 'mastered' }, { status: 'developing' }])).toBe(false);
-    expect(isDocumentsModeUnlocked([{ status: 'mastered' }, { status: 'mastered' }, { status: 'mastered' }])).toBe(true);
+  it('unlocks at two mastered concepts, ignoring retired ones (2026-09-10)', () => {
+    expect(isDocumentsModeUnlocked([{ status: 'mastered' }, { status: 'developing' }])).toBe(false);
+    expect(isDocumentsModeUnlocked([{ status: 'mastered' }, { status: 'mastered' }])).toBe(true);
+    expect(isDocumentsModeUnlocked([{ status: 'mastered' }, { status: 'mastered', concept_tag: 'narration_discipline' }])).toBe(false);
   });
 });
 
@@ -196,7 +197,13 @@ describe('applyDocumentsMode', () => {
   it('builds one sales document per sale and leaves the answer key figures untouched', () => {
     expect(plan.salesInvoices.map((s) => s.sequence)).toEqual([1, 2]);
     expect(plan.generated.answer_key.entries.map((e) => e.amount)).toEqual(batch().answer_key.entries.map((e) => e.amount));
-    expect(plan.generated.scenario).toContain('Documents mode');
+    // Documents only (2026-09-10): one cover line, no story, no pointers in
+    // the visible text; the transactions stay stored for scoring but are
+    // flagged so the chat never renders them.
+    expect(plan.generated.scenario).toBe(
+      'March 2025: 6 documents attached, 1 vendor invoice, 2 sales invoices or cash memos (plus one sales register CSV for AI Accountant), one bank statement, one month-end notes sheet. Post every entry they contain in Tally, then export the month\'s Day Book and Trial Balance.',
+    );
+    expect(plan.generated.documents_only).toBe(true);
   });
 
   it('ships one sales register CSV carrying the same figures as the sales invoices', () => {
@@ -237,7 +244,7 @@ describe('isAiaOnboardingDue', () => {
   });
   it('is not due before the first-day walkthrough, below the threshold, or after completion', () => {
     expect(isAiaOnboardingDue({ walkthroughCompleted: false, aiaOnboardingCompletedAt: null, mastery: mastered })).toBe(false);
-    expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: null, mastery: mastered.slice(0, 2) })).toBe(false);
+    expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: null, mastery: mastered.slice(0, 1) })).toBe(false);
     expect(isAiaOnboardingDue({ walkthroughCompleted: true, aiaOnboardingCompletedAt: '2026-09-09T05:00:00Z', mastery: mastered })).toBe(false);
   });
 });

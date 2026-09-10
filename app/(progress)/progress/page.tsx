@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { isLearnerOnboarded } from '@/lib/db/queries/learner-profile';
 import { getModuleProgress } from '@/lib/db/queries/module-progress';
 import { getConceptMasteryMap } from '@/lib/db/queries/mastery';
-import { CONCEPT_TAGS, CONCEPT_TO_MODULE } from '@/lib/schemas/exercise';
+import { CONCEPT_TAGS, CONCEPT_TO_MODULE, isRetiredConcept } from '@/lib/schemas/exercise';
 import { ConceptStatusBadge } from './ConceptStatusBadge';
 
 function conceptLabel(conceptTag: string): string {
@@ -49,7 +49,8 @@ export default async function ProgressPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           {moduleNumbers.map((moduleNumber) => {
-            const conceptsInModule = CONCEPT_TAGS.filter((tag) => CONCEPT_TO_MODULE[tag] === moduleNumber);
+            const conceptsInModule = CONCEPT_TAGS.filter((tag) => CONCEPT_TO_MODULE[tag] === moduleNumber && !isRetiredConcept(tag));
+            if (conceptsInModule.length === 0) return null;
 
             return (
               <section

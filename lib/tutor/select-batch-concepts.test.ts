@@ -56,7 +56,9 @@ describe('selectBatchConcepts', () => {
       mastery('sales_voucher_basics', { consecutive_clean_count: 2 }),
     ]);
     const plan = selectBatchConcepts(target('gst_classification'), attempts, masteryMap);
-    expect(plan.weaknesses).toEqual(['gst_classification', 'narration_discipline', 'tds_classification']);
+    // narration_discipline is retired (2026-09-10): its old fail row is
+    // ignored, so it never lands on the weakness side.
+    expect(plan.weaknesses).toEqual(['gst_classification', 'tds_classification']);
     expect(plan.strengths).toEqual(['bill_by_bill_referencing', 'sales_voucher_basics']);
   });
 

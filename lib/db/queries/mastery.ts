@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ConceptTag } from '@/lib/schemas/exercise';
+import { RETIRED_CONCEPT_TAGS, type ConceptTag } from '@/lib/schemas/exercise';
 import type { StatePatch, ConceptMasteryStatus } from '@/lib/schemas/state-patch';
 
 export type ConceptAttempt = {
@@ -93,11 +93,14 @@ export async function getConceptMasteryMap(
 // so this stays a simple progress indicator rather than a fixed curriculum
 // position (confirmed with the user rather than inventing a grouping table).
 export async function getModuleNumber(supabase: SupabaseClient, learnerId: string): Promise<number> {
+  // Retired concepts (narration, 2026-09-10) no longer count towards the
+  // module number even where an older row still says 'mastered'.
   const { count, error } = await supabase
     .from('concept_mastery')
     .select('concept_tag', { count: 'exact', head: true })
     .eq('learner_id', learnerId)
-    .eq('status', 'mastered');
+    .eq('status', 'mastered')
+    .not('concept_tag', 'in', `(${RETIRED_CONCEPT_TAGS.join(',')})`);
 
   if (error) {
     throw error;

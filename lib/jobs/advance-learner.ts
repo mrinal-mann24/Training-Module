@@ -9,7 +9,7 @@ import { selectNextExerciseKind } from '@/lib/tutor/select-exercise-kind';
 import { isDocumentsModeUnlocked } from '@/lib/tutor/documents-mode';
 import { selectBatchConcepts } from '@/lib/tutor/select-batch-concepts';
 import { getRecentCompanyTransactionLog } from '@/lib/db/queries/company';
-import { CONCEPT_TAGS, EXERCISE_DIFFICULTY_LEVELS, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
+import { ACTIVE_CONCEPT_TAGS, EXERCISE_DIFFICULTY_LEVELS, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
 import { getModuleProgress, upsertModuleProgress } from '@/lib/db/queries/module-progress';
 import { deriveNextModuleProgress } from '@/lib/tutor/module-progress';
 import { classifyRectificationsForExercise, type RectificationResult } from '@/lib/tutor/rectification';
@@ -131,7 +131,8 @@ export async function generateNextExercise(
     getConceptMasteryMap(supabase, params.learnerId),
   ]);
 
-  const target = selectWeakConcept(CONCEPT_TAGS, allAttempts, currentMastery);
+  // Retired concepts (narration, 2026-09-10) are never targeted.
+  const target = selectWeakConcept(ACTIVE_CONCEPT_TAGS, allAttempts, currentMastery);
   if (!target) {
     // Every concept mastered — no further adaptive exercise to generate.
     return 'all-mastered';

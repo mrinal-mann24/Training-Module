@@ -33,6 +33,9 @@ export type ExerciseForLearner = {
   packFiles: { label: string; storage_path: string }[];
   expectedVoucherCount: number | null;
   reviewPacketItems: { sequence: number; presented_text: string }[];
+  // Documents only (2026-09-10): render the scenario line and the document
+  // cards, never the transaction list. False on every older batch.
+  documentsOnly: boolean;
   difficulty_level: ExerciseDifficultyLevel;
   variant: ExerciseVariant;
   requiredParts: SubmissionPartType[];
@@ -109,6 +112,7 @@ type StoredScenario = {
   packet_items?: { sequence: number; presented_text: string }[];
   pack_files?: { label: string; storage_path: string }[];
   difficulty_level: ExerciseDifficultyLevel;
+  documents_only?: boolean;
 };
 
 // Unit 14R: creates a learner's diagnostic exercise from an authored pack.
@@ -172,6 +176,7 @@ function toExerciseForLearner(row: {
     transactions: scenario.transactions ?? [],
     reviewPacketItems: scenario.packet_items ?? [],
     packFiles: scenario.pack_files ?? [],
+    documentsOnly: scenario.documents_only ?? false,
     expectedVoucherCount: row.expected_voucher_count ?? null,
     difficulty_level: scenario.difficulty_level,
     variant: row.variant,

@@ -12,6 +12,7 @@ function exercise(id: string, createdAt: string): ExerciseForLearner {
     packFiles: [],
     expectedVoucherCount: null,
     reviewPacketItems: [],
+    documentsOnly: false,
     difficulty_level: 'L0',
     variant: 'A',
     requiredParts: ['daybook_xml', 'trialbalance_xml'],

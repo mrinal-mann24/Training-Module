@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/lib/llm/client';
-import { CONCEPT_TAGS, type ExerciseVariant } from '@/lib/schemas/exercise';
+import { ACTIVE_CONCEPT_TAGS, type ExerciseVariant } from '@/lib/schemas/exercise';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
 
 const SYSTEM_PROMPT = `You are generating the diagnostic placement exercise for a B.Com fresher learning
@@ -14,7 +14,7 @@ Purchase, Payment, Receipt), and narration. These L0 transactions are single-con
 drills with no GST or TDS component, so set gst_head, gst_rate, tds_section, tds_rate,
 and tds_base to null and bill_reference to null unless a transaction is explicitly a
 bill-settling entry. Tag each answer key entry's concept_tags with exactly one tag
-from this fixed vocabulary matching the voucher type it drills: ${CONCEPT_TAGS.join(', ')}.
+from this fixed vocabulary matching the voucher type it drills: ${ACTIVE_CONCEPT_TAGS.join(', ')}.
 This is the diagnostic — it stays direct-entry, so set requires_source_document to
 false and source_document_type to null on every entry.
 Respond only with JSON matching the provided schema.`;

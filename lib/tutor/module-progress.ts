@@ -1,4 +1,4 @@
-import { CONCEPT_TO_MODULE, type ConceptTag } from '@/lib/schemas/exercise';
+import { CONCEPT_TO_MODULE, isRetiredConcept, type ConceptTag } from '@/lib/schemas/exercise';
 import type { ConceptMastery } from '@/lib/db/queries/mastery';
 import type { ModuleProgress } from '@/lib/db/queries/module-progress';
 
@@ -21,13 +21,17 @@ export function deriveNextModuleProgress(
   const currentLevel = current?.current_level ?? 0;
 
   const conceptsInCurrentModule = (Object.keys(CONCEPT_TO_MODULE) as ConceptTag[]).filter(
-    (tag) => CONCEPT_TO_MODULE[tag] === currentModule,
+    (tag) => CONCEPT_TO_MODULE[tag] === currentModule && !isRetiredConcept(tag),
   );
 
   // No concepts tagged to this module number (past the last defined module,
-  // or a gap) — nothing left to evaluate, stay put.
+  // or a gap) — nothing left to evaluate, stay put. A module whose only
+  // concept is retired (narration's, 2026-09-10) has nothing to master:
+  // advance straight through it while a later module still exists.
   if (conceptsInCurrentModule.length === 0) {
-    return { currentModule, currentLevel };
+    const lastModule = Math.max(...Object.values(CONCEPT_TO_MODULE));
+    const isRetiredModule = (Object.keys(CONCEPT_TO_MODULE) as ConceptTag[]).some((tag) => CONCEPT_TO_MODULE[tag] === currentModule);
+    return isRetiredModule && currentModule < lastModule ? { currentModule: currentModule + 1, currentLevel: 0 } : { currentModule, currentLevel };
   }
 
   const everyConceptMasteredWithNoEscalation = conceptsInCurrentModule.every((tag) => {

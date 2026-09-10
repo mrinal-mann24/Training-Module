@@ -1,5 +1,5 @@
 import type { ParsedDayBook, ParsedTrialBalance, Voucher, LedgerEntry } from '@/lib/schemas/voucher';
-import type { AnswerKey, AnswerKeyEntry, ConceptTag } from '@/lib/schemas/exercise';
+import { isRetiredConcept, type AnswerKey, type AnswerKeyEntry, type ConceptTag } from '@/lib/schemas/exercise';
 import type { ScoringErrorCode, ScoringResult, ScoredField, VoucherDiff, ConceptResult, TieOutMismatch } from '@/lib/schemas/scoring';
 
 // Weighted-score thresholds for overall_result. Defined here, not scattered as
@@ -405,7 +405,8 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   diffs.push(diffGst(voucher, expected, expectedLegs, sequence));
   diffs.push(diffTds(voucher, expected, expectedLegs, sequence));
   diffs.push(diffBillReference(voucher, expected, sequence));
-  diffs.push(diffNarration(voucher, expected, sequence));
+  // Narration is not scored (2026-09-10): no narration diff, no
+  // NARRATION_MISSING/WEAK, and narration_discipline is a retired concept.
 
   return diffs;
 }
@@ -482,7 +483,14 @@ function diffGst(
   const requiredSide = expectedGstSide(expected.voucher_type);
   const sideWrong = requiredSide !== null && [...actualGst.sides].some((side) => side !== requiredSide);
 
-  const gstCorrect = headCorrect && !sideWrong;
+  // Amount check (2026-09-10): the right heads on the right side with the
+  // wrong tax figure used to pass silently (GST_RATE_WRONG was never
+  // raised). On a sales-/purchase-side voucher the posted total per head
+  // must equal the key's GST legs per head, to the rupee. Set-off journals
+  // carry both sides of a head and are judged on heads only.
+  const amountsWrong = requiredSide !== null && !gstAmountsMatch(voucher, expectedLegs);
+
+  const gstCorrect = headCorrect && !sideWrong && !amountsWrong;
   const splitMissed =
     expectedIntraState &&
     !actualGst.heads.has('IGST') &&
@@ -492,8 +500,38 @@ function diffGst(
     field: 'gst',
     expected_masked: true,
     is_correct: gstCorrect,
-    error_code: gstCorrect ? null : splitMissed && !sideWrong ? 'GST_MISSING' : 'GST_HEAD_WRONG',
+    error_code: gstCorrect
+      ? null
+      : !headCorrect || sideWrong
+        ? splitMissed && !sideWrong
+          ? 'GST_MISSING'
+          : 'GST_HEAD_WRONG'
+        : 'GST_RATE_WRONG',
   };
+}
+
+const GST_AMOUNT_TOLERANCE = 1;
+
+// Posted GST per head versus the key's GST legs per head. A key with no GST
+// leg amounts (older single-leg keys carried the tax as metadata) is not
+// amount-checked.
+function gstAmountsMatch(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): boolean {
+  const expectedByHead = new Map<string, number>();
+  for (const leg of expectedLegs) {
+    if (leg.gst_head && gstHeadOf(leg.correct_account) !== null) {
+      expectedByHead.set(leg.gst_head, (expectedByHead.get(leg.gst_head) ?? 0) + leg.amount);
+    }
+  }
+  if (expectedByHead.size === 0) return true;
+  const actualByHead = new Map<string, number>();
+  for (const entry of voucher.ledgerEntries) {
+    const head = gstHeadOf(entry.ledgerName)?.toUpperCase();
+    if (head) actualByHead.set(head, (actualByHead.get(head) ?? 0) + entry.amount);
+  }
+  for (const [head, expectedAmount] of expectedByHead) {
+    if (Math.abs((actualByHead.get(head) ?? 0) - expectedAmount) >= GST_AMOUNT_TOLERANCE) return false;
+  }
+  return true;
 }
 
 function diffTds(
@@ -603,146 +641,6 @@ function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRe
   };
 }
 
-// Phase 3 (spec 15): voucher-type-aware narration standard, deterministic.
-// Payments/Receipts require a reference-like token AND a party-name match
-// against the voucher's own ledger names (the pilot deliverable line: "bank
-// reference verbatim PLUS party name on every payment and receipt");
-// Journals require a non-trivial "why"; Sales/Purchases/Contra stay
-// presence-only. CONTENT-matching against the key's canonical wording is
-// still deliberately not attempted - exact-text comparison would punish
-// every legitimate phrasing. A present-but-substandard narration is
-// NARRATION_WEAK (Appendix A: E09 narration weak); the LLM adjudicator can
-// dismiss over-strict flags on phrasings this deterministic check misses.
-
-// A bank-reference-like token: any 3+ digit run (UTR/cheque/challan
-// numbers) or a recognizable transfer-mode keyword.
-const NARRATION_REFERENCE_PATTERN = /\d{3,}|\b(?:neft|imps|rtgs|upi|utr|chq|cheque)\b/i;
-
-// Words too generic to prove the narration names the counterparty.
-const PARTY_WORD_STOPLIST = new Set([
-  'bank', 'cash', 'account', 'limited', 'private', 'india', 'charges',
-  'services', 'service', 'company', 'enterprises', 'traders', 'payable',
-  'receivable', 'expenses', 'expense',
-]);
-
-// Narration tokens too generic to count as a party mention when prefix-
-// matching (pilot calibration, 2026-08-26: without this, "paid" would match
-// a party named "Paints" on a shared 3-char prefix).
-const NARRATION_GENERIC_TOKENS = new Set([
-  'being', 'paid', 'payment', 'payments', 'received', 'receipt', 'against',
-  'bank', 'cash', 'bill', 'bills', 'charges', 'made', 'neft', 'imps',
-  'rtgs', 'upi', 'utr', 'chq', 'cheque', 'invoice', 'amount', 'towards',
-  'from', 'month', 'purchase', 'sale', 'settlement', 'full', 'partial',
-]);
-
-function consonantSkeleton(word: string): string {
-  return word.replace(/[aeiou]/g, '');
-}
-
-// Does this narration token plausibly reference this party word? Real bank
-// narrations compress party names into reference strings ("KAREMP" for
-// Karnataka Emporium, "BNGCLEAN" for Bangalore Cleaning, "KHANDICRAFT" for
-// Kerala Handicrafts) — the pilot reviewer accepted all of these, so exact
-// word containment alone flagged 23 false NARRATION_WEAKs on the real pilot
-// submission. Accepted forms: a shared 3+ char prefix, the word's leading 4
-// chars embedded in the token, or a shared 3+ char consonant-skeleton
-// prefix (BNG ~ BaNGalore).
-function tokenReferencesPartyWord(token: string, word: string): boolean {
-  if (token.slice(0, 3) === word.slice(0, 3)) {
-    return true;
-  }
-  if (token.includes(word.slice(0, 4))) {
-    return true;
-  }
-  return consonantSkeleton(token).slice(0, 3) === consonantSkeleton(word).slice(0, 3);
-}
-
-// Does the narration mention any party posted on this voucher? Checks each
-// non-bank/cash/tax ledger name word-by-word ("Parekh Integrated Services
-// Pvt Ltd" matches a narration that says just "Parekh", and abbreviation
-// forms per tokenReferencesPartyWord). A voucher with no party-like ledger
-// at all (e.g. a bank-charge payment: Bank Charges + Bank) has nothing to
-// name, so the requirement is vacuously met.
-function narrationNamesAParty(narration: string, voucher: Voucher): boolean {
-  const haystack = narration.toLowerCase();
-  const tokens = haystack
-    .split(/[^a-z0-9]+/)
-    .filter((token) => token.length >= 4 && !/^\d+$/.test(token) && !NARRATION_GENERIC_TOKENS.has(token));
-  let hasCandidate = false;
-  for (const entry of voucher.ledgerEntries) {
-    if (/bank|cash|gst|tds/i.test(entry.ledgerName)) {
-      continue;
-    }
-    const words = entry.ledgerName
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((word) => word.length >= 4 && !PARTY_WORD_STOPLIST.has(word));
-    if (words.length === 0) {
-      continue;
-    }
-    hasCandidate = true;
-    if (words.some((word) => haystack.includes(word))) {
-      return true;
-    }
-    if (words.some((word) => tokens.some((token) => tokenReferencesPartyWord(token, word)))) {
-      return true;
-    }
-  }
-  return !hasCandidate;
-}
-
-const MIN_JOURNAL_NARRATION_LENGTH = 15;
-const MIN_JOURNAL_NARRATION_WORDS = 3;
-
-function narrationMeetsVoucherTypeStandard(voucher: Voucher, narration: string): boolean {
-  const voucherType = voucher.voucherType.toLowerCase();
-  if (voucherType.includes('payment') || voucherType.includes('receipt')) {
-    // A cash payment/receipt has no bank reference to quote — the reference
-    // half of the standard only applies when a bank ledger is on the voucher.
-    const involvesBank = voucher.ledgerEntries.some((entry) => /bank/i.test(entry.ledgerName));
-    const referenceOk = !involvesBank || NARRATION_REFERENCE_PATTERN.test(narration);
-    return referenceOk && narrationNamesAParty(narration, voucher);
-  }
-  if (voucherType.includes('journal')) {
-    return (
-      narration.length >= MIN_JOURNAL_NARRATION_LENGTH &&
-      narration.split(/\s+/).length >= MIN_JOURNAL_NARRATION_WORDS
-    );
-  }
-  return true;
-}
-
-function diffNarration(voucher: Voucher, expected: AnswerKeyEntry, voucherRef: number): VoucherDiff {
-  if (expected.narration === null) {
-    return {
-      voucherRef,
-      field: 'narration',
-      expected_masked: true,
-      is_correct: true,
-      error_code: null,
-    };
-  }
-
-  const narration = voucher.narration.trim();
-  if (narration.length === 0) {
-    return {
-      voucherRef,
-      field: 'narration',
-      expected_masked: true,
-      is_correct: false,
-      error_code: 'NARRATION_MISSING',
-    };
-  }
-
-  const meetsStandard = narrationMeetsVoucherTypeStandard(voucher, narration);
-  return {
-    voucherRef,
-    field: 'narration',
-    expected_masked: true,
-    is_correct: meetsStandard,
-    error_code: meetsStandard ? null : 'NARRATION_WEAK',
-  };
-}
 
 function amountsMatch(actual: number, expected: number): boolean {
   return Math.abs(actual - expected) < 0.005;
@@ -967,6 +865,7 @@ function computeConceptResults(
     const conceptTags = new Set(group.flatMap((entry) => entry.concept_tags));
 
     for (const tag of conceptTags) {
+      if (isRetiredConcept(tag)) continue;
       const scoped = relevantDiffs(sequence, tag);
       const passed = scoped.length > 0 && scoped.every((diff) => diff.is_correct);
       const counts = conceptCounts.get(tag) ?? { passed: 0, total: 0 };

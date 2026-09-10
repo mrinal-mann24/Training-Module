@@ -53,6 +53,19 @@ export const CONCEPT_TAGS = [
 ] as const;
 export type ConceptTag = (typeof CONCEPT_TAGS)[number];
 
+// Retired concepts (2026-09-10): narration is no longer scored, so
+// narration_discipline is never assessed, targeted, counted towards module
+// numbers or documents-mode unlock, or shown on the progress page. The tag
+// stays in CONCEPT_TAGS because stored answer keys and concept_attempts
+// rows still carry it; every live path filters through ACTIVE_CONCEPT_TAGS.
+export const RETIRED_CONCEPT_TAGS = ['narration_discipline'] as const satisfies readonly ConceptTag[];
+export const ACTIVE_CONCEPT_TAGS = CONCEPT_TAGS.filter(
+  (tag): tag is Exclude<ConceptTag, (typeof RETIRED_CONCEPT_TAGS)[number]> => !(RETIRED_CONCEPT_TAGS as readonly string[]).includes(tag),
+);
+export function isRetiredConcept(tag: string): boolean {
+  return (RETIRED_CONCEPT_TAGS as readonly string[]).includes(tag);
+}
+
 // Unit 12: concept-to-module lookup for module_progress advancement and the
 // /progress page's grouped-by-module display. No prior unit defined a
 // module-numbering/grouping scheme beyond Unit 09's *derived* progress-label
@@ -77,6 +90,11 @@ export const ExerciseScenarioSchema = z.object({
   transactions: z.array(TransactionSchema),
   difficulty_level: z.enum(EXERCISE_DIFFICULTY_LEVELS),
   variant: z.enum(EXERCISE_VARIANTS),
+  // Documents only (2026-09-10): the chat shows this batch's scenario line
+  // and its document cards, never the numbered transactions. The
+  // transactions stay stored for scoring, coaching labels and the voucher
+  // count; they are simply not rendered. Absent on older batches.
+  documents_only: z.boolean().optional(),
 });
 export type ExerciseScenario = z.infer<typeof ExerciseScenarioSchema>;
 
