@@ -103,11 +103,33 @@ function significantTokensMatch(actual: string, expected: string): boolean {
 
 export const RETURNS_TOKEN = /\breturns?\b/i;
 
+// TDS ledgers carry the section in their name ("TDS Payable — u/s 194J").
+// Two names citing different known sections are different accounts even
+// when everything else matches, so a deduction booked under the wrong
+// section (rulebook 12, E06) is not excused by the typo tolerance below
+// ("...194J" vs "...194C" is one edit). Only recognised sections take part:
+// a learner's "194Ci" (Praveen's typo for 194I) falls through to the
+// ordinary rules.
+const TDS_SECTION_TOKEN = /\b194\s*([a-z]{1,2})\b/i;
+const KNOWN_TDS_SECTIONS = new Set(['a', 'c', 'h', 'i', 'j', 'q']);
+
+export function tdsSectionOf(name: string): string | null {
+  const match = TDS_SECTION_TOKEN.exec(name);
+  if (!match) return null;
+  const letter = match[1].toLowerCase();
+  return KNOWN_TDS_SECTIONS.has(letter) ? `194${letter}` : null;
+}
+
 export function accountNamesMatch(actual: string, expected: string): boolean {
   const a = normalizeAccountName(actual);
   const b = normalizeAccountName(expected);
   if (a === b) {
     return true;
+  }
+  const actualSection = tdsSectionOf(actual);
+  const expectedSection = tdsSectionOf(expected);
+  if (actualSection !== null && expectedSection !== null && actualSection !== expectedSection) {
+    return false;
   }
   if (sameAccountFamily(actual, expected)) {
     return true;

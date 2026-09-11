@@ -79,6 +79,41 @@ function firstBillReference(legs: Entry[]): string | null {
   return reference ? (splitBillReferences(reference)[0] ?? null) : null;
 }
 
+// Every bill the transaction names: a multi-bill settlement (rulebook 6.4)
+// must point the learner at each one, not only the first.
+function allBillReferences(legs: Entry[]): string | null {
+  const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
+  if (!reference) return null;
+  const refs = splitBillReferences(reference);
+  return refs.length > 0 ? refs.join(', ') : null;
+}
+
+// Pre-flight for the retry loop (2026-09-11): buildSalesInvoiceContent
+// throws on a sale whose legs it cannot print (no date, no customer leg,
+// a discount or round-off leg the lines do not add up with), and until now
+// that throw came after every validation had passed, killing the job
+// instead of asking the model for another attempt.
+export function checkSalesInvoicesBuildable(generated: GeneratedExercise, companyName: string): string | null {
+  const legsBySequence = new Map<number, Entry[]>();
+  for (const entry of generated.answer_key.entries) {
+    const legs = legsBySequence.get(entry.sequence) ?? [];
+    legs.push(entry);
+    legsBySequence.set(entry.sequence, legs);
+  }
+  const problems: string[] = [];
+  for (const transaction of generated.transactions) {
+    const legs = legsBySequence.get(transaction.sequence);
+    if (!legs || legs.length === 0 || documentTypeForVoucher(legs[0].voucher_type) !== 'sales_invoice') continue;
+    try {
+      buildSalesInvoiceContent(legs, transaction.description, companyName);
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (problems.length === 0) return null;
+  return `Sales invoices cannot be printed from the key: ${problems.join(' ')} Give every sale a date, one debited customer (or Cash) leg, credited sales lines and GST legs that add up to the customer total; put a discount or round-off inside the line amounts.`;
+}
+
 function counterpartyOf(legs: Entry[], voucherType: string): string | null {
   const party = partyLegOf(legs, voucherType);
   if (party) return party.correct_account;
@@ -164,7 +199,7 @@ export function buildSalesInvoiceContent(
 function pointerFor(docType: SourceDocumentType, legs: Entry[], dateLabel: string, noteNumber: number | null): string {
   const voucherType = legs[0].voucher_type;
   const party = counterpartyOf(legs, voucherType);
-  const reference = firstBillReference(legs);
+  const reference = allBillReferences(legs);
   switch (docType) {
     case 'vendor_invoice':
       return `On ${dateLabel}, an invoice arrived from ${party ?? 'a vendor'}${reference ? ` (Ref ${reference})` : ''}: post it from the attached invoice.`;

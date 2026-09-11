@@ -181,6 +181,10 @@ function entryTemplate(sequence: number, leg: JournalLeg, voucherType: string, c
 function isModelGstJournal(legs: AnswerKeyEntry[]): boolean {
   const type = legs[0].voucher_type.trim().toLowerCase();
   const names = legs.map((leg) => leg.correct_account);
+  // A reverse-charge self-invoicing journal (Dr Input GST RCM / Cr Output
+  // GST RCM, rulebook 13) also touches both sides, but it is one of the
+  // month's transactions, not the month-end utilisation: keep it.
+  if (names.some((name) => /\brcm\b|reverse charge/i.test(name))) return false;
   if (type === 'journal') {
     const touchesOutput = names.some((name) => /output/i.test(name) && headOf(name) !== null);
     const touchesInputOrPayable = names.some((name) => (/input|itc/i.test(name) && headOf(name) !== null) || /gst payable/i.test(name));
@@ -266,7 +270,7 @@ export function appendMonthEndJournals(generated: GeneratedExercise, params: Mon
         ...transactions,
         {
           sequence,
-          description: `On ${dateLabel(lastDayOf(monthIndex, year), monthIndex, year)}, pass the month-end GST set-off journal: utilise the input tax credit against the month's output GST in the statutory order (IGST first, then CGST, then SGST) and transfer the net amount payable to GST Payable. Take every figure from your own GST ledger balances at month end.`,
+          description: `On ${dateLabel(lastDayOf(monthIndex, year), monthIndex, year)}, pass the month-end GST set-off journal: utilise the input tax credit against the output GST balance in the statutory order (IGST first, then CGST, then SGST) and transfer the net amount payable to GST Payable. Take every figure from your own GST ledger balances at month end.`,
         },
       ];
       entries = [

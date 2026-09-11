@@ -116,6 +116,16 @@ describe('checkVendorInvoiceContent (the live document-vs-key contradictions)', 
     expect(checkVendorInvoiceContent(content({}), INPUT)).toBeNull();
   });
 
+  it('requires the printed invoice number to be the bill reference the key scores (2026-09-11)', () => {
+    const withReference: VendorInvoiceInput = {
+      ...INPUT,
+      legs: MULTI_LEG.map((entry) => (entry.correct_account === 'Deccan Traders' ? { ...entry, bill_reference: 'DT-114' } : entry)),
+    };
+    expect(checkVendorInvoiceContent(content({}), withReference)).toBeNull();
+    const error = checkVendorInvoiceContent(content({ invoiceNumber: 'DT/0114' }), withReference);
+    expect(error).toContain('invoiceNumber is "DT/0114" but must be exactly "DT-114"');
+  });
+
   it('rejects the live failure: total printed as the base with understated tax', () => {
     // Garima's delivered DT-114 PDF: 50,000 + 5,000 + 5,000 = 60,000 against
     // a key expecting 70,800.

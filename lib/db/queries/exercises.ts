@@ -55,7 +55,9 @@ export async function insertExercise(
     .insert({
       learner_id: learnerId,
       kind,
-      scenario: { scenario, transactions, difficulty_level, variant },
+      // documents_only (documents mode, 2026-09-10) travels with the
+      // scenario so the chat renders the cover line without the entries.
+      scenario: { scenario, transactions, difficulty_level, variant, ...(exercise.documents_only ? { documents_only: true } : {}) },
       answer_key,
       variant,
       required_parts: REQUIRED_PARTS_BY_KIND[kind],

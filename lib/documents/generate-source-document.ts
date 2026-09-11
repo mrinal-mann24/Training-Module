@@ -174,6 +174,18 @@ export function checkVendorInvoiceContent(
     violations.push(`vendorName is "${content.vendorName}" but must be "${figures.vendorAccount}".`);
   }
 
+  // The printed invoice number is the bill reference the learner allocates
+  // and the key scores (2026-09-11): a different number on the paper would
+  // fail every settlement that quotes it.
+  const keyReference = input.legs.find((leg) => leg.bill_reference)?.bill_reference;
+  if (keyReference) {
+    const expectedNumber = String(keyReference).split(/[\s(]/)[0];
+    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalize(content.invoiceNumber) !== normalize(expectedNumber)) {
+      violations.push(`invoiceNumber is "${content.invoiceNumber}" but must be exactly "${expectedNumber}".`);
+    }
+  }
+
   return violations.length > 0 ? violations.join(' ') : null;
 }
 

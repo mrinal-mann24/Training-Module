@@ -3,8 +3,11 @@ import type { AnswerKey, AnswerKeyEntry, GeneratedExercise } from '@/lib/schemas
 import {
   checkBillNumberUniqueness,
   checkGstArithmetic,
+  checkGstHeadMetadata,
+  checkTdsArithmetic,
   checkTdsThresholds,
   inferTdsSection,
+  perHeadFraction,
   priorBillReferences,
   tdsHistoryFromKeys,
 } from './generation-checks';
@@ -40,6 +43,74 @@ function exercise(entries: AnswerKeyEntry[]): GeneratedExercise {
     answer_key: { entries },
   };
 }
+
+describe('gst_rate conventions (2026-09-11: live keys store the per-head rate, the pack the combined rate)', () => {
+  it('reads 9 on a CGST leg as 9% and 18 as 9%, and IGST as the whole rate either way', () => {
+    expect(perHeadFraction('CGST', 9)).toBe(0.09);
+    expect(perHeadFraction('SGST', 18)).toBe(0.09);
+    expect(perHeadFraction('CGST', 2.5)).toBe(0.025);
+    expect(perHeadFraction('IGST', 18)).toBe(0.18);
+    expect(perHeadFraction('IGST', 9)).toBe(0.18);
+    expect(perHeadFraction('CGST', 7)).toBeNull();
+  });
+
+  it('accepts a correct intra-state purchase written with the per-head rate and rejects one halved to fit the old reading', () => {
+    const perHead = exercise([
+      leg(1, 'Purchases', 'Dr', 50000),
+      leg(1, 'Input CGST', 'Dr', 4500, { gst_head: 'CGST', gst_rate: 9 }),
+      leg(1, 'Input SGST', 'Dr', 4500, { gst_head: 'SGST', gst_rate: 9 }),
+      leg(1, 'Mumbai Suppliers', 'Cr', 59000, { bill_reference: 'MS-501' }),
+    ]);
+    expect(checkGstArithmetic(perHead)).toBeNull();
+    const halved = exercise([
+      leg(1, 'Purchases', 'Dr', 50000),
+      leg(1, 'Input CGST', 'Dr', 2250, { gst_head: 'CGST', gst_rate: 9 }),
+      leg(1, 'Input SGST', 'Dr', 2250, { gst_head: 'SGST', gst_rate: 9 }),
+      leg(1, 'Mumbai Suppliers', 'Cr', 54500, { bill_reference: 'MS-502' }),
+    ]);
+    expect(checkGstArithmetic(halved)).toContain('should be 4500');
+  });
+});
+
+describe('gst_head metadata agrees with the ledger name', () => {
+  it('rejects a GST leg with no head or the wrong head, and accepts one that matches', () => {
+    const missing = exercise([
+      leg(1, 'Purchases', 'Dr', 50000),
+      leg(1, 'Input IGST', 'Dr', 9000, { gst_rate: 18 }),
+      leg(1, 'Mumbai Suppliers', 'Cr', 59000, { bill_reference: 'MS-503' }),
+    ]);
+    expect(checkGstHeadMetadata(missing)).toContain('"Input IGST" must carry gst_head "IGST"');
+    const wrong = exercise([leg(1, 'Output CGST', 'Cr', 900, { voucher_type: 'Sales', gst_head: 'IGST', gst_rate: 9 })]);
+    expect(checkGstHeadMetadata(wrong)).toContain('it says "IGST"');
+    const fine = exercise([
+      leg(1, 'Input CGST', 'Dr', 4500, { gst_head: 'CGST', gst_rate: 9 }),
+      leg(1, 'GST Payable', 'Cr', 4500),
+    ]);
+    expect(checkGstHeadMetadata(fine)).toBeNull();
+  });
+});
+
+describe('TDS arithmetic', () => {
+  it('requires the TDS leg to equal tds_base x tds_rate and leaves a deposit without a stated base alone', () => {
+    const wrong = exercise([
+      leg(1, 'Legal & Professional Charges', 'Dr', 60000, { tds_section: '194J', tds_rate: 10, tds_base: 60000 }),
+      leg(1, 'TDS Payable — u/s 194J', 'Cr', 1200),
+      leg(1, 'Mehta & Associates', 'Cr', 58800, { bill_reference: 'MA-301' }),
+    ]);
+    expect(checkTdsArithmetic(wrong)).toContain('gives 6000');
+    const right = exercise([
+      leg(1, 'Legal & Professional Charges', 'Dr', 60000, { tds_section: '194J', tds_rate: 10, tds_base: 60000 }),
+      leg(1, 'TDS Payable — u/s 194J', 'Cr', 6000),
+      leg(1, 'Mehta & Associates', 'Cr', 54000, { bill_reference: 'MA-302' }),
+    ]);
+    expect(checkTdsArithmetic(right)).toBeNull();
+    const deposit = exercise([
+      leg(1, 'TDS Payable — u/s 194J', 'Dr', 6000, { voucher_type: 'Payment' }),
+      leg(1, 'HDFC Bank — 1234', 'Cr', 6000, { voucher_type: 'Payment' }),
+    ]);
+    expect(checkTdsArithmetic(deposit)).toBeNull();
+  });
+});
 
 describe('bill numbers are unique across the year (Yeshas, June: INV-024 reused)', () => {
   const earlier: AnswerKey = {

@@ -102,7 +102,9 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
       inflow: bankLeg.dr_cr === 'Dr',
       voucherType: legs[0].voucher_type,
       party: party?.correct_account ?? null,
-      billReference: reference ? (splitBillReferences(reference)[0] ?? null) : null,
+      // Every bill the movement settles (a multi-bill payment names each
+      // one, rulebook 6.4), joined so the narration regex still reads it.
+      billReference: reference ? (splitBillReferences(reference).join('/') || null) : null,
     });
   }
 

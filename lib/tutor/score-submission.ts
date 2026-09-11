@@ -91,7 +91,9 @@ function collectGstFromLedgerEntries(entries: LedgerEntry[]): {
 // cannot catch it, since the head (CGST) is right and only the side is wrong.
 function expectedGstSide(voucherType: string): 'input' | 'output' | null {
   const type = voucherType.trim().toLowerCase();
-  if (type === 'sales' || type === 'credit note') {
+  // A receipt carries GST only for a service advance (rulebook 9B: Output
+  // GST on Advance), so any GST on a receipt is output-side.
+  if (type === 'sales' || type === 'credit note' || type === 'receipt') {
     return 'output';
   }
   if (type === 'purchase' || type === 'debit note' || type === 'payment') {

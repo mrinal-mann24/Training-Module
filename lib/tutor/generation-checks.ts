@@ -71,6 +71,26 @@ function headOf(name: string): 'CGST' | 'SGST' | 'IGST' | null {
   return null;
 }
 
+// The rate a leg's gst_rate means for its own head, as a fraction of the
+// taxable base. Generated keys store the PER-HEAD rate on CGST/SGST legs
+// (9 for 18% GST; every live key, 2026-09-11) and the whole rate on IGST;
+// the authored pack and the prompt's older wording use the COMBINED rate
+// (18 on each head). GST has only a handful of rates, so the two readings
+// never collide: 2.5/6/9/14 are per-head figures, 5/12/18/28 combined.
+// An unrecognised rate is left unchecked rather than guessed.
+const PER_HEAD_RATES = new Set([0.125, 0.75, 1.5, 2.5, 6, 9, 14]);
+const COMBINED_RATES = new Set([0.25, 1.5, 3, 5, 12, 18, 28]);
+export function perHeadFraction(head: 'CGST' | 'SGST' | 'IGST', rate: number): number | null {
+  if (head === 'IGST') {
+    if (COMBINED_RATES.has(rate)) return rate / 100;
+    if (PER_HEAD_RATES.has(rate)) return (rate * 2) / 100;
+    return null;
+  }
+  if (PER_HEAD_RATES.has(rate)) return rate / 100;
+  if (COMBINED_RATES.has(rate)) return rate / 200;
+  return null;
+}
+
 // GST legs must equal the taxable base times the rate: CGST and SGST each
 // half the rate, IGST the full rate. Multi-rate invoices (two legs of one
 // head at different rates) are left alone; the base per rate is not
@@ -103,10 +123,12 @@ export function checkGstArithmetic(generated: GeneratedExercise): string | null 
     }
     for (const [head, amount] of posted) {
       const rate = [...(ratesByHead.get(head) ?? [18])][0];
-      const expected = head === 'IGST' ? (base * rate) / 100 : (base * rate) / 200;
+      const fraction = perHeadFraction(head as 'CGST' | 'SGST' | 'IGST', rate);
+      if (fraction === null) continue;
+      const expected = base * fraction;
       if (Math.abs(amount - expected) > GST_TOLERANCE) {
         violations.push(
-          `transaction ${sequence}: ${head} is ${Math.round(amount)} on a taxable value of ${Math.round(base)} at ${rate}%, but should be ${Math.round(expected)} (${head === 'IGST' ? 'the full rate' : 'half the rate per head'})`,
+          `transaction ${sequence}: ${head} is ${Math.round(amount)} on a taxable value of ${Math.round(base)}, but at gst_rate ${rate} it should be ${Math.round(expected)} (${head === 'IGST' ? 'the whole rate' : `${fraction * 100}% for this head`})`,
         );
       }
     }
@@ -195,4 +217,47 @@ export function checkTdsThresholds(generated: GeneratedExercise, history: TdsHis
   }
   if (violations.length === 0) return null;
   return `TDS thresholds violated: ${violations.join('; ')}. Apply the section thresholds on the running total for each payee.`;
+}
+
+// gst_head must agree with the ledger the leg names (2026-09-11): the
+// party directory, the invoice figures and the month-end position read
+// gst_head, while the arithmetic check and the scorer read the name. A leg
+// called "Output IGST" with gst_head null would print a Karnataka address
+// and a 29-series GSTIN on an inter-state invoice.
+export function checkGstHeadMetadata(generated: GeneratedExercise): string | null {
+  const violations: string[] = [];
+  for (const entry of generated.answer_key.entries) {
+    if (!GST_LEDGER.test(entry.correct_account)) continue;
+    const named = headOf(entry.correct_account);
+    if (named === null || entry.gst_head === named) continue;
+    violations.push(
+      `transaction ${entry.sequence}: the leg "${entry.correct_account}" must carry gst_head "${named}" (it ${entry.gst_head ? `says "${entry.gst_head}"` : 'is null'})`,
+    );
+  }
+  if (violations.length === 0) return null;
+  return `GST head metadata violated: ${violations.join('; ')}. Set gst_head on every GST ledger leg to the head its name states.`;
+}
+
+// The TDS leg must equal tds_base x tds_rate (2026-09-11): the key carries
+// both, and the net figure on the party or bank leg is what the learner is
+// scored against, so a TDS figure off the rate makes the whole voucher
+// unpostable from the paperwork.
+const TDS_TOLERANCE = 1;
+export function checkTdsArithmetic(generated: GeneratedExercise): string | null {
+  const violations: string[] = [];
+  for (const [sequence, legs] of groupBySequence(generated)) {
+    const tdsLegs = legs.filter((leg) => /\btds\b/i.test(leg.correct_account));
+    if (tdsLegs.length === 0) continue;
+    const stated = legs.find((leg) => leg.tds_rate !== null && leg.tds_base !== null);
+    if (!stated || stated.tds_rate === null || stated.tds_base === null) continue;
+    const expected = (stated.tds_base * stated.tds_rate) / 100;
+    const posted = tdsLegs.reduce((sum, leg) => sum + leg.amount, 0);
+    if (Math.abs(posted - expected) > TDS_TOLERANCE) {
+      violations.push(
+        `transaction ${sequence}: the TDS leg is ${Math.round(posted)}, but tds_base ${Math.round(stated.tds_base)} at ${stated.tds_rate}% gives ${Math.round(expected)}`,
+      );
+    }
+  }
+  if (violations.length === 0) return null;
+  return `TDS arithmetic violated: ${violations.join('; ')}. Recompute the TDS leg from tds_base and tds_rate, and the net party or bank leg from it.`;
 }

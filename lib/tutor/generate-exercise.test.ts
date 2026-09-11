@@ -283,6 +283,14 @@ describe('checkBatchMonth', () => {
     expect(checkBatchMonth(batch, may)).toBe(null);
   });
 
+  it('rejects a transaction with no date at all (it could not be placed on the statement or an invoice)', () => {
+    const batch = datedBatch([
+      'On 01-May-2024, transferred Rs. 15,000 from Cash to HDFC Bank.',
+      'Sold goods to Karnataka Emporium for Rs. 30,000 plus GST.',
+    ]);
+    expect(checkBatchMonth(batch, may)).toContain('transaction 2 carries no date');
+  });
+
   it('rejects the observed live failure: May and June mixed in one batch', () => {
     const batch = datedBatch([
       'On 01-May-2024, transferred Rs. 15,000 from Cash to HDFC Bank.',
@@ -305,9 +313,9 @@ describe('checkBatchMonth', () => {
     expect(checkBatchMonth(batch, may)).toBe(null);
   });
 
-  it('leaves descriptions with no parseable date to the prompt', () => {
+  it('no longer leaves an undated description to the prompt: the statement and the invoices need the date (2026-09-11)', () => {
     const batch = datedBatch(['Early in the month, paid Rs. 350 in bank charges.']);
-    expect(checkBatchMonth(batch, may)).toBe(null);
+    expect(checkBatchMonth(batch, may)).toContain('transaction 1 carries no date');
   });
 });
 
@@ -697,6 +705,12 @@ describe('checkSettlementReferences (invented bill numbers: DT-2216, BR/S/098, C
   it('accepts a part payment within the balance and an exact full settlement', () => {
     expect(checkSettlementReferences(settlement('Deccan Traders', 42500, 'DT/334', 'part payment against DT/334'), openBills)).toBeNull();
     expect(checkSettlementReferences(settlement('Deccan Traders', 69620, 'Against DT/334 (full)', 'full settlement of DT/334'), openBills)).toBeNull();
+  });
+
+  it('accepts an advance, a New Ref and an On Account allocation: they open a reference instead of settling a bill (rulebook 4, 9, 10)', () => {
+    expect(checkSettlementReferences(settlement('Vizag Vendors', 50000, 'ADV-S01 (Advance)', 'pays Vizag Vendors Rs 50,000 as an advance against a future order'), openBills)).toBeNull();
+    expect(checkSettlementReferences(settlement('Deccan Traders', 42500, 'On Account', 'pays Deccan Traders Rs 42,500 on account; no bill can be identified'), openBills)).toBeNull();
+    expect(checkSettlementReferences(settlement('Vizag Vendors', 12000, 'VV-9001 (New Ref)', 'pays Vizag Vendors Rs 12,000 against a new reference'), openBills)).toBeNull();
   });
 
   it('accepts settling a bill raised earlier in the same batch', () => {

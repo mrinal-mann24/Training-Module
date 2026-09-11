@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePartyName, partyDetailsFor } from './party-directory';
+import { gstinCheckDigit, normalizePartyName, partyDetailsFor } from './party-directory';
+
+describe('gstinCheckDigit', () => {
+  it('computes the Luhn mod-36 check character of a real GSTIN and stamps it on every generated one', () => {
+    expect(gstinCheckDigit('27AAPFU0939F1Z')).toBe('V');
+    for (const name of ['Deccan Traders', 'Mumbai Suppliers', 'Sharma Legal (individual)']) {
+      const gstin = partyDetailsFor(name, true).gstin;
+      expect(gstin).toHaveLength(15);
+      expect(gstin[14]).toBe(gstinCheckDigit(gstin.slice(0, 14)));
+    }
+  });
+});
 
 const GSTIN = /^[0-9]{2}[A-Z]{3}[CFP][A-Z][0-9]{4}[A-Z]1Z[0-9A-Z]$/;
 

@@ -78,7 +78,7 @@ export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
   narration_discipline: 'Retired: narration is not scored beyond the bank reference on bank vouchers.',
   trial_balance_tie_out: 'Nothing separate to write: every posting must leave the books consistent.',
   customer_advance:
-    'Advance received before any invoice (rulebook 9): Receipt Dr bank, Cr customer with a NEW reference of type Advance (bill_reference like "ADV-C01 (Advance)"). GOODS: no GST on the advance. SERVICE: the receipt credits the customer for the base and Output CGST on Advance plus Output SGST on Advance (or Output IGST on Advance) for the GST portion. When the invoice is raised, the Sales voucher allocates Against Ref ADV-C01 for the advance and New Ref for the balance; for a service advance add a journal Dr Output CGST on Advance / Dr Output SGST on Advance, Cr Output CGST / Cr Output SGST for the GST now recognised on the invoice. Include the advance and the invoice that adjusts it.',
+    'Advance received before any invoice (rulebook 9): Receipt Dr bank, Cr customer with a NEW reference of type Advance (bill_reference like "ADV-C01 (Advance)"). GOODS: no GST on the advance. SERVICE: the receipt credits the customer for the base and Output CGST on Advance plus Output SGST on Advance (or Output IGST on Advance) for the GST portion. When the invoice is raised, the Sales voucher allocates Against Ref ADV-C01 for the advance base and New Ref for the balance, and carries the regular Output CGST / Output SGST on the full invoice. For a service advance add, immediately after that Sales voucher, the reversal journal of rulebook 9B step 3: Dr Output CGST on Advance / Dr Output SGST on Advance for the GST that was recognised on the advance, Cr customer (Against Ref the invoice) for the same total, so the on-Advance ledgers return to zero and the customer is settled. Never credit the regular Output GST ledgers in that journal. Include the advance and the invoice that adjusts it.',
   supplier_advance:
     'Advance paid to a supplier before the bill (rulebook 10): Payment Dr supplier with a NEW Advance reference (bill_reference like "ADV-S01 (Advance)"), Cr bank; no Input GST at payment. When the bill arrives, the Purchase voucher allocates Against Ref ADV-S01 for the advance and New Ref for the balance. With TDS on a service advance: Dr supplier (gross, Advance ref), Cr TDS Payable of the section, Cr bank (net); the later bill deducts TDS only on the remaining base.',
   on_account_reference:
@@ -279,6 +279,7 @@ equal the credits. Examples of the required shape:
 - Contra: Dr the bank / Cr Cash, or the reverse.
 - Customer advance (goods): Receipt Dr the bank / Cr customer, bill_reference "ADV-C01 (Advance)".
 - Customer advance (service): Receipt Dr the bank (total) / Cr customer (base, Advance ref) / Cr Output CGST on Advance / Cr Output SGST on Advance.
+- Advance-GST reversal (service, the journal right after the Sales voucher that adjusts the advance): Journal Dr Output CGST on Advance / Dr Output SGST on Advance / Cr customer (Against Ref the invoice, total of the two).
 - Supplier advance: Payment Dr supplier (Advance ref "ADV-S01 (Advance)") / Cr the bank; with TDS: Dr supplier (gross) / Cr TDS Payable — u/s 194J / Cr the bank (net).
 - Receipt net of TDS: Dr the bank (net) / Dr TDS Receivable — u/s 194J / Cr customer (gross, Against Ref the invoice).
 - Multi-bill payment: Dr supplier (total, bill_reference "MS-101, MS-102") / Cr the bank.
@@ -288,7 +289,10 @@ MONTH-END GST (hard rule): never write a GST set-off journal or a GST payment
 to the government yourself. When the batch calls for them, the system appends
 both with figures taken from the ledger, dated inside the month.
 GST and TDS are real ledger legs ("Output IGST", "Input CGST", "TDS Payable — u/s 194J"),
-not just metadata; gst_head/tds_section on the tax leg say which head.
+not just metadata; gst_head/tds_section on the tax leg say which head. gst_rate on a
+CGST or SGST leg is that head's own rate (9 for 18% GST, 6 for 12%, 2.5 for 5%); on an
+IGST leg it is the whole rate (18). tds_base and tds_rate on the TDS leg give the
+deduction: tds_base x tds_rate / 100 is the TDS leg's amount.
 
 ${buildPartyStatesBlock(params.partyTaxClasses)}${buildOpenBillsBlock(params.openBills)}
 

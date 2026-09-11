@@ -46,8 +46,8 @@ import type {
   VendorInvoiceInput,
 } from "@/lib/llm/prompts/source-document";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
-import { applyDocumentsMode, checkMonthEndNoteDetails } from "@/lib/tutor/documents-mode";
-import { checkBillNumberUniqueness, checkGstArithmetic, checkTdsThresholds, priorBillReferences, tdsHistoryFromKeys } from "@/lib/tutor/generation-checks";
+import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
+import { checkBillNumberUniqueness, checkGstArithmetic, checkGstHeadMetadata, checkTdsArithmetic, checkTdsThresholds, priorBillReferences, tdsHistoryFromKeys } from "@/lib/tutor/generation-checks";
 import { appendMonthEndJournals } from "@/lib/tutor/month-end-journals";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
@@ -517,6 +517,12 @@ export function checkBatchMonth(
   const offenders: string[] = [];
 
   for (const transaction of generated.transactions) {
+    // A line with no date at all cannot be placed on the bank statement
+    // or dated on an invoice (documents mode drops it silently), so it is
+    // an offender too.
+    if (!/\b\d{1,2}[-\s/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-\s/]*\d{4}\b/i.test(transaction.description) && !/\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/.test(transaction.description)) {
+      offenders.push(`transaction ${transaction.sequence} carries no date`);
+    }
     // "01-May-2026", "1 May 2026", "01/May/2026" style.
     for (const match of transaction.description.matchAll(
       /\b\d{1,2}[-\s/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-\s/]*(\d{4})\b/gi,
@@ -804,6 +810,9 @@ export function stampOpeningPosition(
 // CS/612 (2026-09-03); a learner cannot allocate against a bill Tally has
 // never seen, so the retry lists the party's real open bills.
 const FULL_SETTLEMENT_PATTERN = /full (?:and final )?(?:settlement|payment)|settl(?:es|ed|ing) in full|in full settlement|clears? the (?:bill|invoice) in full/i;
+// References that open an allocation rather than settle a bill: an advance
+// ("ADV-C01 (Advance)"), an explicit New Ref, or On Account.
+const NEW_REFERENCE_PATTERN = /\badvance\b|\bnew ref(?:erence)?\b|^\s*on account\s*$/i;
 
 // The model sometimes names a bill in the transaction text ("bill DT-2301",
 // "against bill INV-016") but leaves bill_reference null in the key
@@ -922,6 +931,10 @@ export function checkSettlementReferences(
       ? "no open bills at all"
       : partyOpen.map((bill) => `${bill.ref} (Rs ${Math.round(Math.abs(bill.open)).toLocaleString("en-IN")} outstanding)`).join(", ");
     let openTotal = 0;
+    // An advance ("ADV-C01 (Advance)"), a New Ref or an On Account
+    // allocation (rulebook 4, 9, 10) opens a reference instead of settling
+    // one, so there is no bill to look up and no balance to stay within.
+    if (NEW_REFERENCE_PATTERN.test(reference)) continue;
     for (const ref of splitBillReferences(reference)) {
       const id = `${party.correct_account}|${normalizeBillReference(ref)}`;
       if (raisedInBatch.has(id)) { openTotal += Number.POSITIVE_INFINITY; continue; }
@@ -1163,7 +1176,15 @@ export async function generateAdaptiveExercise(
       const uniquenessError = checkBillNumberUniqueness(parsed.data, priorRefs);
       const gstArithmeticError = checkGstArithmetic(parsed.data);
       const tdsThresholdError = checkTdsThresholds(parsed.data, tdsHistory);
-      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError]
+      // 2026-09-11 audit: gst_head must state the head the leg names (the
+      // invoice address and GSTIN are derived from it), the TDS leg must
+      // equal base x rate, and every sale must be printable as our invoice
+      // before the batch leaves the loop (documents mode built it after
+      // validation and threw, killing the job).
+      const gstHeadError = checkGstHeadMetadata(parsed.data);
+      const tdsArithmeticError = checkTdsArithmetic(parsed.data);
+      const salesInvoiceError = documentsMode ? checkSalesInvoicesBuildable(parsed.data, companyName ?? "Blossom Retail Pvt Ltd") : null;
+      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError, gstHeadError, tdsArithmeticError, salesInvoiceError]
         .filter(Boolean)
         .join(" ");
       const batchError = [
@@ -1179,6 +1200,9 @@ export async function generateAdaptiveExercise(
         uniquenessError,
         gstArithmeticError,
         tdsThresholdError,
+        gstHeadError,
+        tdsArithmeticError,
+        salesInvoiceError,
       ]
         .filter(Boolean)
         .join(" ");

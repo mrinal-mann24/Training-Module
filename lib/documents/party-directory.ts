@@ -151,7 +151,23 @@ function gstinFor(name: string, stateCode: string): string {
     initial +
     String(1000 + (((h[2] << 8) | h[3]) % 9000)) +
     LETTERS[h[4] % 26];
-  return `${stateCode}${pan}1Z${ALNUM[h[5] % 36]}`;
+  const first14 = `${stateCode}${pan}1Z`;
+  return `${first14}${gstinCheckDigit(first14)}`;
+}
+
+// The GSTIN's 15th character is a Luhn mod-36 check digit over the first
+// 14 (factor 1, 2, 1, 2… from the first character; each product's quotient
+// and remainder by 36 are summed). Tally's party master and the GST portal
+// both validate it, so a printed GSTIN must carry the right one.
+// Exported for tests: 27AAPFU0939F1Z → V.
+export function gstinCheckDigit(first14: string): string {
+  let total = 0;
+  for (let index = 0; index < first14.length; index += 1) {
+    const value = ALNUM.indexOf(first14[index].toUpperCase());
+    const product = value * (index % 2 === 0 ? 1 : 2);
+    total += Math.floor(product / 36) + (product % 36);
+  }
+  return ALNUM[(36 - (total % 36)) % 36];
 }
 
 function addressFor(name: string, city: CityInfo): string {

@@ -171,6 +171,43 @@ describe('appendMonthEndJournals', () => {
     expect(nothingPayable.appended.payment).toBe(false);
   });
 
+  it('keeps a reverse-charge journal, which touches both GST sides but is a transaction of the month, not the set-off', () => {
+    const withRcm: GeneratedExercise = {
+      ...batch,
+      transactions: [...batch.transactions, { sequence: 3, description: 'On 12-May-2025, GTA freight under reverse charge.' }],
+      answer_key: {
+        entries: [
+          ...batch.answer_key.entries,
+          leg(3, 'Input CGST RCM', 'Dr', 450, { voucher_type: 'Journal', gst_head: 'CGST', gst_rate: 5 }),
+          leg(3, 'Input SGST RCM', 'Dr', 450, { voucher_type: 'Journal', gst_head: 'SGST', gst_rate: 5 }),
+          leg(3, 'Output CGST RCM', 'Cr', 450, { voucher_type: 'Journal', gst_head: 'CGST', gst_rate: 5 }),
+          leg(3, 'Output SGST RCM', 'Cr', 450, { voucher_type: 'Journal', gst_head: 'SGST', gst_rate: 5 }),
+        ],
+      },
+    };
+    const result = appendMonthEndJournals(withRcm, {
+      priorKeys,
+      concepts: ['gst_set_off'],
+      month: { monthIndex: 4, year: 2025 },
+      licenseMode: 'licensed',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 500000,
+    });
+    // The model's own set-off (sequence 2) is dropped, the RCM journal is
+    // kept and renumbered to 2, the computed set-off is appended as 3.
+    expect(result.generated.transactions.map((t) => t.description)).toEqual([
+      batch.transactions[0].description,
+      'On 12-May-2025, GTA freight under reverse charge.',
+      expect.stringContaining('On 31-May-2025'),
+    ]);
+    expect(result.generated.answer_key.entries.filter((e) => e.sequence === 2).map((e) => e.correct_account)).toEqual([
+      'Input CGST RCM',
+      'Input SGST RCM',
+      'Output CGST RCM',
+      'Output SGST RCM',
+    ]);
+  });
+
   it('leaves a batch alone when neither concept is in play', () => {
     const untouched = appendMonthEndJournals(batch, {
       priorKeys,
