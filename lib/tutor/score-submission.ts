@@ -667,13 +667,16 @@ const MIN_CONTAINMENT_CHARS = 5;
 // lists a group next to its ledgers ("Sales Accounts" above "SALES"), and
 // the group row would be counted a second time for the ledger it embeds.
 // Group rows carry no ledger of the learner's, so they never take part.
+// "Suspense A/c" is deliberately absent: learners name their suspense
+// LEDGER exactly like the group (Garima's "SUSPENSE AC", 2026-09-11), and
+// the correct books carry a balance on it.
 const TALLY_GROUP_NAMES = new Set(
   [
     'Capital Account', 'Current Liabilities', 'Duties & Taxes', 'Sundry Creditors', 'Provisions', 'Loans (Liability)',
     'Bank OD A/c', 'Bank OCC A/c', 'Secured Loans', 'Unsecured Loans', 'Reserves & Surplus', 'Retained Earnings',
     'Fixed Assets', 'Current Assets', 'Sundry Debtors', 'Cash-in-Hand', 'Bank Accounts', 'Deposits (Asset)',
     'Loans & Advances (Asset)', 'Stock-in-Hand', 'Investments', 'Misc. Expenses (ASSET)', 'Branch / Divisions',
-    'Suspense A/c', 'Sales Accounts', 'Purchase Accounts', 'Direct Expenses', 'Direct Incomes', 'Indirect Expenses',
+    'Sales Accounts', 'Purchase Accounts', 'Direct Expenses', 'Direct Incomes', 'Indirect Expenses',
     'Indirect Incomes', 'Expenses (Direct)', 'Expenses (Indirect)', 'Income (Direct)', 'Income (Indirect)',
     'Opening Stock', 'Closing Stock', 'Profit & Loss A/c',
   ].map(normalizeAccountName),

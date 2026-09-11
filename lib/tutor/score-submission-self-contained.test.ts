@@ -147,3 +147,19 @@ describe('Tally group rows in a partially expanded export', () => {
     expect(result.tieOut).toBe(true);
   });
 });
+
+describe('a suspense ledger named like the Tally group', () => {
+  it('is a real ledger row, never filtered as a group (Garima, 2026-09-11)', () => {
+    const key: AnswerKey = {
+      entries: [
+        leg(1, 'Suspense', 'Cr', 5000, { voucher_type: 'Receipt' }),
+        leg(1, 'HDFC Bank — 1234', 'Dr', 5000, { voucher_type: 'Receipt' }),
+      ],
+    };
+    const may = monthExport([
+      ['SUSPENSE AC', 0, -5000],
+      ['HDFC BANK', 100000, 105000],
+    ]);
+    expect(evaluateTrialBalanceTieOut(may, key, null).mismatches).toEqual([]);
+  });
+});
