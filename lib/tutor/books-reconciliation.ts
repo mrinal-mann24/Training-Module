@@ -2,7 +2,7 @@ import { netAnswerKeys } from '@/lib/db/queries/company';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { TieOutMismatch } from '@/lib/schemas/scoring';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
-import { classifyLedger, normalizeAccountName, type LedgerKind } from './account-names';
+import { classifyLedger, normalizeAccountName, partyAccountsOf, type LedgerKind } from './account-names';
 import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submission';
 
 // Books reconciliation (2026-09-10 meeting: "it does not yet tell the
@@ -28,8 +28,6 @@ import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submi
 export { classifyLedger };
 export type { LedgerKind };
 
-const TAX_PATTERN = /gst|tds/i;
-
 export type ExpectedClosing = {
   account: string;
   kind: 'balance_sheet' | 'profit_and_loss';
@@ -50,10 +48,10 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
   const aliases = new Map<string, Set<string>>();
   const displayName = new Map<string, string>();
   for (const key of upToNow) {
+    for (const party of partyAccountsOf(key.entries)) parties.add(party);
     for (const entry of key.entries) {
       const norm = normalizeAccountName(entry.correct_account);
       if (!displayName.has(norm)) displayName.set(norm, entry.correct_account);
-      if (entry.bill_reference !== null && !TAX_PATTERN.test(entry.correct_account)) parties.add(norm);
       for (const alias of entry.account_aliases ?? []) {
         const set = aliases.get(norm) ?? new Set<string>();
         set.add(alias);

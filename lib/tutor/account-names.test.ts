@@ -1,5 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { accountNamesMatch, tdsSectionOf } from './account-names';
+import { accountNamesMatch, partyAccountsOf, tdsSectionOf } from './account-names';
+
+describe('partyAccountsOf', () => {
+  const entry = (voucher_type: string, correct_account: string, dr_cr: 'Dr' | 'Cr', bill_reference: string | null) => ({ voucher_type, correct_account, dr_cr, bill_reference });
+
+  it('takes the party side of a voucher only, even when the key stamps the reference on every leg', () => {
+    const parties = partyAccountsOf([
+      entry('Purchase', 'Purchases', 'Dr', 'MS-900'),
+      entry('Purchase', 'Input CGST', 'Dr', 'MS-900'),
+      entry('Purchase', 'Mumbai Suppliers', 'Cr', 'MS-900'),
+      entry('Sales', 'Karnataka Emporium', 'Dr', 'INV-070'),
+      entry('Sales', 'Sales', 'Cr', 'INV-070'),
+      entry('Purchase', 'Legal & Professional Charges', 'Dr', 'SL/2027-04'),
+      entry('Purchase', 'Sharma Legal (individual)', 'Cr', 'SL/2027-04'),
+      entry('Payment', 'Hero Rentals (individual)', 'Dr', 'HR/2027-04'),
+      entry('Payment', 'HDFC Bank — 1234', 'Cr', null),
+    ]);
+    expect([...parties].sort()).toEqual(['herorentalsindividual', 'karnatakaemporium', 'mumbaisuppliers', 'sharmalegalindividual']);
+  });
+
+  it('never treats a core profit-and-loss ledger as a party', () => {
+    expect([...partyAccountsOf([entry('Payment', 'Rent', 'Dr', 'HR/2027-05'), entry('Journal', 'Sales Returns', 'Dr', 'INV-009')])]).toEqual([]);
+  });
+});
+
+describe('accountNamesMatch on the advertising family', () => {
+  it('reads "Advertising and Marketing" as "Advertisement & Marketing" (Praveen, April 2025)', () => {
+    expect(accountNamesMatch('Advertising and Marketing', 'Advertisement & Marketing')).toBe(true);
+    expect(accountNamesMatch('Signage Advertising (firm)', 'Advertisement & Marketing')).toBe(false);
+  });
+});
 
 describe('tdsSectionOf', () => {
   it('reads a known section from the ledger name in any of the learners\' spellings', () => {

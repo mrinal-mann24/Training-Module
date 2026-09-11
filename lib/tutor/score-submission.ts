@@ -12,7 +12,7 @@ import type {
   CompositeMatch,
 } from '@/lib/schemas/scoring';
 import { findLedgerFindings } from './ledger-findings';
-import { accountNamesMatch, classifyLedger, gstHeadOf, normalizeAccountName, RETURNS_TOKEN } from './account-names';
+import { accountNamesMatch, classifyLedger, gstHeadOf, normalizeAccountName, partyAccountsOf, RETURNS_TOKEN } from './account-names';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -718,7 +718,7 @@ export function evaluateTrialBalanceTieOut(
   const movementBased = previousTrialBalance !== null;
   const expected = new Map<string, number>();
   const aliasesByAccount = new Map<string, string[]>();
-  const partyAccounts = new Set<string>();
+  const partyAccounts = partyAccountsOf(answerKey.entries);
 
   if (!movementBased) {
     for (const opening of answerKey.opening_balances ?? []) {
@@ -730,9 +730,6 @@ export function evaluateTrialBalanceTieOut(
     const key = entry.correct_account.trim().toLowerCase();
     expected.set(key, (expected.get(key) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
     if (entry.account_aliases?.length) aliasesByAccount.set(key, entry.account_aliases);
-    if (entry.bill_reference !== null && !TIE_OUT_EXEMPT_PATTERN.test(entry.correct_account)) {
-      partyAccounts.add(normalizeAccountName(entry.correct_account));
-    }
   }
 
   const namesByAccount = new Map<string, string[]>();

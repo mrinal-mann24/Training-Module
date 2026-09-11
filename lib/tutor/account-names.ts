@@ -79,6 +79,9 @@ const FILLER_TOKENS = new Set([
 ]);
 
 function stemToken(token: string): string {
+  // "Advertising and Marketing" (Praveen's ledger) is "Advertisement &
+  // Marketing" in the key: one stem for the family (2026-09-11).
+  if (token.startsWith('advertis')) return 'advertis';
   if (token.length > 4 && token.endsWith('ies')) return token.slice(0, -3) + 'y';
   if (token.length > 4 && token.endsWith('es') && !token.endsWith('ses')) return token.slice(0, -2);
   if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
@@ -122,6 +125,39 @@ export function classifyLedger(account: string, partyAccounts: Set<string>): Led
   if (BALANCE_SHEET_PATTERN.test(account)) return 'balance_sheet';
   if (PROFIT_AND_LOSS_PATTERN.test(account)) return 'profit_and_loss';
   return 'unknown';
+}
+
+// The party accounts of an answer key: the ledgers that carry bill
+// references ON THE PARTY SIDE of a voucher — the customer is debited on a
+// sale or debit note and credited on a receipt or credit note, the supplier
+// is credited on a purchase and debited on a payment. Generated keys stamp
+// the bill reference on every leg of a voucher, so "any leg with a
+// reference" (the rule until 2026-09-11) made Sales, Purchases, Rent and
+// the expense ledgers parties, i.e. balance-sheet ledgers that never
+// restart at a financial year (every intern's April: "Sales off by the
+// whole of 2024-25"). Core profit-and-loss names are never parties.
+const PARTY_SIDE: Record<string, 'Dr' | 'Cr'> = {
+  sales: 'Dr',
+  'debit note': 'Dr',
+  payment: 'Dr',
+  purchase: 'Cr',
+  'credit note': 'Cr',
+  receipt: 'Cr',
+};
+const CORE_PROFIT_AND_LOSS = /\b(sales|purchases?|returns?|rent|charges?|fees?|expenses?|income|interest|depreciation|salar(y|ies)|wages)\b/i;
+
+export function partyAccountsOf(
+  entries: readonly { correct_account: string; dr_cr: 'Dr' | 'Cr'; voucher_type: string; bill_reference: string | null }[],
+): Set<string> {
+  const parties = new Set<string>();
+  for (const entry of entries) {
+    if (entry.bill_reference === null || LEDGER_TAX_PATTERN.test(entry.correct_account)) continue;
+    if (CORE_PROFIT_AND_LOSS.test(entry.correct_account)) continue;
+    const side = PARTY_SIDE[entry.voucher_type.trim().toLowerCase()];
+    if (side !== undefined && entry.dr_cr !== side) continue;
+    parties.add(normalizeAccountName(entry.correct_account));
+  }
+  return parties;
 }
 
 // TDS ledgers carry the section in their name ("TDS Payable — u/s 194J").

@@ -50,6 +50,12 @@ const aprilKey: AnswerKey = {
     leg(1, 'Output SGST', 'Cr', 1800, { gst_head: 'SGST', gst_rate: 9 }),
     leg(2, 'Rent', 'Dr', 10000, { voucher_type: 'Payment' }),
     leg(2, 'HDFC Bank — 1234', 'Cr', 10000, { voucher_type: 'Payment' }),
+    // Generated keys stamp the bill reference on every leg, the Purchases
+    // leg included: that must not make Purchases a party ledger.
+    leg(3, 'Purchases', 'Dr', 50000, { voucher_type: 'Purchase', bill_reference: 'MS-900' }),
+    leg(3, 'Input CGST', 'Dr', 4500, { voucher_type: 'Purchase', gst_head: 'CGST', gst_rate: 9, bill_reference: 'MS-900' }),
+    leg(3, 'Input SGST', 'Dr', 4500, { voucher_type: 'Purchase', gst_head: 'SGST', gst_rate: 9, bill_reference: 'MS-900' }),
+    leg(3, 'Mumbai Suppliers', 'Cr', 59000, { voucher_type: 'Purchase', bill_reference: 'MS-900' }),
   ],
 };
 
@@ -76,17 +82,20 @@ describe('Trial Balance tie-out across the financial-year change', () => {
       ['Karnataka Emporium', 123600],
       ['Sales', -20000],
       ['Rent', 10000],
+      ['Purchases', 50000],
       ['HDFC Bank — 1234', 790000],
       ['Output CGST', -1800],
       ['Output SGST', -1800],
+      ['Input CGST', 4500],
+      ['Input SGST', 4500],
       ['Cash', 5000],
       ['Capital', -925000],
       ['Office Equipment', 192000],
-      ['Mumbai Suppliers', -211000],
+      ['Mumbai Suppliers', -270000],
     ]);
     const withoutFlag = evaluateTrialBalanceTieOut(aprilExportNewYear, aprilKey, marchBaseline);
     expect(withoutFlag.tieOut).toBe(false);
-    expect(withoutFlag.mismatches.map((m) => m.account)).toEqual(expect.arrayContaining(['sales', 'rent']));
+    expect(withoutFlag.mismatches.map((m) => m.account)).toEqual(expect.arrayContaining(['sales', 'rent', 'purchases']));
 
     const withFlag = evaluateTrialBalanceTieOut(aprilExportNewYear, aprilKey, marchBaseline, { firstMonthOfFinancialYear: true });
     expect(withFlag.mismatches).toEqual([]);
@@ -101,13 +110,15 @@ describe('Trial Balance tie-out across the financial-year change', () => {
       ['HDFC Bank — 1234', 790000],
       ['Output CGST', -51800],
       ['Output SGST', -51800],
-      ['Purchases', 1729250],
+      ['Input CGST', 4500],
+      ['Input SGST', 4500],
+      ['Purchases', 1779250],
       ['Cash', 5000],
       ['Capital', -925000],
       ['Salaries', 95000],
       ['Electricity Charges', 17450],
       ['Office Equipment', 192000],
-      ['Mumbai Suppliers', -211000],
+      ['Mumbai Suppliers', -270000],
     ]);
     const result = evaluateTrialBalanceTieOut(aprilExportCumulative, aprilKey, marchBaseline, { firstMonthOfFinancialYear: true });
     expect(result.mismatches).toEqual([]);
@@ -119,13 +130,16 @@ describe('Trial Balance tie-out across the financial-year change', () => {
       ['Karnataka Emporium', 113600],
       ['Sales', -25000],
       ['Rent', 10000],
+      ['Purchases', 50000],
       ['HDFC Bank — 1234', 790000],
       ['Output CGST', -1800],
       ['Output SGST', -1800],
+      ['Input CGST', 4500],
+      ['Input SGST', 4500],
       ['Cash', 5000],
       ['Capital', -925000],
       ['Office Equipment', 192000],
-      ['Mumbai Suppliers', -211000],
+      ['Mumbai Suppliers', -270000],
     ]);
     const result = evaluateTrialBalanceTieOut(wrong, aprilKey, marchBaseline, { firstMonthOfFinancialYear: true });
     expect(result.tieOut).toBe(false);
