@@ -59,6 +59,9 @@ describe('classifyLedger', () => {
     expect(classifyLedger('HDFC Bank — 1234', new Set())).toBe('balance_sheet');
     expect(classifyLedger('Outstanding Expenses', new Set())).toBe('balance_sheet');
     expect(classifyLedger('Input CGST', new Set())).toBe('tax');
+    expect(classifyLedger('BANK CHARGES', new Set())).toBe('profit_and_loss');
+    expect(classifyLedger('Cash Discount', new Set())).toBe('profit_and_loss');
+    expect(classifyLedger('Bank Accounts', new Set())).toBe('balance_sheet');
     expect(classifyLedger('Mystery Ledger', new Set())).toBe('unknown');
   });
 });
@@ -127,5 +130,30 @@ describe('evaluateBooksReconciliation', () => {
       { account: 'HDFC Bank — 1234', status: 'off', difference: -34000 },
       { account: 'Delhi Bazaar', status: 'missing', difference: -11800 },
     ]);
+  });
+});
+
+describe('aliases on returns ledgers', () => {
+  it('drops an alias that names the base ledger of a returns ledger (an old key aliased Sales Returns as "Sales")', () => {
+    const entry = {
+      sequence: 1,
+      correct_account: 'Sales Returns',
+      dr_cr: 'Dr' as const,
+      amount: 8000,
+      voucher_type: 'Credit Note',
+      gst_head: null,
+      gst_rate: null,
+      tds_section: null,
+      tds_rate: null,
+      tds_base: null,
+      bill_reference: 'INV-009',
+      narration: null,
+      concept_tags: ['sales_voucher_basics' as const],
+      requires_source_document: false,
+      source_document_type: null,
+      account_aliases: ['Sales Return', 'Sales', 'Credit Sales A/c'],
+    };
+    const expected = expectedClosingBalances([{ entries: [entry] }], 0);
+    expect(expected.find((item) => item.account === 'Sales Returns')?.aliases).toEqual(['Sales Return']);
   });
 });

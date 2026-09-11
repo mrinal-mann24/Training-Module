@@ -729,7 +729,10 @@ export function evaluateTrialBalanceTieOut(
   for (const entry of answerKey.entries) {
     const key = entry.correct_account.trim().toLowerCase();
     expected.set(key, (expected.get(key) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
-    if (entry.account_aliases?.length) aliasesByAccount.set(key, entry.account_aliases);
+    if (entry.account_aliases?.length) {
+      // A returns ledger never borrows its base ledger's name as an alias.
+      aliasesByAccount.set(key, entry.account_aliases.filter((alias) => RETURNS_TOKEN.test(alias) === RETURNS_TOKEN.test(entry.correct_account)));
+    }
   }
 
   const namesByAccount = new Map<string, string[]>();

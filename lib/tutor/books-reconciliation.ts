@@ -2,7 +2,7 @@ import { netAnswerKeys } from '@/lib/db/queries/company';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { TieOutMismatch } from '@/lib/schemas/scoring';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
-import { classifyLedger, normalizeAccountName, partyAccountsOf, type LedgerKind } from './account-names';
+import { classifyLedger, normalizeAccountName, partyAccountsOf, RETURNS_TOKEN, type LedgerKind } from './account-names';
 import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submission';
 
 // Books reconciliation (2026-09-10 meeting: "it does not yet tell the
@@ -58,6 +58,10 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
       const norm = normalizeAccountName(entry.correct_account);
       if (!displayName.has(norm)) displayName.set(norm, entry.correct_account);
       for (const alias of entry.account_aliases ?? []) {
+        // A returns ledger never borrows its base ledger's name (an old key
+        // listed "Sales" as an alias of Sales Returns, which added Garima's
+        // whole Sales figure to her Sales Returns, 2026-09-11).
+        if (RETURNS_TOKEN.test(alias) !== RETURNS_TOKEN.test(entry.correct_account)) continue;
         const set = aliases.get(norm) ?? new Set<string>();
         set.add(alias);
         aliases.set(norm, set);

@@ -119,9 +119,15 @@ const BALANCE_SHEET_PATTERN =
 const PROFIT_AND_LOSS_PATTERN =
   /\b(sales|purchases?|returns?|charges?|expenses?|fees?|rent|salar(y|ies)|wages|income|interest|depreciation|bad debts?|subscription|maintenance|advertis\w*|marketing|freight|delivery|packing|electricity|repairs?|discount|round[- ]?off|penalt\w*|late fee|commission|insurance|printing|stationery|travel|conveyance|telephone|internet|audit|legal|professional|consult\w*|cleaning|housekeeping|software|courier|postage|bonus|misc\w*|written off)\b/i;
 
+// "Bank Charges", "Bank Interest", "Cash Discount": expense and income
+// ledgers that carry a balance-sheet word (Garima's April: Bank Charges
+// was read as a bank ledger and never restarted at the year change).
+const BANK_CASH_PROFIT_AND_LOSS = /\b(bank|cash)\s+(charges?|fees?|commission|interest|discount)\b/i;
+
 export function classifyLedger(account: string, partyAccounts: Set<string>): LedgerKind {
   if (LEDGER_TAX_PATTERN.test(account)) return 'tax';
   if (partyAccounts.has(normalizeAccountName(account))) return 'balance_sheet';
+  if (BANK_CASH_PROFIT_AND_LOSS.test(account)) return 'profit_and_loss';
   if (BALANCE_SHEET_PATTERN.test(account)) return 'balance_sheet';
   if (PROFIT_AND_LOSS_PATTERN.test(account)) return 'profit_and_loss';
   return 'unknown';
