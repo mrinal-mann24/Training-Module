@@ -32,6 +32,11 @@ export type ExpectedClosing = {
   account: string;
   kind: 'balance_sheet' | 'profit_and_loss';
   expected: number; // Dr positive
+  // Profit-and-loss ledgers after the first year (2026-09-11): the figure
+  // since books began, for a learner whose export runs from the first day
+  // of the books instead of the current financial year (Praveen's April).
+  // Either reading is accepted, like the tie-out.
+  alternative?: number;
   aliases: string[];
 };
 
@@ -74,7 +79,7 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
 
   const expected: ExpectedClosing[] = [];
   const seen = new Set<string>();
-  const consider = (account: string, figure: number) => {
+  const consider = (account: string, figure: number, alternative?: number) => {
     const norm = normalizeAccountName(account);
     if (seen.has(norm)) return;
     const kind = classifyLedger(account, parties);
@@ -84,14 +89,16 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
       account: displayName.get(norm) ?? account,
       kind,
       expected: Math.round(figure * 100) / 100,
+      ...(alternative !== undefined ? { alternative: Math.round(alternative * 100) / 100 } : {}),
       aliases: [...(aliases.get(norm) ?? [])],
     });
   };
   for (const [account, figure] of cumulative) {
     if (classifyLedger(account, parties) === 'balance_sheet') consider(account, figure);
   }
+  const pastFirstYear = ordinal >= BATCHES_PER_YEAR;
   for (const [account, figure] of yearToDate) {
-    if (classifyLedger(account, parties) === 'profit_and_loss') consider(account, figure);
+    if (classifyLedger(account, parties) === 'profit_and_loss') consider(account, figure, pastFirstYear ? cumulative.get(account) : undefined);
   }
   return expected;
 }
@@ -113,7 +120,11 @@ export function evaluateBooksReconciliation(trialBalance: ParsedTrialBalance, ex
       }
       continue;
     }
-    const difference = Math.round((signedClosing(rows) - item.expected) * 100) / 100;
+    const closing = signedClosing(rows);
+    const readings = item.alternative !== undefined ? [item.expected, item.alternative] : [item.expected];
+    const difference = readings
+      .map((figure) => Math.round((closing - figure) * 100) / 100)
+      .sort((a, b) => Math.abs(a) - Math.abs(b))[0];
     if (Math.abs(difference) >= RECONCILIATION_TOLERANCE) {
       differences.push({ account: item.account, status: 'off', difference });
     }

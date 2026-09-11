@@ -79,6 +79,17 @@ describe('expectedClosingBalances', () => {
     expect(byAccount.has('Output CGST')).toBe(false);
   });
 
+  it('offers the whole-period figure as an alternative for profit-and-loss ledgers after the first year (an export since books began)', () => {
+    const expected = expectedClosingBalances(keys, 12);
+    const sales = expected.find((item) => item.account === 'Sales');
+    expect(sales?.alternative).toBe(-60000);
+    expect(expected.find((item) => item.account === 'HDFC Bank — 1234')?.alternative).toBeUndefined();
+    const wholePeriodExport = { ledgers: [{ ledgerName: 'Sales', closingDebit: 0, closingCredit: 60000 }] } as unknown as Parameters<typeof evaluateBooksReconciliation>[0];
+    expect(evaluateBooksReconciliation(wholePeriodExport, [sales!]).differences).toEqual([]);
+    const wrongEitherWay = { ledgers: [{ ledgerName: 'Sales', closingDebit: 0, closingCredit: 40000 }] } as unknown as Parameters<typeof evaluateBooksReconciliation>[0];
+    expect(evaluateBooksReconciliation(wrongEitherWay, [sales!]).differences).toEqual([{ account: 'Sales', status: 'off', difference: 20000 }]);
+  });
+
   it('in the first year profit-and-loss ledgers are simply cumulative', () => {
     const expected = expectedClosingBalances(keys, 0);
     expect(expected.find((item) => item.account === 'Sales')?.expected).toBe(-50000);
