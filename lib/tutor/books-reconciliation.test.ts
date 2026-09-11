@@ -177,3 +177,18 @@ describe('month-only exports of profit-and-loss ledgers (Praveen, May 2025)', ()
     expect(evaluateBooksReconciliation({ ledgers: [] }, [rent]).differences).toEqual([]);
   });
 });
+
+describe('a party row is never lent to an expense ledger through an alias', () => {
+  it('keeps Signage Advertising with the vendor when Advertisement & Marketing carries the alias "Advertising"', () => {
+    const key: AnswerKey = {
+      entries: [
+        leg(1, 'Advertisement & Marketing', 'Dr', 22000, { voucher_type: 'Purchase', bill_reference: 'SA/2027-04', account_aliases: ['Advertising', 'Marketing Expenses'] }),
+        leg(1, 'Signage Advertising', 'Cr', 22000, { voucher_type: 'Purchase', bill_reference: 'SA/2027-04' }),
+      ],
+    };
+    const expected = expectedClosingBalances([key, { entries: [] }], 1);
+    const vendorOnly = { ledgers: [{ ledgerName: 'Signage Advertising (firm)', openingDebit: 0, openingCredit: 22000, closingDebit: 0, closingCredit: 22000 }] } as unknown as Parameters<typeof evaluateBooksReconciliation>[0];
+    // The expense ledger did not move this month, so its absence is fine; the vendor row is the vendor's.
+    expect(evaluateBooksReconciliation(vendorOnly, expected).differences).toEqual([]);
+  });
+});

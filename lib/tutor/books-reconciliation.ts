@@ -128,9 +128,23 @@ export function evaluateBooksReconciliation(trialBalance: ParsedTrialBalance, ex
   const namesByAccount = new Map<string, string[]>();
   for (const item of expected) namesByAccount.set(item.account, [item.account, ...item.aliases]);
   const claimed = exactlyClaimedRows(trialBalance, namesByAccount);
+  // Balance-sheet ledgers (the parties among them) take their rows first,
+  // and a row taken that way is never lent to a profit-and-loss ledger:
+  // an old key's alias "Advertising" for Advertisement & Marketing sits
+  // inside "Signage Advertising (firm)", and the vendor's balance was read
+  // as the expense ledger's (Praveen's May, 2026-09-11).
+  const takenByBalanceSheet = new Set<string>();
+  for (const item of expected) {
+    if (item.kind !== 'balance_sheet') continue;
+    for (const row of rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed)) {
+      takenByBalanceSheet.add(row.ledgerName);
+    }
+  }
   const differences: TieOutMismatch[] = [];
   for (const item of expected) {
-    const rows = rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed);
+    const rows = rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed).filter(
+      (row) => item.kind === 'balance_sheet' || !takenByBalanceSheet.has(row.ledgerName),
+    );
     if (rows.length === 0) {
       // A month-only export omits a profit-and-loss ledger that did not
       // move this month, so an absent row is fine when the month's own
