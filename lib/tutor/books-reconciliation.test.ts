@@ -157,3 +157,23 @@ describe('aliases on returns ledgers', () => {
     expect(expected.find((item) => item.account === 'Sales Returns')?.aliases).toEqual(['Sales Return']);
   });
 });
+
+describe('month-only exports of profit-and-loss ledgers (Praveen, May 2025)', () => {
+  // Two second-year months: the sale repeats, so year to date is twice the month.
+  const twoMonths = [...keys, secondYear];
+
+  it('accepts the month figure, the year-to-date figure or the whole-period figure, and an absent ledger that did not move this month', () => {
+    const expected = expectedClosingBalances(twoMonths, 13);
+    const sales = expected.find((item) => item.account === 'Sales')!;
+    expect(sales.expected).toBe(-20000);
+    expect(sales.monthMovement).toBe(-10000);
+    const monthOnly = { ledgers: [{ ledgerName: 'Sales', openingDebit: 0, openingCredit: 0, closingDebit: 0, closingCredit: 10000 }] } as unknown as Parameters<typeof evaluateBooksReconciliation>[0];
+    expect(evaluateBooksReconciliation(monthOnly, [sales]).differences).toEqual([]);
+    const yearToDate = { ledgers: [{ ledgerName: 'Sales', closingDebit: 0, closingCredit: 20000 }] } as unknown as Parameters<typeof evaluateBooksReconciliation>[0];
+    expect(evaluateBooksReconciliation(yearToDate, [sales]).differences).toEqual([]);
+    // Rent moved only in the first second-year month: absent from the next month's export is fine.
+    const rent = expectedClosingBalances([...twoMonths, { entries: [] }], 14).find((item) => item.account === 'Rent')!;
+    expect(rent.monthMovement).toBe(0);
+    expect(evaluateBooksReconciliation({ ledgers: [] }, [rent]).differences).toEqual([]);
+  });
+});

@@ -37,6 +37,11 @@ export type ExpectedClosing = {
   // of the books instead of the current financial year (Praveen's April).
   // Either reading is accepted, like the tie-out.
   alternative?: number;
+  // Profit-and-loss ledgers: the batch's own movement. A Trial Balance
+  // exported for the month alone shows these ledgers with a blank opening
+  // and the month's figure as closing (Praveen's May, 2026-09-11), so that
+  // reading is accepted too.
+  monthMovement?: number;
   aliases: string[];
 };
 
@@ -83,7 +88,12 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
 
   const expected: ExpectedClosing[] = [];
   const seen = new Set<string>();
-  const consider = (account: string, figure: number, alternative?: number) => {
+  const monthMovement = new Map<string, number>();
+  for (const entry of keys[ordinal]?.entries ?? []) {
+    monthMovement.set(entry.correct_account, (monthMovement.get(entry.correct_account) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
+  }
+
+  const consider = (account: string, figure: number, alternative?: number, month?: number) => {
     const norm = normalizeAccountName(account);
     if (seen.has(norm)) return;
     const kind = classifyLedger(account, parties);
@@ -94,6 +104,7 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
       kind,
       expected: Math.round(figure * 100) / 100,
       ...(alternative !== undefined ? { alternative: Math.round(alternative * 100) / 100 } : {}),
+      ...(month !== undefined ? { monthMovement: Math.round(month * 100) / 100 } : {}),
       aliases: [...(aliases.get(norm) ?? [])],
     });
   };
@@ -102,7 +113,9 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
   }
   const pastFirstYear = ordinal >= BATCHES_PER_YEAR;
   for (const [account, figure] of yearToDate) {
-    if (classifyLedger(account, parties) === 'profit_and_loss') consider(account, figure, pastFirstYear ? cumulative.get(account) : undefined);
+    if (classifyLedger(account, parties) === 'profit_and_loss') {
+      consider(account, figure, pastFirstYear ? cumulative.get(account) : undefined, monthMovement.get(account) ?? 0);
+    }
   }
   return expected;
 }
@@ -119,13 +132,17 @@ export function evaluateBooksReconciliation(trialBalance: ParsedTrialBalance, ex
   for (const item of expected) {
     const rows = rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed);
     if (rows.length === 0) {
-      if (Math.abs(item.expected) >= RECONCILIATION_TOLERANCE) {
+      // A month-only export omits a profit-and-loss ledger that did not
+      // move this month, so an absent row is fine when the month's own
+      // movement is nil.
+      const absentIsFine = item.monthMovement !== undefined && Math.abs(item.monthMovement) < RECONCILIATION_TOLERANCE;
+      if (!absentIsFine && Math.abs(item.expected) >= RECONCILIATION_TOLERANCE) {
         differences.push({ account: item.account, status: 'missing', difference: -item.expected });
       }
       continue;
     }
     const closing = signedClosing(rows);
-    const readings = item.alternative !== undefined ? [item.expected, item.alternative] : [item.expected];
+    const readings = [item.expected, item.alternative, item.monthMovement].filter((figure): figure is number => figure !== undefined);
     const difference = readings
       .map((figure) => Math.round((closing - figure) * 100) / 100)
       .sort((a, b) => Math.abs(a) - Math.abs(b))[0];
