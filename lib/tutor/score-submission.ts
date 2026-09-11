@@ -638,6 +638,16 @@ const TIE_OUT_TOLERANCE = 1;
 
 export type TrialBalanceTieOut = { tieOut: boolean; mismatches: TieOutMismatch[] };
 
+export function signedOpening(rows: ParsedTrialBalance['ledgers']): number {
+  return rows.reduce((sum, row) => sum + ((row.openingDebit ?? 0) - (row.openingCredit ?? 0)), 0);
+}
+
+// An export carries Tally's opening column when any row has it (the
+// parser sets both fields, zero for a blank tag, whenever the tag exists).
+export function hasOpeningColumn(trialBalance: ParsedTrialBalance): boolean {
+  return trialBalance.ledgers.some((row) => row.openingDebit !== undefined || row.openingCredit !== undefined);
+}
+
 export function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
   return rows.reduce((sum, row) => sum + (row.closingDebit - row.closingCredit), 0);
 }
@@ -653,14 +663,35 @@ export function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
 // accountNamesMatch refuses to equate a returns ledger with its base.
 const MIN_CONTAINMENT_CHARS = 5;
 
+// Tally's own account groups (2026-09-11). A partially expanded export
+// lists a group next to its ledgers ("Sales Accounts" above "SALES"), and
+// the group row would be counted a second time for the ledger it embeds.
+// Group rows carry no ledger of the learner's, so they never take part.
+const TALLY_GROUP_NAMES = new Set(
+  [
+    'Capital Account', 'Current Liabilities', 'Duties & Taxes', 'Sundry Creditors', 'Provisions', 'Loans (Liability)',
+    'Bank OD A/c', 'Bank OCC A/c', 'Secured Loans', 'Unsecured Loans', 'Reserves & Surplus', 'Retained Earnings',
+    'Fixed Assets', 'Current Assets', 'Sundry Debtors', 'Cash-in-Hand', 'Bank Accounts', 'Deposits (Asset)',
+    'Loans & Advances (Asset)', 'Stock-in-Hand', 'Investments', 'Misc. Expenses (ASSET)', 'Branch / Divisions',
+    'Suspense A/c', 'Sales Accounts', 'Purchase Accounts', 'Direct Expenses', 'Direct Incomes', 'Indirect Expenses',
+    'Indirect Incomes', 'Expenses (Direct)', 'Expenses (Indirect)', 'Income (Direct)', 'Income (Indirect)',
+    'Opening Stock', 'Closing Stock', 'Profit & Loss A/c',
+  ].map(normalizeAccountName),
+);
+
+export function isTallyGroupRow(ledgerName: string): boolean {
+  return TALLY_GROUP_NAMES.has(normalizeAccountName(ledgerName));
+}
+
 export function rowsForAccount(
   trialBalance: ParsedTrialBalance,
   acceptableNames: string[],
   exactlyClaimed: Set<string>,
 ): ParsedTrialBalance['ledgers'] {
   const normalizedNames = acceptableNames.map(normalizeAccountName);
-  const exactRows = trialBalance.ledgers.filter((ledger) => normalizedNames.includes(normalizeAccountName(ledger.ledgerName)));
-  const unclaimed = trialBalance.ledgers.filter((ledger) => !exactlyClaimed.has(ledger.ledgerName));
+  const ledgerRows = trialBalance.ledgers.filter((ledger) => !isTallyGroupRow(ledger.ledgerName));
+  const exactRows = ledgerRows.filter((ledger) => normalizedNames.includes(normalizeAccountName(ledger.ledgerName)));
+  const unclaimed = ledgerRows.filter((ledger) => !exactlyClaimed.has(ledger.ledgerName));
   if (exactRows.length > 0) {
     // Alongside an exact row, only rows whose name EMBEDS the account name
     // count as the same account split in two ("Deccan Traders Debtor" for
@@ -714,8 +745,18 @@ export function evaluateTrialBalanceTieOut(
   previousExport: ParsedTrialBalance | null,
   options: { firstMonthOfFinancialYear?: boolean } = {},
 ): TrialBalanceTieOut {
-  const previousTrialBalance = previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
-  const movementBased = previousTrialBalance !== null;
+  // Self-contained movement (2026-09-11): when the export carries Tally's
+  // opening column for the period, the month's movement is its closing
+  // minus its opening, read from the same file. Nothing stored from an
+  // earlier month is needed, so a learner who corrects an old month after
+  // feedback (the right thing to do) is measured on this month alone —
+  // Praveen's SA/2027-04 fix in April would otherwise have surfaced as a
+  // May movement. The previous-export comparison remains for files with
+  // no opening column.
+  const selfContained = hasOpeningColumn(trialBalance);
+  const previousTrialBalance =
+    !selfContained && previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
+  const movementBased = selfContained || previousTrialBalance !== null;
   const expected = new Map<string, number>();
   const aliasesByAccount = new Map<string, string[]>();
   const partyAccounts = partyAccountsOf(answerKey.entries);
@@ -745,6 +786,21 @@ export function evaluateTrialBalanceTieOut(
     if (TIE_OUT_EXEMPT_PATTERN.test(account)) continue;
     const names = namesByAccount.get(account) ?? [account];
     const rowsNow = rowsForAccount(trialBalance, names, claimedNow);
+    if (selfContained) {
+      // Tally leaves out a ledger with no movement and a nil balance, so
+      // an absent row is a movement of zero.
+      if (rowsNow.length === 0) {
+        if (Math.abs(expectedFigure) >= TIE_OUT_TOLERANCE) {
+          mismatches.push({ account, status: 'missing', difference: -expectedFigure });
+        }
+        continue;
+      }
+      const difference = Math.round((signedClosing(rowsNow) - signedOpening(rowsNow) - expectedFigure) * 100) / 100;
+      if (Math.abs(difference) >= TIE_OUT_TOLERANCE) {
+        mismatches.push({ account, status: 'off', difference });
+      }
+      continue;
+    }
     const rowsBefore = previousTrialBalance ? rowsForAccount(previousTrialBalance, names, claimedBefore) : [];
     if (rowsNow.length === 0 && rowsBefore.length === 0) {
       if (Math.abs(expectedFigure) >= TIE_OUT_TOLERANCE) {

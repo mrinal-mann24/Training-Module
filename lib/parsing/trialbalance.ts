@@ -76,19 +76,35 @@ export function parseTrialBalanceXml(buffer: Buffer): ParsedTrialBalance {
     // positive = Credit, matching the Day Book's sign convention. The
     // signed shape came from the pilot trainee's real export (2026-08-20),
     // which parsed as all-zero balances until supported.
+    // The opening column (2026-09-11), in the same two shapes: signed
+    // DSPOPAMT/DSPOPAMTA, or DSPOPDRAMT/DSPOPCRAMT. A present-but-blank tag
+    // is an opening of zero; an absent tag leaves the fields undefined so
+    // the tie-out knows the file carries no opening column at all.
     const signedClosing = extractSignedAmount(infoRecord, 'DSPCLAMT', 'DSPCLAMTA');
     if (signedClosing !== null) {
+      const signedOpening = extractSignedAmount(infoRecord, 'DSPOPAMT', 'DSPOPAMTA') ?? 0;
+      const opening = hasWrapper(infoRecord, 'DSPOPAMT')
+        ? { openingDebit: signedOpening < 0 ? -signedOpening : 0, openingCredit: signedOpening > 0 ? signedOpening : 0 }
+        : {};
       return {
         ledgerName,
         closingDebit: signedClosing < 0 ? -signedClosing : 0,
         closingCredit: signedClosing > 0 ? signedClosing : 0,
+        ...opening,
       };
     }
 
     const closingDebit = extractAmount(infoRecord, 'DSPCLDRAMT', 'DSPCLDRAMTA');
     const closingCredit = extractAmount(infoRecord, 'DSPCLCRAMT', 'DSPCLCRAMTA');
+    const opening =
+      hasWrapper(infoRecord, 'DSPOPDRAMT') || hasWrapper(infoRecord, 'DSPOPCRAMT')
+        ? {
+            openingDebit: extractAmount(infoRecord, 'DSPOPDRAMT', 'DSPOPDRAMTA'),
+            openingCredit: extractAmount(infoRecord, 'DSPOPCRAMT', 'DSPOPCRAMTA'),
+          }
+        : {};
 
-    return { ledgerName, closingDebit, closingCredit };
+    return { ledgerName, closingDebit, closingCredit, ...opening };
   });
 
   const result = { ledgers };
@@ -100,6 +116,10 @@ export function parseTrialBalanceXml(buffer: Buffer): ParsedTrialBalance {
   }
 
   return parsed.data;
+}
+
+function hasWrapper(infoRecord: Record<string, unknown>, wrapperTag: string): boolean {
+  return wrapperTag in infoRecord;
 }
 
 function extractSignedAmount(

@@ -37,6 +37,12 @@ const TrialBalanceLedgerSchema = z.object({
   ledgerName: z.string(),
   closingDebit: z.number(),
   closingCredit: z.number(),
+  // Opening balance for the exported period (2026-09-11): present when
+  // the export carries Tally's opening column, so the month's movement can
+  // be read from the file itself (closing minus opening) instead of from
+  // the previous month's stored export.
+  openingDebit: z.number().optional(),
+  openingCredit: z.number().optional(),
 });
 export type TrialBalanceLedger = z.infer<typeof TrialBalanceLedgerSchema>;
 
