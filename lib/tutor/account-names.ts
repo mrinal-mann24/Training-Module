@@ -103,6 +103,27 @@ function significantTokensMatch(actual: string, expected: string): boolean {
 
 export const RETURNS_TOKEN = /\breturns?\b/i;
 
+// Ledger classification shared by the books reconciliation and the Trial
+// Balance tie-out (moved here from books-reconciliation.ts on 2026-09-11
+// so the scorer can use it without an import cycle). Balance-sheet ledgers
+// carry their balance across financial years; profit-and-loss ledgers are
+// restarted by Tally at each new financial year.
+export type LedgerKind = 'balance_sheet' | 'profit_and_loss' | 'tax' | 'unknown';
+
+const LEDGER_TAX_PATTERN = /gst|tds/i;
+const BALANCE_SHEET_PATTERN =
+  /\b(cash|bank|hdfc|capital|equipment|machinery|furniture|vehicle|computer|asset|loan|deposit|prepaid|outstanding|accrued|payable|receivable|suspense|advance|provision|stock|investment|drawings|reserve)\b/i;
+const PROFIT_AND_LOSS_PATTERN =
+  /\b(sales|purchases?|returns?|charges?|expenses?|fees?|rent|salar(y|ies)|wages|income|interest|depreciation|bad debts?|subscription|maintenance|advertis\w*|marketing|freight|delivery|packing|electricity|repairs?|discount|round[- ]?off|penalt\w*|late fee|commission|insurance|printing|stationery|travel|conveyance|telephone|internet|audit|legal|professional|consult\w*|cleaning|housekeeping|software|courier|postage|bonus|misc\w*|written off)\b/i;
+
+export function classifyLedger(account: string, partyAccounts: Set<string>): LedgerKind {
+  if (LEDGER_TAX_PATTERN.test(account)) return 'tax';
+  if (partyAccounts.has(normalizeAccountName(account))) return 'balance_sheet';
+  if (BALANCE_SHEET_PATTERN.test(account)) return 'balance_sheet';
+  if (PROFIT_AND_LOSS_PATTERN.test(account)) return 'profit_and_loss';
+  return 'unknown';
+}
+
 // TDS ledgers carry the section in their name ("TDS Payable — u/s 194J").
 // Two names citing different known sections are different accounts even
 // when everything else matches, so a deduction booked under the wrong

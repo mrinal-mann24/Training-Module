@@ -44,6 +44,30 @@ export async function loadPreviousTrialBalance(
   }
 }
 
+// Position of an exercise in the learner's timeline (0 = the April pack),
+// -1 when it is not found. One batch per month: 0..11 are the first
+// financial year, 12..23 the second, so the first batch of a year (12, 24,
+// …) is the month in which Tally restarts the profit-and-loss ledgers.
+export async function loadExerciseOrdinal(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exerciseId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return ((data ?? []) as { id: string }[]).findIndex((row) => row.id === exerciseId);
+}
+
+export function isFirstMonthOfFinancialYear(ordinal: number): boolean {
+  return ordinal > 0 && ordinal % 12 === 0;
+}
+
 // The correct books at the point of the batch being scored, for the books
 // reconciliation (2026-09-10): every key of the learner in timeline order,
 // the batch's ordinal in that order (0 = the April pack). Empty when the

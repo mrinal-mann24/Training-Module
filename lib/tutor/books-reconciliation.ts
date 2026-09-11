@@ -2,7 +2,7 @@ import { netAnswerKeys } from '@/lib/db/queries/company';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { TieOutMismatch } from '@/lib/schemas/scoring';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
-import { normalizeAccountName } from './account-names';
+import { classifyLedger, normalizeAccountName, type LedgerKind } from './account-names';
 import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submission';
 
 // Books reconciliation (2026-09-10 meeting: "it does not yet tell the
@@ -23,21 +23,12 @@ import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submi
 // 12..23 the second. GST/TDS ledgers are exempt (the keys hold tax as
 // metadata), and a ledger the patterns cannot classify is not reported.
 
-export type LedgerKind = 'balance_sheet' | 'profit_and_loss' | 'tax' | 'unknown';
+// The classifier lives in account-names.ts (shared with the tie-out since
+// 2026-09-11); re-exported here for its existing consumers.
+export { classifyLedger };
+export type { LedgerKind };
 
 const TAX_PATTERN = /gst|tds/i;
-const BALANCE_SHEET_PATTERN =
-  /\b(cash|bank|hdfc|capital|equipment|machinery|furniture|vehicle|computer|asset|loan|deposit|prepaid|outstanding|accrued|payable|receivable|suspense|advance|provision|stock|investment|drawings|reserve)\b/i;
-const PROFIT_AND_LOSS_PATTERN =
-  /\b(sales|purchases?|returns?|charges?|expenses?|fees?|rent|salar(y|ies)|wages|income|interest|depreciation|bad debts?|subscription|maintenance|advertis\w*|marketing|freight|delivery|packing|electricity|repairs?|discount|round[- ]?off|penalt\w*|late fee|commission|insurance|printing|stationery|travel|conveyance|telephone|internet|audit|legal|professional|consult\w*|cleaning|housekeeping|software|courier|postage|bonus|misc\w*|written off)\b/i;
-
-export function classifyLedger(account: string, partyAccounts: Set<string>): LedgerKind {
-  if (TAX_PATTERN.test(account)) return 'tax';
-  if (partyAccounts.has(normalizeAccountName(account))) return 'balance_sheet';
-  if (BALANCE_SHEET_PATTERN.test(account)) return 'balance_sheet';
-  if (PROFIT_AND_LOSS_PATTERN.test(account)) return 'profit_and_loss';
-  return 'unknown';
-}
 
 export type ExpectedClosing = {
   account: string;

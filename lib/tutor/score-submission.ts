@@ -12,7 +12,7 @@ import type {
   CompositeMatch,
 } from '@/lib/schemas/scoring';
 import { findLedgerFindings } from './ledger-findings';
-import { accountNamesMatch, gstHeadOf, normalizeAccountName, RETURNS_TOKEN } from './account-names';
+import { accountNamesMatch, classifyLedger, gstHeadOf, normalizeAccountName, RETURNS_TOKEN } from './account-names';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -699,15 +699,26 @@ export function exactlyClaimedRows(trialBalance: ParsedTrialBalance, namesByAcco
   return claimed;
 }
 
+// Financial-year change (2026-09-11): Tally restarts every profit-and-loss
+// ledger on 1 April, so the first batch of a year exports Sales, Purchases
+// and the expense ledgers with that month's figures only while the
+// baseline (31 March) carries the whole previous year — Garima's April
+// read "Sales off by Rs 32,11,000", her 2024-25 total. In that month a
+// profit-and-loss ledger's movement is its closing figure itself; a
+// learner who exports the whole period since books began (cumulative
+// figures) is accepted as well, whichever reading matches. Balance-sheet
+// ledgers (parties, cash, bank, assets, capital, accruals) carry on.
 export function evaluateTrialBalanceTieOut(
   trialBalance: ParsedTrialBalance,
   answerKey: AnswerKey,
   previousExport: ParsedTrialBalance | null,
+  options: { firstMonthOfFinancialYear?: boolean } = {},
 ): TrialBalanceTieOut {
   const previousTrialBalance = previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
   const movementBased = previousTrialBalance !== null;
   const expected = new Map<string, number>();
   const aliasesByAccount = new Map<string, string[]>();
+  const partyAccounts = new Set<string>();
 
   if (!movementBased) {
     for (const opening of answerKey.opening_balances ?? []) {
@@ -719,6 +730,9 @@ export function evaluateTrialBalanceTieOut(
     const key = entry.correct_account.trim().toLowerCase();
     expected.set(key, (expected.get(key) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
     if (entry.account_aliases?.length) aliasesByAccount.set(key, entry.account_aliases);
+    if (entry.bill_reference !== null && !TIE_OUT_EXEMPT_PATTERN.test(entry.correct_account)) {
+      partyAccounts.add(normalizeAccountName(entry.correct_account));
+    }
   }
 
   const namesByAccount = new Map<string, string[]>();
@@ -735,6 +749,17 @@ export function evaluateTrialBalanceTieOut(
     if (rowsNow.length === 0 && rowsBefore.length === 0) {
       if (Math.abs(expectedFigure) >= TIE_OUT_TOLERANCE) {
         mismatches.push({ account, status: 'missing', difference: -expectedFigure });
+      }
+      continue;
+    }
+    const restartsThisMonth =
+      options.firstMonthOfFinancialYear === true && movementBased && classifyLedger(account, partyAccounts) === 'profit_and_loss';
+    if (restartsThisMonth) {
+      const fromZero = Math.round((signedClosing(rowsNow) - expectedFigure) * 100) / 100;
+      const cumulative = Math.round((signedClosing(rowsNow) - signedClosing(rowsBefore) - expectedFigure) * 100) / 100;
+      const difference = Math.abs(fromZero) <= Math.abs(cumulative) ? fromZero : cumulative;
+      if (Math.abs(difference) >= TIE_OUT_TOLERANCE) {
+        mismatches.push({ account, status: 'off', difference });
       }
       continue;
     }
@@ -1261,7 +1286,7 @@ export function scoreSubmission(
   // The learner's previous scored Trial Balance export, when one exists:
   // switches the tie-out to the movement comparison (see
   // evaluateTrialBalanceTieOut). Omitted/null on the first scored posting.
-  options: { previousTrialBalance?: ParsedTrialBalance | null } = {},
+  options: { previousTrialBalance?: ParsedTrialBalance | null; firstMonthOfFinancialYear?: boolean } = {},
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
   const matching = matchVouchersToTransactionsDetailed(dayBook.vouchers, transactionGroups);
@@ -1277,7 +1302,9 @@ export function scoreSubmission(
 
   const unmatchedVouchers = describeUnmatchedVouchers(dayBook.vouchers, state.used);
   const ledgerFindings = findLedgerFindings(dayBook.vouchers, answerKey);
-  const tieOut = evaluateTrialBalanceTieOut(trialBalance, answerKey, options.previousTrialBalance ?? null);
+  const tieOut = evaluateTrialBalanceTieOut(trialBalance, answerKey, options.previousTrialBalance ?? null, {
+    firstMonthOfFinancialYear: options.firstMonthOfFinancialYear === true,
+  });
   const weightedScore = computeWeightedScore(perVoucherDiffs, submissionPenaltyWeight(unmatchedVouchers, ledgerFindings));
   const overallResult = computeOverallResult(weightedScore, tieOut.tieOut);
   const conceptResults = computeConceptResults(perVoucherDiffs, transactionGroups, tieOut.tieOut);

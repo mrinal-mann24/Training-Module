@@ -21,6 +21,8 @@ import {
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
+  loadExerciseOrdinal,
+  isFirstMonthOfFinancialYear,
 } from '@/lib/jobs/advance-learner';
 import { evaluateBooksReconciliation } from '@/lib/tutor/books-reconciliation';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
@@ -182,7 +184,11 @@ export const waitForSubmission = inngest.createFunction(
             // Movement-based tie-out (2026-09-09): measured against the
             // learner's previous scored Trial Balance.
             const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
-            const scored = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+            const ordinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
+            const scored = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, {
+              previousTrialBalance,
+              firstMonthOfFinancialYear: isFirstMonthOfFinancialYear(ordinal),
+            });
             const expected = await loadExpectedClosingBalances(supabase, submission.learner_id, exercise.id);
             const engineResult = { ...scored, books_reconciliation: evaluateBooksReconciliation(parsed.trialBalance, expected).differences };
             // Hybrid scoring (2026-08-20): same engine-finds/LLM-judges pass

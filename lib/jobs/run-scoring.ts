@@ -10,6 +10,8 @@ import {
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
+  loadExerciseOrdinal,
+  isFirstMonthOfFinancialYear,
 } from '@/lib/jobs/advance-learner';
 import { evaluateBooksReconciliation } from '@/lib/tutor/books-reconciliation';
 import { parseDayBookXml, DayBookParseError } from '@/lib/parsing/daybook';
@@ -121,7 +123,13 @@ export const runScoring = inngest.createFunction(
       // Movement-based tie-out (2026-09-09): measured against the learner's
       // previous scored Trial Balance.
       const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
-      const result = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, { previousTrialBalance });
+      // April of a new financial year (2026-09-11): Tally restarts the
+      // profit-and-loss ledgers, so their movement is measured from zero.
+      const ordinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
+      const result = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, {
+        previousTrialBalance,
+        firstMonthOfFinancialYear: isFirstMonthOfFinancialYear(ordinal),
+      });
       // Books reconciliation (2026-09-10): closing balances against the
       // correct books, feedback only.
       const expected = await loadExpectedClosingBalances(supabase, submission.learner_id, exercise.id);
