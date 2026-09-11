@@ -1,4 +1,4 @@
-import { isRetiredConcept, type ConceptTag } from '@/lib/schemas/exercise';
+import { isRetiredConcept, RULEBOOK_SECTION_CONCEPT_TAGS, type ConceptTag } from '@/lib/schemas/exercise';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 import type { WeakConceptTarget } from '@/lib/tutor/mastery';
 
@@ -13,6 +13,7 @@ import type { WeakConceptTarget } from '@/lib/tutor/mastery';
 // side (a 10-12 transaction batch across more than ~6 concepts stops
 // teaching anything in depth).
 const MAX_CONCEPTS_PER_SIDE = 3;
+const NEW_TOPIC_MASTERY_THRESHOLD = 2;
 
 export type BatchConceptPlan = {
   strengths: ConceptTag[];
@@ -46,6 +47,25 @@ export function selectBatchConcepts(
       break;
     }
     weaknessSet.add(tag);
+  }
+
+  // One new rulebook topic every month (owner, 2026-09-11): the first
+  // rulebook-section concept the learner has never attempted rides along
+  // as a weakness once they hold the basics (two mastered concepts, the
+  // documents-mode bar), even while an escalation or reinforcement keeps
+  // the primary target — otherwise the advances waited on a Trial Balance
+  // escalation for months. It takes the last weakness slot.
+  const masteredCount = [...masteryMap.values()].filter((m) => m.status === 'mastered' && !isRetiredConcept(m.concept_tag)).length;
+  if (masteredCount >= NEW_TOPIC_MASTERY_THRESHOLD) {
+    const nextNewTopic = RULEBOOK_SECTION_CONCEPT_TAGS.find(
+      (tag) => tag !== target.conceptTag && !masteryMap.has(tag) && !latestResult.has(tag),
+    );
+    if (nextNewTopic && !weaknessSet.has(nextNewTopic)) {
+      if (weaknessSet.size >= MAX_CONCEPTS_PER_SIDE) {
+        weaknessSet.delete([...weaknessSet][weaknessSet.size - 1]);
+      }
+      weaknessSet.add(nextNewTopic);
+    }
   }
 
   const strengths = [...masteryMap.values()]

@@ -103,3 +103,33 @@ describe('selectBatchConcepts', () => {
     expect(plan.strengths).toEqual([]);
   });
 });
+
+describe('one new rulebook topic every month (2026-09-11)', () => {
+  const basics = new Map([
+    mastery('sales_voucher_basics', { status: 'mastered' }),
+    mastery('purchase_voucher_basics', { status: 'mastered' }),
+    mastery('trial_balance_tie_out', { escalation_active: true }),
+  ]);
+
+  it('adds the first never-attempted rulebook concept even while an escalation holds the target', () => {
+    const plan = selectBatchConcepts(target('trial_balance_tie_out', true), [attempt('trial_balance_tie_out', 'fail', '2026-09-01')], basics);
+    expect(plan.weaknesses).toEqual(['trial_balance_tie_out', 'customer_advance']);
+  });
+
+  it('moves to the next rulebook concept once the first has been attempted, and takes the last weakness slot when full', () => {
+    const attempts = [
+      attempt('trial_balance_tie_out', 'fail', '2026-09-01'),
+      attempt('journal_voucher_basics', 'fail', '2026-09-01'),
+      attempt('bill_by_bill_referencing', 'fail', '2026-09-01'),
+      attempt('customer_advance', 'pass', '2026-09-02'),
+    ];
+    const masteryMap = new Map([...basics, mastery('customer_advance', { consecutive_clean_count: 1 })]);
+    const plan = selectBatchConcepts(target('trial_balance_tie_out', true), attempts, masteryMap);
+    expect(plan.weaknesses).toEqual(['trial_balance_tie_out', 'bill_by_bill_referencing', 'supplier_advance']);
+  });
+
+  it('waits until the learner has two mastered concepts', () => {
+    const plan = selectBatchConcepts(target('gst_classification'), [], new Map([mastery('sales_voucher_basics', { status: 'mastered' })]));
+    expect(plan.weaknesses).toEqual(['gst_classification']);
+  });
+});

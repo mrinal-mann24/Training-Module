@@ -83,6 +83,22 @@ export const RETIRED_CONCEPT_TAGS = ['narration_discipline'] as const satisfies 
 export const ACTIVE_CONCEPT_TAGS = CONCEPT_TAGS.filter(
   (tag): tag is Exclude<ConceptTag, (typeof RETIRED_CONCEPT_TAGS)[number]> => !(RETIRED_CONCEPT_TAGS as readonly string[]).includes(tag),
 );
+// The rulebook-section concepts (2026-09-10), in the order they are
+// introduced. One of them rides along in every batch of a learner who has
+// the basics (select-batch-concepts.ts), so they arrive month by month even
+// while an escalation or reinforcement holds the primary target.
+export const RULEBOOK_SECTION_CONCEPT_TAGS = [
+  'customer_advance',
+  'supplier_advance',
+  'on_account_reference',
+  'multi_bill_settlement',
+  'tds_on_receipt',
+  'gst_set_off',
+  'gst_payment',
+  'rcm_and_late_fee',
+  'fixed_assets_depreciation',
+] as const satisfies readonly ConceptTag[];
+
 export function isRetiredConcept(tag: string): boolean {
   return (RETIRED_CONCEPT_TAGS as readonly string[]).includes(tag);
 }
