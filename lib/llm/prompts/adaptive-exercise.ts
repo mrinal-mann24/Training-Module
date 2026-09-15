@@ -280,6 +280,7 @@ equal the credits. Examples of the required shape:
 - Customer advance (goods): Receipt Dr the bank / Cr customer, bill_reference "ADV-C01 (Advance)".
 - Customer advance (service): Receipt Dr the bank (total) / Cr customer (base, Advance ref) / Cr Output CGST on Advance / Cr Output SGST on Advance.
 - Advance-GST reversal (service, the journal right after the Sales voucher that adjusts the advance): Journal Dr Output CGST on Advance / Dr Output SGST on Advance / Cr customer (Against Ref the invoice, total of the two).
+- Invoice or bill that adjusts an advance: bill_reference names the advance first and the document's own number after it, "ADV-C01 (Advance), INV-3001" or "ADV-S01 (Advance), MS/990"; the document is numbered INV-3001 / MS/990. Never an advance reference alone on a Sales or Purchase voucher.
 - Supplier advance: Payment Dr supplier (Advance ref "ADV-S01 (Advance)") / Cr the bank; with TDS: Dr supplier (gross) / Cr TDS Payable — u/s 194J / Cr the bank (net).
 - Receipt net of TDS: Dr the bank (net) / Dr TDS Receivable — u/s 194J / Cr customer (gross, Against Ref the invoice).
 - Multi-bill payment: Dr supplier (total, bill_reference "MS-101, MS-102") / Cr the bank.

@@ -1,5 +1,6 @@
 import type { ChatMessage } from '@/lib/llm/client';
 import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
+import { documentNumberOf } from '@/lib/db/queries/company';
 
 const VENDOR_INVOICE_JSON_SCHEMA = {
   type: 'object',
@@ -226,7 +227,9 @@ ${lines}
 function buildVendorInvoiceSystemPrompt(input: VendorInvoiceInput): string {
   const figures = deriveInvoiceFigures(input.legs);
   const date = extractTransactionDate(input.transactionDescription);
-  const billRef = input.legs.find((leg) => leg.bill_reference)?.bill_reference;
+  // The bill's own number, never the advance it adjusts ("ADV-S01
+  // (Advance), MS/990" is bill MS/990; Praveen's June printed ADV-S01).
+  const billNumber = documentNumberOf(input.legs.find((leg) => leg.bill_reference)?.bill_reference);
 
   const taxLines = [
     figures.cgst !== null ? `  cgst_amount: exactly ${figures.cgst}` : '  cgst_amount: null',
@@ -245,7 +248,7 @@ against, and the learner's ONLY source for them is this document, so they are
 non-negotiable:
 - vendorName: "${figures.vendorAccount}" exactly (never an invented name).
 - invoiceDate: exactly "${date ? formatInvoiceDate(date) : 'the date stated in the transaction description below'}".
-- invoiceNumber: ${billRef ? `"${String(billRef).split(/[\s(]/)[0]}" exactly` : 'a realistic bill number'}.
+- invoiceNumber: ${billNumber ? `"${billNumber}" exactly` : 'a realistic bill number'}.
 ${lineItemRequirement(figures)}
 - taxBreakup:
 ${taxLines}

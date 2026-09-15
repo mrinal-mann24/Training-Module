@@ -149,20 +149,87 @@ export type OpenBill = { party: string; ref: string; open: number; side: 'receiv
 
 const NON_PARTY_ACCOUNT_PATTERN = /^(sales|purchases?|cash|sales returns?|purchase returns?)$|\bbank\b|hdfc|gst|tds/i;
 
+// What a reference on a voucher IS (2026-09-15). An answer key names every
+// allocation of the party leg in one string, and the same voucher can
+// raise its own document while adjusting an advance:
+//   Sales     "ADV-C01 (Advance), INV-3001"  -> INV-3001 is the invoice
+//   Purchase  "ADV-S01 (Advance), MS/990"    -> MS/990 is the bill
+//   Receipt   "INV-2231 (Against Ref, part payment)"
+// Taking the first reference printed Praveen's June sales invoices as
+// "ADV-C01" / "ADV-C02" and the Mumbai Suppliers bill as "ADV-S01". Every
+// consumer that needs one reference reads it through this parser.
+//   bill        a document's own number (unannotated or "New Ref")
+//   against     settles an existing bill ("Against", "(Against Ref ...)")
+//   advance     an advance reference ("(Advance)")
+//   on_account  "On Account"
+export type BillReferenceKind = 'bill' | 'against' | 'advance' | 'on_account';
+export type ParsedBillReference = { ref: string; kind: BillReferenceKind };
+
+// "Against INV-003", "Against Ref INV-005", "Agst Ref X", "New Ref INV-062",
+// "Advance ADV-01": allocation words written in front of the number.
+const REFERENCE_PREFIX = /^(?:(against|agst)(?:\s+ref(?:erence)?)?|new\s+ref(?:erence)?|(advance)(?:\s+ref(?:erence)?)?)\s*[:-]?\s+/i;
+
+// Commas inside an annotation ("(Against Ref, part payment)") do not
+// separate references.
+function splitOutsideParentheses(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const character of text) {
+    if (character === '(') depth += 1;
+    if (character === ')') depth = Math.max(0, depth - 1);
+    if ((character === ',' || character === ';') && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  parts.push(current);
+  return parts;
+}
+
+export function parseBillReferences(reference: string | null | undefined): ParsedBillReference[] {
+  if (!reference) return [];
+  const parsed: ParsedBillReference[] = [];
+  for (const part of splitOutsideParentheses(reference)) {
+    const annotation = [...part.matchAll(/\(([^)]*)\)/g)].map((match) => match[1]).join(' ');
+    let bare = part.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    let kind: BillReferenceKind = 'bill';
+    const prefix = REFERENCE_PREFIX.exec(bare);
+    if (prefix) {
+      bare = bare.slice(prefix[0].length).trim();
+      if (prefix[1]) kind = 'against';
+      else if (prefix[2]) kind = 'advance';
+    }
+    if (bare.length === 0) continue;
+    if (/^on\s+account$/i.test(bare)) kind = 'on_account';
+    else if (/\b(against|agst)\b/i.test(annotation)) kind = 'against';
+    else if (/\badvance\b/i.test(annotation)) kind = 'advance';
+    else if (/\bon\s+account\b/i.test(annotation)) kind = 'on_account';
+    // The advance numbering the generator uses (ADV-C01, ADV-S01) is an
+    // advance even when the "(Advance)" tag is left off, so "ADV-C01,
+    // INV-3001 (New Ref)" is still numbered INV-3001 (review, 2026-09-15).
+    if (kind === 'bill' && /^ADV[-/]/i.test(bare)) kind = 'advance';
+    parsed.push({ ref: bare, kind });
+  }
+  return parsed;
+}
+
+// The number a sale or purchase document carries: its own reference, never
+// the advance or bill it adjusts. Null when the voucher names none.
+export function documentNumberOf(reference: string | null | undefined): string | null {
+  return parseBillReferences(reference).find((parsed) => parsed.kind === 'bill')?.ref ?? null;
+}
+
 export function normalizeBillReference(ref: string): string {
-  return ref
-    .replace(/\([^)]*\)/g, '')
-    .replace(/^\s*against\s+/i, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+  const bare = ref.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const prefix = REFERENCE_PREFIX.exec(bare);
+  return (prefix ? bare.slice(prefix[0].length) : bare).toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 export function splitBillReferences(ref: string): string[] {
-  return ref
-    .replace(/\([^)]*\)/g, '')
-    .split(/[,;]/)
-    .map((part) => part.replace(/^\s*against\s+/i, '').trim())
-    .filter((part) => part.length > 0);
+  return parseBillReferences(ref).map((parsed) => parsed.ref);
 }
 
 // The party on a voucher sits on a known side: the customer is DEBITED on a
@@ -199,7 +266,10 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
   // oldest-first at the end, so a party's listed balances add up to the
   // ledger balance the learner actually sees.
   const credits = new Map<string, number>();
-  const billId = (party: string, ref: string) => `${party}|${normalizeBillReference(ref)}`;
+  // Advances by party and reference, consumed by the invoice or bill that
+  // names them (2026-09-15).
+  const advanceCredits = new Map<string, number>();
+  const billId =(party: string, ref: string) => `${party}|${normalizeBillReference(ref)}`;
   // The pack's opening balances are bills too — "Mumbai Suppliers Cr
   // 1,20,000" is the March bill the April payment "against MS-M1" settles.
   // Kept aside (not listed as open bills, since an asset opening like Office
@@ -233,21 +303,73 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
       const type = legs[0].voucher_type;
       const raises = /^(sales|purchase)$/i.test(type);
       const settles = /^(receipt|payment|credit note|debit note)$/i.test(type);
-      if (!raises && !settles) {
+      const journal = /^journal$/i.test(type);
+      if (!raises && !settles && !journal) {
         continue;
       }
       const side: OpenBill['side'] = /^(sales|receipt|credit note)$/i.test(type) ? 'receivable' : 'payable';
       const partyAmount = legs
         .filter((leg) => leg.correct_account === party.correct_account)
         .reduce((sum, leg) => sum + leg.amount, 0);
-      const refs = splitBillReferences(reference);
+      const parsedRefs = parseBillReferences(reference);
+      const refs = parsedRefs.map((parsed) => parsed.ref);
+
+      if (journal) {
+        // A journal allocated against an open bill moves it: the advance-GST
+        // reversal of rulebook 9B credits the customer against the invoice,
+        // a bad-debt write-off credits it in full.
+        // Several bills are cleared in order, the last taking what is left.
+        // A journal has no party side, so the party is the leg that owns the
+        // named bills ("Dr Bad Debts Written Off / Cr Delhi Bazaar": Delhi
+        // Bazaar), not the first non-tax leg.
+        const owner = legs.find((leg) => parsedRefs.some((parsed) => bills.has(billId(leg.correct_account, parsed.ref))));
+        if (!owner) {
+          continue;
+        }
+        const named = parsedRefs
+          .map((parsed) => bills.get(billId(owner.correct_account, parsed.ref)))
+          .filter((bill): bill is OpenBill => bill !== undefined);
+        let left = legs
+          .filter((leg) => leg.correct_account === owner.correct_account)
+          .reduce((sum, leg) => sum + leg.amount, 0);
+        named.forEach((bill, index) => {
+          const reducesBill = bill.side === 'receivable' ? owner.dr_cr === 'Cr' : owner.dr_cr === 'Dr';
+          const applied = !reducesBill || index === named.length - 1 ? left : Math.min(left, Math.max(bill.open, 0));
+          bill.open += reducesBill ? -applied : applied;
+          left -= applied;
+        });
+        continue;
+      }
 
       if (raises) {
-        for (const ref of refs) {
+        // Only the document's own number is a bill. The advance it adjusts
+        // ("ADV-C01 (Advance), INV-3001") was recorded as that reference's
+        // credit when the advance moved, and is consumed by this document
+        // here, not by the party's oldest bill.
+        const ownRefs = parsedRefs.filter((parsed) => parsed.kind === 'bill').map((parsed) => parsed.ref);
+        const raisedRefs = ownRefs.length > 0 ? ownRefs : refs;
+        const raisedBills: OpenBill[] = [];
+        for (const ref of raisedRefs) {
           const id = billId(party.correct_account, ref);
           const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
-          current.open += partyAmount / refs.length;
+          current.open += partyAmount / raisedRefs.length;
           bills.set(id, current);
+          raisedBills.push(current);
+        }
+        if (ownRefs.length > 0) {
+          for (const parsed of parsedRefs) {
+            if (parsed.kind === 'bill') continue;
+            const id = billId(party.correct_account, parsed.ref);
+            if (!advanceCredits.has(id)) continue;
+            let credit = advanceCredits.get(id) ?? 0;
+            for (const bill of raisedBills) {
+              if (credit <= 0.005) break;
+              const applied = Math.min(credit, Math.max(bill.open, 0));
+              bill.open -= applied;
+              credit -= applied;
+            }
+            advanceCredits.set(id, credit);
+          }
         }
         continue;
       }
@@ -264,6 +386,14 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
         const bill = bills.get(id);
         if (!bill) {
           if (index === refs.length - 1) {
+            // An advance ("ADV-C01 (Advance)") is kept against its own
+            // reference until the document that adjusts it arrives; one
+            // never adjusted falls back to a party credit at the end.
+            if (parsedRefs[index]?.kind === 'advance') {
+              advanceCredits.set(id, (advanceCredits.get(id) ?? 0) + remaining);
+              remaining = 0;
+              return;
+            }
             // A ref nobody raised in the keys: first the party's opening-
             // balance bill ("MS-M1", "INV-M-101" are the pack's March
             // bills), then whatever is left becomes a party credit.
@@ -285,6 +415,12 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
         remaining -= applied;
       });
     }
+  }
+
+  for (const [id, credit] of advanceCredits) {
+    if (credit <= 0.005) continue;
+    const party = id.slice(0, id.lastIndexOf('|'));
+    credits.set(party, (credits.get(party) ?? 0) + credit);
   }
 
   for (const [party, credit] of credits) {

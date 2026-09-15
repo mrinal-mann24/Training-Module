@@ -1,6 +1,12 @@
-import { isRetiredConcept, type GeneratedExercise } from '@/lib/schemas/exercise';
+import { isRetiredConcept, type AnswerKey, type GeneratedExercise } from '@/lib/schemas/exercise';
 import type { MonthEndNotesContent, SalesInvoiceContent, SalesRegisterContent, SourceDocumentType } from '@/lib/schemas/source-document';
-import { isBankLedger, partyLegOf, splitBillReferences } from '@/lib/db/queries/company';
+import {
+  documentNumberOf,
+  isBankLedger,
+  normalizeBillReference,
+  parseBillReferences,
+  partyLegOf,
+} from '@/lib/db/queries/company';
 import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
 import { COMPANY_DETAILS } from '@/lib/documents/company-details';
 import { buildSalesRegisterContent } from '@/lib/documents/build-sales-register';
@@ -74,18 +80,33 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function firstBillReference(legs: Entry[]): string | null {
-  const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
-  return reference ? (splitBillReferences(reference)[0] ?? null) : null;
+function referenceOf(legs: Entry[]): string | null {
+  return legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
 }
 
-// Every bill the transaction names: a multi-bill settlement (rulebook 6.4)
-// must point the learner at each one, not only the first.
-function allBillReferences(legs: Entry[]): string | null {
-  const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
-  if (!reference) return null;
-  const refs = splitBillReferences(reference);
-  return refs.length > 0 ? refs.join(', ') : null;
+// Parties and references of customer advances that carried GST (Output GST
+// on Advance): advances for SERVICES (rulebook 9B; a goods advance carries
+// none, 9A). The invoice that adjusts one supplies a service, not goods.
+export function serviceAdvanceReferences(keys: ReadonlyArray<{ entries?: Entry[] }>): Set<string> {
+  const ids = new Set<string>();
+  for (const key of keys) {
+    const bySequence = new Map<number, Entry[]>();
+    for (const entry of key.entries ?? []) {
+      const legs = bySequence.get(entry.sequence) ?? [];
+      legs.push(entry);
+      bySequence.set(entry.sequence, legs);
+    }
+    for (const legs of bySequence.values()) {
+      if (!/^receipt$/i.test(legs[0].voucher_type.trim())) continue;
+      if (!legs.some((leg) => GST_LEG_PATTERN.test(leg.correct_account) && /\bon\s+advance\b/i.test(leg.correct_account))) continue;
+      const party = partyLegOf(legs, 'Receipt');
+      if (!party) continue;
+      for (const parsed of parseBillReferences(referenceOf(legs))) {
+        ids.add(`${party.correct_account}|${normalizeBillReference(parsed.ref)}`);
+      }
+    }
+  }
+  return ids;
 }
 
 // Pre-flight for the retry loop (2026-09-11): buildSalesInvoiceContent
@@ -123,9 +144,9 @@ function counterpartyOf(legs: Entry[], voucherType: string): string | null {
   return other?.correct_account ?? null;
 }
 
-function lineDescriptionFor(account: string): string {
+function lineDescriptionFor(account: string, serviceSupply: boolean): string {
   if (/freight|delivery|transport/i.test(account)) return 'Freight and delivery charges';
-  if (/^sales\b|goods|trading/i.test(account)) return 'Trading goods as per order';
+  if (/^sales\b|goods|trading/i.test(account)) return serviceSupply ? 'Services as per agreement' : 'Trading goods as per order';
   return account;
 }
 
@@ -137,6 +158,7 @@ export function buildSalesInvoiceContent(
   legs: Entry[],
   description: string,
   companyName: string,
+  options: { serviceSupply?: boolean } = {},
 ): SalesInvoiceContent {
   const sequence = legs[0].sequence;
   const date = extractTransactionDate(description);
@@ -180,11 +202,13 @@ export function buildSalesInvoiceContent(
     buyerAddress: buyer?.address,
     buyerGSTIN: buyer?.gstin ?? null,
     placeOfSupply: buyer?.state ?? COMPANY_DETAILS.state,
-    invoiceNumber: firstBillReference(legs) ?? `CM-${stamp}-${String(sequence).padStart(2, '0')}`,
+    // The invoice's own number, never the advance it adjusts (Praveen's June:
+    // "ADV-C01 (Advance), INV-3001" printed as ADV-C01).
+    invoiceNumber: documentNumberOf(referenceOf(legs)) ?? `CM-${stamp}-${String(sequence).padStart(2, '0')}`,
     invoiceDate: formatInvoiceDate(date),
     isCashMemo,
     lineItems: baseLegs.map((leg) => ({
-      description: lineDescriptionFor(leg.correct_account),
+      description: lineDescriptionFor(leg.correct_account, options.serviceSupply === true),
       quantity: 1,
       rate: round2(leg.amount),
       amount: round2(leg.amount),
@@ -199,10 +223,13 @@ export function buildSalesInvoiceContent(
 function pointerFor(docType: SourceDocumentType, legs: Entry[], dateLabel: string, noteNumber: number | null): string {
   const voucherType = legs[0].voucher_type;
   const party = counterpartyOf(legs, voucherType);
-  const reference = allBillReferences(legs);
+  // A document is named by its own number; a bank line by every reference
+  // it carries, and only settlements of existing bills read "against bill".
+  const documentNumber = documentNumberOf(referenceOf(legs));
+  const parsedRefs = parseBillReferences(referenceOf(legs)).filter((parsed) => parsed.kind !== 'on_account');
   switch (docType) {
     case 'vendor_invoice':
-      return `On ${dateLabel}, an invoice arrived from ${party ?? 'a vendor'}${reference ? ` (Ref ${reference})` : ''}: post it from the attached invoice.`;
+      return `On ${dateLabel}, an invoice arrived from ${party ?? 'a vendor'}${documentNumber ? ` (Ref ${documentNumber})` : ''}: post it from the attached invoice.`;
     case 'sales_invoice': {
       // The debited non-tax leg is the buyer; partyLegOf excludes Cash by
       // design, so look at the leg directly to spot a counter sale.
@@ -210,7 +237,7 @@ function pointerFor(docType: SourceDocumentType, legs: Entry[], dateLabel: strin
       if (buyerLeg && CASH_LEDGER_PATTERN.test(buyerLeg.correct_account)) {
         return `On ${dateLabel}, a counter sale was made for cash: post it from the attached cash memo.`;
       }
-      return `On ${dateLabel}, you raised Sales Invoice ${reference ?? ''} on ${party ?? 'a customer'}: post it from the attached sales invoice.`.replace('  ', ' ');
+      return `On ${dateLabel}, you raised Sales Invoice ${documentNumber ?? ''} on ${party ?? 'a customer'}: post it from the attached sales invoice.`.replace('  ', ' ');
     }
     case 'bank_statement': {
       const type = voucherType.trim().toLowerCase();
@@ -221,7 +248,13 @@ function pointerFor(docType: SourceDocumentType, legs: Entry[], dateLabel: strin
           ? `On ${dateLabel}, cash was deposited into the bank: post it from the bank statement.`
           : `On ${dateLabel}, cash was withdrawn from the bank: post it from the bank statement.`;
       }
-      const against = reference ? ` against bill ${reference}` : '';
+      const listed = parsedRefs.map((parsed) => parsed.ref).join(', ');
+      const against =
+        parsedRefs.length === 0
+          ? ''
+          : parsedRefs.every((parsed) => parsed.kind === 'bill' || parsed.kind === 'against')
+            ? ` against bill ${listed}`
+            : ` (Ref ${listed})`;
       return inflow
         ? `On ${dateLabel}, a receipt from ${party ?? 'a party'}${against} landed in the bank: post it from the bank statement.`
         : `On ${dateLabel}, a payment to ${party ?? 'a party'}${against} went out from the bank: post it from the bank statement.`;
@@ -261,7 +294,9 @@ export function checkMonthEndNoteDetails(generated: GeneratedExercise): string |
 
 export function applyDocumentsMode(
   generated: GeneratedExercise,
-  params: { companyName: string; monthLabel: string },
+  // priorKeys: the learner's earlier answer keys, so an invoice adjusting a
+  // service advance received in an earlier month is described as services.
+  params: { companyName: string; monthLabel: string; priorKeys?: AnswerKey[] },
 ): DocumentsModePlan {
   const legsBySequence = new Map<number, Entry[]>();
   for (const entry of generated.answer_key.entries) {
@@ -269,6 +304,7 @@ export function applyDocumentsMode(
     legs.push(entry);
     legsBySequence.set(entry.sequence, legs);
   }
+  const serviceAdvances = serviceAdvanceReferences([...(params.priorKeys ?? []), generated.answer_key]);
 
   const docTypeBySequence = new Map<number, SourceDocumentType>();
   const noteNumberBySequence = new Map<number, number>();
@@ -290,7 +326,14 @@ export function applyDocumentsMode(
       notes.push({ number: noteNumber, date: dateLabel, text: transaction.description });
     }
     if (docType === 'sales_invoice') {
-      salesInvoices.push({ sequence: transaction.sequence, content: buildSalesInvoiceContent(legs, transaction.description, params.companyName) });
+      const customer = partyLegOf(legs, 'Sales');
+      const serviceSupply =
+        customer !== undefined &&
+        parseBillReferences(referenceOf(legs)).some((parsed) => serviceAdvances.has(`${customer.correct_account}|${normalizeBillReference(parsed.ref)}`));
+      salesInvoices.push({
+        sequence: transaction.sequence,
+        content: buildSalesInvoiceContent(legs, transaction.description, params.companyName, { serviceSupply }),
+      });
     }
     return { ...transaction, description: pointerFor(docType, legs, dateLabel, noteNumber) };
   });

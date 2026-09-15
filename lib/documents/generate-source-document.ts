@@ -18,6 +18,7 @@ import {
   type VendorInvoiceContent,
 } from '@/lib/schemas/source-document';
 import { partyDetailsFor } from '@/lib/documents/party-directory';
+import { documentNumberOf } from '@/lib/db/queries/company';
 
 // The invoice's GST regime, read off the legs: IGST → inter-state,
 // CGST/SGST → intra-state, no GST leg → unknown (the directory decides).
@@ -177,9 +178,9 @@ export function checkVendorInvoiceContent(
   // The printed invoice number is the bill reference the learner allocates
   // and the key scores (2026-09-11): a different number on the paper would
   // fail every settlement that quotes it.
-  const keyReference = input.legs.find((leg) => leg.bill_reference)?.bill_reference;
-  if (keyReference) {
-    const expectedNumber = String(keyReference).split(/[\s(]/)[0];
+  // Its own number, never the advance the bill adjusts (2026-09-15).
+  const expectedNumber = documentNumberOf(input.legs.find((leg) => leg.bill_reference)?.bill_reference);
+  if (expectedNumber) {
     const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (normalize(content.invoiceNumber) !== normalize(expectedNumber)) {
       violations.push(`invoiceNumber is "${content.invoiceNumber}" but must be exactly "${expectedNumber}".`);

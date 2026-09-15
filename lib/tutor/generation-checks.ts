@@ -1,4 +1,4 @@
-import { normalizeBillReference, partyLegOf, splitBillReferences } from '@/lib/db/queries/company';
+import { normalizeBillReference, parseBillReferences, partyLegOf } from '@/lib/db/queries/company';
 import type { AnswerKey, AnswerKeyEntry, GeneratedExercise } from '@/lib/schemas/exercise';
 
 // Generation hygiene (2026-09-10 audits): three faults the checker could
@@ -33,7 +33,10 @@ export function priorBillReferences(keys: AnswerKey[]): Set<string> {
       if (!RAISING_VOUCHERS.test(legs[0].voucher_type)) continue;
       const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
       if (!reference) continue;
-      for (const ref of splitBillReferences(reference)) refs.add(normalizeBillReference(ref));
+      // Only the numbers a document raises: the advance it adjusts is not one.
+      for (const parsed of parseBillReferences(reference)) {
+        if (parsed.kind === 'bill') refs.add(normalizeBillReference(parsed.ref));
+      }
     }
   }
   return refs;
@@ -46,7 +49,22 @@ export function checkBillNumberUniqueness(generated: GeneratedExercise, priorRef
     if (!RAISING_VOUCHERS.test(legs[0].voucher_type)) continue;
     const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
     if (!reference) continue;
-    for (const ref of splitBillReferences(reference)) {
+    const parsedRefs = parseBillReferences(reference);
+    const ownRefs = parsedRefs.filter((parsed) => parsed.kind === 'bill').map((parsed) => parsed.ref);
+    if (parsedRefs.length > 0 && ownRefs.length === 0) {
+      // Every printed invoice and bill needs its own number (2026-09-15).
+      violations.push(
+        `transaction ${sequence} adjusts ${parsedRefs.map((parsed) => parsed.ref).join(', ')} but names no invoice or bill number of its own: write the advance first and the document's own number after it, like "ADV-C01 (Advance), INV-3001"`,
+      );
+    }
+    if (ownRefs.length > 1) {
+      // One document, one number: two own numbers means one of them is
+      // really an advance or a settled bill written without its tag.
+      violations.push(
+        `transaction ${sequence} names ${ownRefs.join(', ')} as its own numbers: a document has exactly one; tag the advance it adjusts "(Advance)" and a bill it settles "(Against Ref)"`,
+      );
+    }
+    for (const ref of ownRefs) {
       const normalized = normalizeBillReference(ref);
       if (priorRefs.has(normalized)) {
         violations.push(`transaction ${sequence} raises bill number ${ref}, which an earlier month already used`);

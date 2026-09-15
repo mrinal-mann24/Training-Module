@@ -1282,6 +1282,7 @@ export async function generateAdaptiveExercise(
     ? applyDocumentsMode(generatedWithOpenings, {
         companyName: companyName ?? "Blossom Retail Pvt Ltd",
         monthLabel: exerciseMonth.label,
+        priorKeys,
       })
     : null;
   const modeApplied = documentsPlan ? documentsPlan.generated : generatedWithOpenings;
