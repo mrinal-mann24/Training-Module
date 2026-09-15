@@ -43,6 +43,7 @@ import {
 import { insertSubmissionPart, getSubmissionParts } from '@/lib/db/queries/submission-parts';
 import { identifyTallyFile } from '@/lib/parsing/identify-tally-file';
 import { insertQaMessage } from '@/lib/db/queries/qa-messages';
+import { reportLearnerIssue, type ReportIssueOutcome } from '@/lib/chat/report-issue';
 
 type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documentName: string; url: string };
 
@@ -659,4 +660,29 @@ export async function askQuestion(question: string): Promise<AskQuestionResult> 
       error: error instanceof Error ? error.message : 'Could not answer right now. Please try again.',
     };
   }
+}
+
+export type ReportIssueResult = ReportIssueOutcome;
+
+// Learner issue reports (2026-09-15): the chat's "Report an issue" box. The
+// issue is stored for the owner with a snapshot of the learner's current
+// batch and is never sent to the tutor or any LLM. Validation, the duplicate
+// and hourly limits, and the service-role write all live in
+// lib/chat/report-issue.ts; this action only authenticates.
+export async function reportIssue(message: string): Promise<ReportIssueResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect('/login');
+  }
+
+  return reportLearnerIssue({
+    supabase,
+    serviceRoleClient: createServiceRoleClient(),
+    learnerId: user.id,
+    rawMessage: message,
+  });
 }

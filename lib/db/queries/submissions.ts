@@ -116,6 +116,30 @@ export async function hasScoredSubmissionForExercise(
   return (count ?? 0) > 0;
 }
 
+// Issue reports (2026-09-15): the most recent submission for the exercise the
+// learner is on, any status, so a report says "the upload was invalid" or
+// "still scoring" without the owner having to look it up.
+export async function getLatestSubmissionForExercise(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exerciseId: string,
+): Promise<{ id: string; status: SubmissionStatus } | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('id, status')
+    .eq('learner_id', learnerId)
+    .eq('exercise_id', exerciseId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 export async function updateSubmissionFilePaths(
   supabase: SupabaseClient,
   submissionId: string,

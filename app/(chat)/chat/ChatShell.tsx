@@ -12,6 +12,8 @@ import { PendingSubmission } from './PendingSubmission';
 import { getWalkthroughSteps } from './walkthrough-config';
 import { askQuestion, confirmAiaOnboarding, confirmWalkthrough, requestHint, submitFiles, submitTextPart } from './actions';
 import { AiaOnboarding } from './AiaOnboarding';
+import { ReportIssue } from './ReportIssue';
+import type { LearnerIssue } from '@/lib/db/queries/learner-issues';
 import { logOut } from '@/app/dashboard/actions';
 import type { ChatMessage } from './message';
 
@@ -67,6 +69,9 @@ type ChatShellProps = {
   // reassembled server-side (lib/chat/build-timeline.ts) — the timeline
   // opens with this and appends everything that happens live.
   initialMessages: ChatMessage[];
+  // Issue reports (2026-09-15): the learner's own reported issues, newest
+  // first, for the "Report an issue" box.
+  initialIssues: LearnerIssue[];
 };
 
 export function ChatShell({
@@ -77,6 +82,7 @@ export function ChatShell({
   initialHintDepth,
   initialModuleNumber,
   initialMessages,
+  initialIssues,
 }: ChatShellProps) {
   const walkthroughSteps = getWalkthroughSteps(licenseMode);
 
@@ -417,7 +423,11 @@ export function ChatShell({
         </form>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      {/* Relative wrapper so the floating "Report an issue" button sits over
+          the bottom-right of the message area and never over the composer;
+          the extra bottom padding keeps the last message clear of it. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-20">
         {/* Phase 4 (spec 16): widescreen — messages live in a centered
             ~1150px column instead of spanning the whole window. */}
         <div className="mx-auto w-full max-w-287.5 space-y-4">
@@ -470,6 +480,8 @@ export function ChatShell({
 
         {errorMessage && <p className="text-sm text-status-error">{errorMessage}</p>}
         </div>
+      </div>
+      <ReportIssue initialIssues={initialIssues} />
       </div>
 
       <Composer

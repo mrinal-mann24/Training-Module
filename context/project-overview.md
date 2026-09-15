@@ -57,6 +57,7 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 - Graduated 5-rung hint ladder with anti-gaming (probes for explanation before crediting mastery on suspiciously clean answers)
 - Two-lane tone: sharp/Socratic for work coaching, warmer for reflection prompts — never collapsed
 - Reference-video pointers by concept tag and timestamp
+- **Report an issue** (2026-09-15): a floating button in the chat opens a box where the learner describes a problem (wrong document, upload stuck, scoring question). The issue is stored for the owner with the learner's current batch attached, never sent to the tutor, and the learner sees their past issues with status and the owner's reply. v1 has no admin screen (the owner works in Supabase), no screenshots and no notifications
 
 ### Submission & Scoring
 

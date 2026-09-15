@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getLearnerProfile, isLearnerOnboarded } from '@/lib/db/queries/learner-profile';
 import { getLatestExercise } from '@/lib/db/queries/exercises';
 import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
+import { getLearnerIssues } from '@/lib/db/queries/learner-issues';
 import { getConceptMasteryMap, getModuleNumber } from '@/lib/db/queries/mastery';
 import { buildChatTimeline } from '@/lib/chat/build-timeline';
 import { isAiaOnboardingDue } from '@/lib/tutor/documents-mode';
@@ -32,10 +33,14 @@ export default async function ChatPage() {
     ? await getLatestExercise(supabase, user.id)
     : null;
 
-  const [initialHintDepth, initialModuleNumber, masteryMap] = await Promise.all([
+  const [initialHintDepth, initialModuleNumber, masteryMap, initialIssues] = await Promise.all([
     initialExercise ? getHintDepthForExercise(supabase, user.id, initialExercise.id) : Promise.resolve(0),
     getModuleNumber(supabase, user.id),
     getConceptMasteryMap(supabase, user.id),
+    // Issue reports (2026-09-15): the list is a convenience, so a failed read
+    // (or the learner_issues migration not applied yet) shows no list rather
+    // than taking the whole chat down.
+    getLearnerIssues(supabase, user.id).catch(() => []),
   ]);
 
   // Documents mode (2026-09-09): once three concepts are mastered the learner
@@ -62,6 +67,7 @@ export default async function ChatPage() {
       initialHintDepth={initialHintDepth}
       initialModuleNumber={initialModuleNumber}
       initialMessages={initialMessages}
+      initialIssues={initialIssues}
     />
   );
 }

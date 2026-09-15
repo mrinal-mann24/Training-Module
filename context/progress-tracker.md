@@ -21,6 +21,18 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-15 (later): REPORT AN ISSUE, v1
+
+User request: interns were sending issues over WhatsApp and the owner had to ask which batch and upload each one was about. v1 adds a floating "Report an issue" button to the chat.
+
+- **Migration `20260915140000_learner_issues.sql` (NOT YET APPLIED):** `learner_issues` (message 1-2000 chars, status open/resolved, admin_reply, snapshot columns exercise_id / exercise_level / exercise_created_at / submission_id / submission_status). RLS select-own only; learners have no insert/update/delete/truncate grant, so they cannot skip the rate limit, forge the context or resolve their own issue. exercise_id / submission_id carry no foreign keys, so the reset procedure's deletes never touch this table and an issue survives them (ON DELETE SET NULL was dropped in review: submissions cascade from exercises, so one delete would reach the same issue row by two paths). RLS uses `(select auth.uid())`. A trigger stamps `resolved_at` when status becomes resolved and clears it on reopen.
+- **`lib/chat/report-issue.ts`:** zod input (control characters stripped, trimmed, 1-2000); the same text within 10 minutes returns the existing row (double click, retry); 5 issues per hour; the context lookup can fail without blocking the insert; every failure is a friendly message. 28 tests in `report-issue.test.ts`.
+- **UI:** `ReportIssue.tsx` (modal: draft kept on close, Ctrl+Enter, counter, disabled while sending, Escape/backdrop close) and `IssueList.tsx` (status badge, owner reply). ChatShell wraps the scroll area in a relative container so the button sits over the message area, never the composer. `page.tsx` reads the list with `.catch(() => [])`, so the chat still loads if the migration has not been applied.
+- **Owner workflow:** open issues: `select i.created_at, u.email, i.message, i.exercise_level, i.exercise_created_at, i.submission_status, i.id from learner_issues i join auth.users u on u.id = i.learner_id where i.status = 'open' order by i.created_at desc;` Resolve: `update learner_issues set status = 'resolved', admin_reply = '...' where id = '...';`
+- **Deferred to v2:** admin page, notifications (email/Slack), screenshot upload.
+
+Gates: tsc clean, eslint clean, 450/450 tests.
+
 ## Session log — 2026-09-15: PRODUCTION AUDIT — RLS column leak, escalation-lock, mastery-idempotency, bank-ledger regression
 
 User asked for a full-repo audit for production bugs/edge cases, done via 3 parallel Explore subagents covering (1) scoring/mastery engine, (2) exercise generation + document/XML pipeline, (3) auth/RLS/jobs. Full findings list (7 items, CRITICAL through LOW) written to the session's plan file; user approved fixing the CRITICAL+HIGH set (#1-4) now, deferred #5-7 (submission double-score race, silent submission-file-path RLS no-op, and a batch of LOW-MEDIUM items: test skip masking, unlogged adjudication catch, review-exercise sequence-alignment gap, bundled-LLM-call retry duplication, hint-error-message hardening, requestHint fetch-ordering) to a later pass.

@@ -49,6 +49,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     mastery.ts                → Mastery, reinforcement, escalation state transitions
   /chat
     build-timeline.ts         → Chat-history rebuild: reassembles the full conversation from persisted rows (2026-08-24)
+    report-issue.ts           → Learner issue reports (2026-09-15): validation, duplicate + hourly limits, batch-context snapshot, service-role insert. Never calls an LLM
   /db
     queries/                  → All Supabase reads/writes go through here — no ad-hoc queries in /app
   /jobs
@@ -83,6 +84,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
 | Certificate PDF                                                                                                                 | File Storage                                                            | Generated once, served by URL, referenced from `learner_state`                                                        |
 | In-flight multi-part submission buffer (waiting for daybook + explain + review)                                                 | Database (`submissions` row with nullable parts + `status: pending`)    | Needs to survive across the 30–45 min window and process restarts — not appropriate for an ephemeral cache            |
 | LLM call traces                                                                                                                 | Langfuse (external)                                                     | Not queried by the app at runtime; observability only                                                                 |
+| Learner issue reports (message, status, owner reply, snapshot of the current exercise/submission)                               | Database (`learner_issues`)                                             | Read by the owner in Supabase; learners select their own rows only and have no write grant, inserts go through the service role after validation and a 5-per-hour limit |
 | Rate limiting / short-lived dedupe (e.g. prevent duplicate hint requests within seconds)                                        | In-memory / edge cache                                                  | Only for data that's fine to lose on restart and never affects grading correctness                                    |
 
 **Rule:** anything that affects grading correctness or mastery state lives in the database, never in a cache. Cache is only for throwaway, non-authoritative data.
