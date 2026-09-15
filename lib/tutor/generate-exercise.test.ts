@@ -465,6 +465,22 @@ describe('checkCashFeasibility', () => {
     ]);
     expect(checkCashFeasibility(batch, { cash: 100, bank: 100 })).toBeNull();
   });
+
+  it('does not mistake a Bank Charges/Interest P&L ledger for the bank account itself', () => {
+    // Regression (2026-09-15): a local, unguarded BANK_LEDGER_PATTERN
+    // (/\bbank\b|hdfc/i) matched "Bank Charges" as if it WERE the bank
+    // account, netting its Dr leg against the real Cr HDFC Bank leg of the
+    // same transaction and hiding the overdraft entirely. This is the exact
+    // bug isBankLedger (lib/db/queries/company.ts) was already patched to
+    // avoid elsewhere in this file, after the same failure mode was caught
+    // live ("Garima's April: Bank Charges was read as a bank ledger").
+    const batch = cashBatch([
+      { sequence: 1, account: 'Bank Charges', drCr: 'Dr', amount: 90000 },
+      { sequence: 1, account: 'HDFC Bank — 1234', drCr: 'Cr', amount: 90000 },
+    ]);
+    const error = checkCashFeasibility(batch, { cash: 100000, bank: 10000 });
+    expect(error).toContain('Bank feasibility violated');
+  });
 });
 
 // --- double-entry integrity (2026-09-02, Praveen's single-leg batch) ---

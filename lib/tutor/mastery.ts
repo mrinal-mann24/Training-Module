@@ -149,12 +149,23 @@ export function selectWeakConcept(
     return { conceptTag, status, reinforcementActive, escalationActive };
   });
 
-  const notMastered = candidates.filter((candidate) => candidate.status !== 'mastered');
-  if (notMastered.length === 0) {
+  // A concept counts as a candidate once it isn't mastered, OR it IS
+  // mastered but still escalation_active. The latter happens when a
+  // once-only concept (masteryStreakTarget 1, e.g. rcm_and_late_fee) passes
+  // on its very next attempt after failing enough times to escalate: the
+  // single clean pass flips status to 'mastered' while the same failures
+  // are still inside the escalation lookback window. Excluding it here (as
+  // the old `status !== 'mastered'` filter alone did) made it invisible to
+  // every path that could ever target it again — no reinforcement match, no
+  // escalation match, no fallback — so escalation_active could never clear
+  // and module advancement (which requires mastered && !escalation_active
+  // on every concept) stalled permanently with no learner-facing signal.
+  const eligible = candidates.filter((candidate) => candidate.status !== 'mastered' || candidate.escalationActive);
+  if (eligible.length === 0) {
     return null;
   }
 
-  const reinforcementTarget = notMastered.find((candidate) => candidate.reinforcementActive);
+  const reinforcementTarget = eligible.find((candidate) => candidate.reinforcementActive);
   if (reinforcementTarget) {
     return {
       conceptTag: reinforcementTarget.conceptTag,
@@ -164,7 +175,7 @@ export function selectWeakConcept(
     };
   }
 
-  const escalationTarget = notMastered.find((candidate) => candidate.escalationActive);
+  const escalationTarget = eligible.find((candidate) => candidate.escalationActive);
   if (escalationTarget) {
     return {
       conceptTag: escalationTarget.conceptTag,
@@ -175,7 +186,13 @@ export function selectWeakConcept(
   }
 
   // Lowest-status concept not yet mastered: not_started before developing,
-  // so a learner sees breadth before depth on any one concept.
+  // so a learner sees breadth before depth on any one concept. Anything
+  // mastered+escalated was already returned above via escalationTarget, so
+  // only genuinely un-mastered concepts reach this fallback.
+  const notMastered = eligible.filter((candidate) => candidate.status !== 'mastered');
+  if (notMastered.length === 0) {
+    return null;
+  }
   const STATUS_RANK: Record<string, number> = { not_started: 0, developing: 1 };
   const lowest = [...notMastered].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status])[0];
 

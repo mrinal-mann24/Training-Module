@@ -713,7 +713,6 @@ export function checkDoubleEntry(generated: GeneratedExercise): string | null {
 // overdraw either. Bank is checked too (an overdraft is equally
 // unpostable), with a small tolerance so a to-the-rupee zero doesn't trip.
 const CASH_LEDGER_PATTERN = /^cash\b|cash-in-hand/i;
-const BANK_LEDGER_PATTERN = /\bbank\b|hdfc/i;
 const OVERDRAW_TOLERANCE = 0.005;
 
 // The scenario prose may mention the company's opening Cash/Bank position,
@@ -975,7 +974,7 @@ export function checkCashFeasibility(
       const signed = leg.dr_cr === "Dr" ? leg.amount : -leg.amount;
       if (CASH_LEDGER_PATTERN.test(leg.correct_account)) {
         cash += signed;
-      } else if (BANK_LEDGER_PATTERN.test(leg.correct_account)) {
+      } else if (isBankLedger(leg.correct_account)) {
         bank += signed;
       }
     }

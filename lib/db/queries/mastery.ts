@@ -25,6 +25,13 @@ export type ConceptMastery = {
 // Append-only: inserts one row per concept covered by a scored exercise.
 // Never updated or deleted afterward — concept_mastery is derived from this
 // log, this log is never derived from concept_mastery.
+//
+// Idempotent on (learner_id, exercise_id, concept_tag) — see the
+// 2026-09-15 migration's comment: an Inngest step retry after this call
+// already succeeded once must not duplicate the exercise's attempt rows
+// (computeConceptResults already rolls up to one row per concept tag per
+// exercise, so a legitimate call never collides with itself; only a retry
+// of the same call does, and ignoreDuplicates makes that a no-op).
 export async function insertConceptAttempts(
   supabase: SupabaseClient,
   learnerId: string,
@@ -35,7 +42,7 @@ export async function insertConceptAttempts(
     return;
   }
 
-  const { error } = await supabase.from('concept_attempts').insert(
+  const { error } = await supabase.from('concept_attempts').upsert(
     attempts.map((attempt) => ({
       learner_id: learnerId,
       exercise_id: exerciseId,
@@ -43,6 +50,7 @@ export async function insertConceptAttempts(
       result: attempt.result,
       hint_rungs_used: attempt.hintRungsUsed,
     })),
+    { onConflict: 'learner_id,exercise_id,concept_tag', ignoreDuplicates: true },
   );
 
   if (error) {

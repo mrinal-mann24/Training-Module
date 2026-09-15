@@ -187,6 +187,83 @@ describe('selectWeakConcept', () => {
     expect(target?.reason).toBe('reinforcement');
   });
 
+  it('regression (2026-09-15): a once-only concept that masters on its first post-escalation attempt stays targetable until escalation clears', () => {
+    // rcm_and_late_fee has masteryStreakTargetFor === 1. 3 fails (accumulates
+    // escalation_active) then 1 clean pass flips status to 'mastered' while
+    // escalation_active is still true from the same recent-attempts window.
+    // Before the fix, `selectWeakConcept` filtered on `status !== 'mastered'`
+    // BEFORE checking escalation, so this concept became permanently
+    // unreachable — no reinforcement match, no escalation match, no
+    // fallback — and module advancement (which requires
+    // mastered && !escalation_active) stalled forever with no way for the
+    // learner to ever attempt it again.
+    const onceOnlyTag: ConceptTag = 'rcm_and_late_fee';
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', concept_tag: onceOnlyTag }),
+      attempt({ created_at: '2026-01-02', result: 'fail', concept_tag: onceOnlyTag }),
+      attempt({ created_at: '2026-01-03', result: 'fail', concept_tag: onceOnlyTag }),
+      attempt({ created_at: '2026-01-04', result: 'pass', concept_tag: onceOnlyTag }),
+    ];
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('mastered');
+    expect(patch.escalation_changes[0].escalation_active).toBe(true);
+
+    const masteryMap = new Map<ConceptTag, ConceptMastery>([
+      [
+        onceOnlyTag,
+        {
+          learner_id: 'learner-1',
+          concept_tag: onceOnlyTag,
+          status: 'mastered',
+          consecutive_clean_count: 1,
+          last_attempt_result: 'pass',
+          escalation_active: true,
+          updated_at: '2026-01-04',
+        },
+      ],
+    ]);
+
+    // The last 3 attempts are fail/fail/pass, so reinforcement (checked
+    // first) also matches here — either path proves the point: the concept
+    // is targetable again instead of permanently invisible.
+    const target = selectWeakConcept([onceOnlyTag], attempts, masteryMap);
+    expect(target).not.toBeNull();
+    expect(target?.conceptTag).toBe(onceOnlyTag);
+    expect(['reinforcement', 'escalation']).toContain(target?.reason);
+
+    // Isolate the escalation-only path (no reinforcement overlap): a second
+    // clean pass makes the last-3 window fail/pass/pass (reinforcement not
+    // active) while the 5-attempt escalation window still holds 3 fails.
+    const stillEscalatedAttempts = [
+      ...attempts,
+      attempt({ created_at: '2026-01-05', result: 'pass', concept_tag: onceOnlyTag }),
+    ];
+    const escalationOnlyTarget = selectWeakConcept([onceOnlyTag], stillEscalatedAttempts, masteryMap);
+    expect(escalationOnlyTarget?.conceptTag).toBe(onceOnlyTag);
+    expect(escalationOnlyTarget?.reason).toBe('escalation');
+
+    // Once escalation genuinely clears (the 3 fails age out of the 5-attempt
+    // lookback window after enough further clean passes), the concept must
+    // stop being surfaced as a weak target — confirming the fix doesn't
+    // just always re-target it forever.
+    const clearedMasteryMap = new Map<ConceptTag, ConceptMastery>([
+      [
+        onceOnlyTag,
+        {
+          learner_id: 'learner-1',
+          concept_tag: onceOnlyTag,
+          status: 'mastered',
+          consecutive_clean_count: 1,
+          last_attempt_result: 'pass',
+          escalation_active: false,
+          updated_at: '2026-01-05',
+        },
+      ],
+    ]);
+    expect(selectWeakConcept([onceOnlyTag], [], clearedMasteryMap)).toBeNull();
+  });
+
   it('falls back to the lowest-status not-yet-mastered concept when nothing is reinforcement/escalation active', () => {
     const masteryMap = new Map<ConceptTag, ConceptMastery>([
       [
