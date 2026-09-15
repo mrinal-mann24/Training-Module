@@ -60,6 +60,19 @@ const config: Config = {
         "status-warning": "#B7791F",
         "status-error": "#D0342C",
         "status-info": "#6366F1",
+        // Day surface (landing + auth shell) — values live on :root in
+        // globals.css under "Day surface".
+        day: {
+          bg: "var(--day-bg)",
+          ink: "var(--day-ink)",
+          muted: "var(--day-muted)",
+          card: "var(--day-card)",
+          soft: "var(--day-soft)",
+          line: "var(--day-line)",
+          blue: "var(--day-blue)",
+          "blue-hover": "var(--day-blue-hover)",
+          panel: "var(--day-panel)",
+        },
       },
       borderRadius: {
         sm: "6px",
@@ -67,11 +80,18 @@ const config: Config = {
         lg: "16px",
         xl: "20px",
         full: "9999px",
+        // Day surface: the outer card shell, its inner panel, the footer.
+        card: "2.625rem",
+        panel: "1.75rem",
+        footer: "1.375rem",
       },
       fontFamily: {
         sans: ["Inter", "sans-serif"],
         body: ["Inter", "sans-serif"],
         display: ['"Instrument Serif"', "serif"],
+        // Day surface: Nunito carries headings and copy, Urbanist the UI.
+        nunito: ["Nunito", "sans-serif"],
+        urbanist: ["Urbanist", "sans-serif"],
         mono: [
           "ui-monospace",
           '"SF Mono"',

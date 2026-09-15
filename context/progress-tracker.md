@@ -21,6 +21,15 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-15 (evening): LANDING + AUTH REBUILT ON THE "DAY" SURFACE
+
+User request: rebuild the site's UI/UX in the same style, layout and motion as finance-able.com, with AIA Academy's own content. Confirmed with the user: product-true content (no invented prices, salaries, counts, logos or testimonials), restyle the landing page **and** login/onboarding, finance-able blue `#1c76ff` as the accent.
+
+- **Reference teardown:** Webflow + IX2/GSAP + a Spline hero. Section order, colours, radii and fonts (Nunito / Urbanist) read from computed styles; every scroll and hover keyframe read from the Webflow interaction store, so timings match rather than approximate. No reference copy, logos, images or the Spline scene were reused.
+- **Built:** `app/components/site/` (SiteNav, Hero + three.js HeroScene, Tracks, Journey, WhySection, ConceptGrid, BuiltDifferent, Categories, TutorVoices, FinalCta, SiteFooter, TrainingCard, CardCarousel, Bubbles, site-motion, site-content, site-icons); `.day` tokens and classes in `globals.css`; `day-*` colours, `card/panel/footer` radii and `nunito/urbanist` fonts in `tailwind.config.ts`; fonts added in `app/layout.tsx`. `app/page.tsx` renders the new sections; `app/(auth)/layout.tsx` and the login/onboarding pages and forms restyled with their logic untouched. Full description in `ui-context.md` ("Day surface").
+- **Verified in a real browser** (headless Chrome at 1280x720 and phone width): hero scatter, gathered shell and payoff scale-out; tracks pinned with the journey arching over them; journey beam and its three states; why + stats; a concept tile opened; a built-different block opened; both category rails; voices header travel and masonry; final CTA + footer; login card; no horizontal overflow on phones; no console errors (one benign ANGLE shader-precision warning from three.js). Fixes made during verification: carousel scroll-padding, stat alignment, voices timing, hero scatter and phone fit. Gates: tsc clean, eslint clean, vitest 450/450.
+- **Open:** the retired night-surface files (`app/components/Hero.tsx`, `Navbar.tsx`, `Stats.tsx`, `VideoBackdrop.tsx`, `landing-motion.ts`) and the `.night*` CSS block are unused but still on disk (deletion was blocked by the session permission policy; user to delete). Onboarding not screenshotted (needs a signed-in, un-onboarded account). Not committed.
+
 ## Session log — 2026-09-15 (later): REPORT AN ISSUE, v1
 
 User request: interns were sending issues over WhatsApp and the owner had to ask which batch and upload each one was about. v1 adds a floating "Report an issue" button to the chat.

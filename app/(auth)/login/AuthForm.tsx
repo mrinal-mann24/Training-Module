@@ -48,10 +48,10 @@ const COPY: Record<
 };
 
 const INPUT_CLASSES =
-  'night-input w-full rounded-lg px-4 py-3 font-body text-sm';
+  'day-input h-12 w-full rounded-2xl px-5 font-nunito text-base';
 
 const SUBMIT_CLASSES =
-  'night-btn night-btn-solid mt-1 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-md font-body text-sm font-medium tracking-tight disabled:cursor-not-allowed';
+  'mt-1 inline-flex h-12 w-full cursor-pointer items-center justify-center rounded-full bg-day-blue font-urbanist text-lg text-white transition-colors duration-200 hover:bg-day-blue-hover disabled:cursor-not-allowed disabled:opacity-50';
 
 export function AuthForm() {
   const [mode, setMode] = useState<Mode>('log-in');
@@ -68,10 +68,10 @@ export function AuthForm() {
   if (state.confirmEmailSent) {
     return (
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="night-title font-body text-white">
+        <h1 className="day-title font-nunito">
           Check your <em>email</em>
         </h1>
-        <p className="night-muted font-body text-sm leading-relaxed">
+        <p className="font-nunito text-base leading-relaxed text-day-muted">
           Confirm your account by clicking the link we sent you.
         </p>
       </div>
@@ -83,12 +83,12 @@ export function AuthForm() {
   return (
     <div className="flex flex-col gap-5">
       <div className="text-center">
-        <h1 className="night-title font-body text-white">{copy.heading}</h1>
-        <p className="night-muted mt-2 font-body text-sm leading-relaxed">{copy.blurb}</p>
+        <h1 className="day-title font-nunito">{copy.heading}</h1>
+        <p className="mt-2 font-nunito text-base leading-relaxed text-day-muted">{copy.blurb}</p>
       </div>
 
       {state.accountCreated && (
-        <p className="rounded-lg border border-white/15 bg-white/5 px-4 py-3 font-body text-sm leading-relaxed text-white">
+        <p className="rounded-2xl border border-day-line bg-day-card px-4 py-3 font-nunito text-sm leading-relaxed text-day-ink">
           Account created. Sign in below with the email and password you just chose.
         </p>
       )}
@@ -122,7 +122,7 @@ export function AuthForm() {
         />
 
         {state.error && (
-          <p className="night-error font-body text-sm">{state.error}</p>
+          <p className="day-error font-nunito text-sm">{state.error}</p>
         )}
 
         <button type="submit" disabled={isPending} className={SUBMIT_CLASSES}>
@@ -133,7 +133,7 @@ export function AuthForm() {
       <button
         type="button"
         onClick={() => setMode(mode === 'log-in' ? 'sign-up' : 'log-in')}
-        className="cursor-pointer font-body text-sm font-medium text-white transition-opacity hover:opacity-70"
+        className="cursor-pointer font-urbanist text-base text-day-blue transition-colors duration-200 hover:text-day-blue-hover"
       >
         {copy.switchTo}
       </button>

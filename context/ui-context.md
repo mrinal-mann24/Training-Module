@@ -2,13 +2,16 @@
 
 Design direction — **two surfaces, one product**:
 
-- **Night surface (2026-09-03, user direction): the landing frame and the
-  auth shell.** Pure black, white Inter, one Instrument Serif italic phrase
-  per heading held back to muted grey, liquid-metal nav pills, liquid-glass
-  buttons, a frosted card, film grain, and the ambient hero video underneath
-  a scrim. Taken from a Vesper.ai reference the user supplied as *inspiration
-  only* — the structure and material language are borrowed, all copy, marks,
-  claims and iconography are AIA Academy's own.
+- **Day surface (2026-09-15, user direction): the landing page and the auth
+  shell.** Rebuilt in the visual and motion language of finance-able.com,
+  which the user supplied as the reference (layout, type scale, colour roles,
+  and interaction timings read out of its Webflow interaction data). Off-white
+  `#fcfcfc` ground, `#232323` ink and dark pill nav, Nunito headings and copy,
+  Urbanist UI text, one royal-blue accent `#1c76ff`, grey card shells with
+  graph-paper panels, soft white bubbles, a three.js hero and scroll-pinned
+  scenes. All copy, figures, icons and the 3D scene are AIA Academy's own.
+  It replaced the **night surface** (2026-09-03, a Vesper.ai-inspired black
+  frame); see "Retired: night surface" below.
 - **White surface (2026-08-28 direction): the product.** Dashboard, chat and
   progress keep the light-only, minimal-SaaS theme: white canvas, dark
   charcoal ink, indigo accent, Instrument Serif display headings, Inter body,
@@ -21,9 +24,45 @@ app inherits it, and the two surfaces are chosen per route, never per user
 preference. The previous Wandor theme (Geist/Special Elite, terracotta) and
 the original blue `#314DD0` remain retired.
 
+## Day surface (landing + auth), 2026-09-15
+
+Scoped exactly like the retired night surface: `.day` on the wrapper in `app/page.tsx` and `app/(auth)/layout.tsx`; product routes never see it. Components live in `app/components/site/`; every word and figure is in `site-content.ts`.
+
+**Tokens** (values on `:root` in `globals.css` under "Day surface", consumed as Tailwind `day-*` colours): `--day-bg #fcfcfc`, `--day-ink #232323`, `--day-muted #8f8f8f`, `--day-card #f3f3f3`, `--day-soft #f7f7f7`, `--day-line #ececec`, `--day-line-strong #e0e0e0`, `--day-blue #1c76ff` (hover `#0b62e6`), `--day-panel #232323` (nav, footer, open blocks), `--day-grid #eeeeee`. They sit on `:root`, not `.day`: a custom property that points at another resolves where it is declared, so scoping them would leave the utilities empty. Radii: `rounded-card` 2.625rem (card shells), `rounded-panel` 1.75rem (inner panels), `rounded-footer` 1.375rem.
+
+**Type:** Nunito (400/500/600/700) for headings and copy, Urbanist (400/500/600) for nav, buttons, pills and card titles. Fluid ramps: `.day-display` 40 to 72px (hero h1), `.day-heading` 34 to 56px (section h2), `.day-subheading` 28 to 44px, `.day-mega` 48 to 124px (payoff line, voices header, "ARE YOU IN?"), `.day-figure` 68 to 152px (journey), `.day-stat` 48 to 76px, `.day-lede`, `.day-title` (auth card; its `<em>` goes blue, not italic).
+
+**Material classes:** `.day-grid-paper`, `.day-disc`, `.day-bubble` (via `Bubbles`), `.day-navy`, `.day-arc-top`, `.day-beam`, `.day-orb`, `.day-glow`, `.day-rail` (hidden scrollbar), `.day-input`, `.day-choice` (`aria-pressed`), `.day-error`.
+
+**Motion** (`site-motion.ts`), timings read out of the reference's Webflow interaction data: CSS `ease`; entrances are a 0.5s fade plus a 1s transform in 0.2s steps (`headerReveal` scale 0.8 / y 40 / rotateX -90, `riseReveal`, `scaleReveal`, `swipeReveal`, `sliderReveal`), fired once in view. Scroll scenes use `useSectionProgress` (`useScroll` with `start end` / `end start`, spring-smoothed), so a section N viewports tall is pinned from 1/(N+1) to N/(N+1). Reduced motion: `MotionPreference` strips preset transforms; scroll scenes read `useReducedMotion()` and keep cross-fades only; the 3D scene still follows the scroll but never animates on its own. framer-motion remains the animation library; no GSAP.
+
+**Sections, in order** (`app/page.tsx`):
+- `SiteNav`: fixed dark pill (max-w-5xl), wordmark, "Learn" dropdown (tracks / concepts / tools), How it works, About, blue Log in; below `md` a panel under the pill.
+- `Hero` (400svh, 300svh on phones) + `HeroScene` (three.js, dynamically imported): 21 extruded metal triangle frames (14 on phones) scattered low around a frosted transmission icosahedron with a blue core. Frames gather into a Fibonacci shell over 0.2 to 0.5, the cluster shrinks 0.5 to 0.72, the canvas fades 0.7 to 0.8. Headline lifts out 0.3 to 0.4; "We Make it Practical" rises 0.4 to 0.5, then scales 2x and fades 0.65 to 0.7. Renders only while on screen in a visible tab; no WebGL means no canvas. A blue load line runs until the first frame. Scatter keeps out of the nav band and the headline's column; on phones every frame starts below the headline and the cluster scales to the width.
+- `Tracks` (250svh pinned from `md`): `CardCarousel` of six training stages.
+- `Journey` (400svh, `-mt-[100svh]` from `md`, so its arched top rises over the pinned tracks): navy field, beam swings -58° to 0° with an orb riding it, three states (Day 1 / 0–12 / 1 Month) handing over at 0.25 to 0.35, 0.35 to 0.65, 0.65 to 0.75; the third sits on the right half.
+- `WhySection`: two copy cards around a coded tutor-reply mock labelled "Sample feedback", then four mechanics stats (7 checks, 2× weight, 5 rungs, 3 runs).
+- `ConceptGrid`: nine concept tiles; hover, focus or tap swings the disc aside (rotate 60, scale 0.8, x 100) and reveals what the tutor checks.
+- `BuiltDifferent`: four numbered blocks with vertical titles; click widens one (flex-basis transition) to show its body; a stacked accordion below `lg`.
+- `Categories`: "Concepts" (9) and "Tools" (5) rails on the same `TrainingCard`, each with a "Start practising" button to /login.
+- `TutorVoices`: pinned travelling header (110% to -100% of its own width over 0.12 to 0.42), a note that these are samples, then three masonry columns with parallax (outer 400px, middle 200px) from `md` only.
+- `FinalCta` ("ARE YOU IN?" to /login) and `SiteFooter` (dark rounded card; no social or legal links, because none exist).
+
+**Shared card** (`TrainingCard`): grey `rounded-card` shell, `aspect-video` graph-paper panel with a blue tag pill and one to three glyph discs (positions shared with the dotted connector lines), two white info pills, Urbanist title, optional blue CTA. `CardCarousel`: native scroll-snap rail whose scroll-padding matches its side padding, 3 / 2 / 1 cards across, arrows step one card and disable at either end.
+
+**Auth shell:** `.day` + `Bubbles`, dark pill header with the wordmark and "Back to site"; the login and onboarding cards are a grey `rounded-card` shell around a white `rounded-panel`; `.day-input` fields (h-12, rounded-2xl), blue pill submit, `.day-choice` licence buttons.
+
+**Content honesty:** the reference sells with prices, salaries, learner counts, employer logos and testimonials. AIA Academy has none, so each slot carries a real mechanic from `project-overview.md`, and the tutor messages are labelled as samples on the page. Keep it that way: no invented numbers, logos or quotes.
+
+**Documented arbitrary values (code-standards rule 25):** `h-[400svh]`, `max-md:h-[300svh]`, `md:h-[250svh]` (pinned scene lengths), `md:-mt-[100svh]` (journey overlap), `mt-[30svh]` (voices gap), `lg:[writing-mode:vertical-rl]` (block titles). They are scroll choreography with no theme-scale equivalent.
+
+## Retired: night surface
+
+No route renders the night surface any more. Its CSS (the `.night*` block in `globals.css`) and components (`app/components/Hero.tsx`, `Navbar.tsx`, `Stats.tsx`, `VideoBackdrop.tsx`, `landing-motion.ts`) are still on disk and unused: deleting them was blocked by the session's permission policy on 2026-09-15 and is left to the user. The night-surface entries further down this file describe those retired pieces.
+
 ## Typography
 
-Fonts load via Google Fonts `<link>` in `app/layout.tsx` (preconnect + one stylesheet: Instrument Serif 400 + italic, Inter 400/500/600).
+Fonts load via Google Fonts `<link>` in `app/layout.tsx` (preconnect + one stylesheet: Instrument Serif 400 + italic, Inter 400/500/600, and for the day surface Nunito 400/500/600/700 and Urbanist 400/500/600).
 
 | Role | Typeface | Tailwind | Notes |
 |---|---|---|---|

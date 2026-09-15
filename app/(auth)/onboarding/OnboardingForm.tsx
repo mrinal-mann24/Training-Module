@@ -8,13 +8,15 @@ import { BOOKS_BEGIN_DATE } from '@/lib/tutor/timeline';
 
 const DEFAULT_BOOKS_BEGIN_DATE = BOOKS_BEGIN_DATE;
 
-const INPUT_CLASSES = 'night-input w-full rounded-lg px-4 py-3 font-body text-sm';
+const INPUT_CLASSES = 'day-input h-12 w-full rounded-2xl px-5 font-nunito text-base';
 
 const CHOICE_CLASSES =
-  'night-choice cursor-pointer rounded-lg px-4 py-3 text-left text-sm font-medium';
+  'day-choice cursor-pointer rounded-2xl px-4 py-3 text-left font-nunito text-base font-semibold';
 
 const SUBMIT_CLASSES =
-  'night-btn night-btn-solid inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-md font-body text-sm font-medium tracking-tight disabled:cursor-not-allowed';
+  'inline-flex h-12 w-full cursor-pointer items-center justify-center rounded-full bg-day-blue font-urbanist text-lg text-white transition-colors duration-200 hover:bg-day-blue-hover disabled:cursor-not-allowed disabled:opacity-50';
+
+const LEGEND_CLASSES = 'font-nunito text-base font-semibold text-day-ink';
 
 export function OnboardingForm() {
   const [state, formAction, isPending] = useActionState(
@@ -27,10 +29,10 @@ export function OnboardingForm() {
   const canContinue = licenseMode !== null && booksBeginDate !== '';
 
   return (
-    <form action={formAction} className="flex flex-col gap-6 font-body">
+    <form action={formAction} className="flex flex-col gap-6 font-nunito">
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-white">Your name</legend>
-        <p className="night-muted text-sm leading-relaxed">
+        <legend className={LEGEND_CLASSES}>Your name</legend>
+        <p className="text-sm leading-relaxed text-day-muted">
           Your tutor will address you by this name.
         </p>
         <input
@@ -44,7 +46,7 @@ export function OnboardingForm() {
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-white">Tally license mode</legend>
+        <legend className={LEGEND_CLASSES}>Tally license mode</legend>
 
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -66,7 +68,7 @@ export function OnboardingForm() {
         </div>
 
         {licenseMode === 'educational' && (
-          <p className="night-muted text-sm leading-relaxed">
+          <p className="text-sm leading-relaxed text-day-muted">
             In Educational Mode, Tally restricts voucher entry to the 1st, 2nd, and last day of
             any month.
           </p>
@@ -76,7 +78,7 @@ export function OnboardingForm() {
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-white">Books Begin Date</legend>
+        <legend className={LEGEND_CLASSES}>Books Begin Date</legend>
 
         <label htmlFor="books_begin_date" className="sr-only">
           Books Begin Date
@@ -92,7 +94,7 @@ export function OnboardingForm() {
         />
       </fieldset>
 
-      {state.error && <p className="night-error text-sm">{state.error}</p>}
+      {state.error && <p className="day-error text-sm">{state.error}</p>}
 
       <button type="submit" disabled={!canContinue || isPending} className={SUBMIT_CLASSES}>
         {isPending ? 'Continuing…' : 'Continue'}

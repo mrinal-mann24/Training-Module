@@ -1,25 +1,40 @@
-import { Hero } from "@/app/components/Hero";
 import { MotionPreference } from "@/app/components/MotionPreference";
-import { Navbar } from "@/app/components/Navbar";
-import { Stats } from "@/app/components/Stats";
-import { VideoBackdrop } from "@/app/components/VideoBackdrop";
+import { BuiltDifferent } from "@/app/components/site/BuiltDifferent";
+import { Categories } from "@/app/components/site/Categories";
+import { ConceptGrid } from "@/app/components/site/ConceptGrid";
+import { FinalCta } from "@/app/components/site/FinalCta";
+import { Hero } from "@/app/components/site/Hero";
+import { Journey } from "@/app/components/site/Journey";
+import { SiteFooter } from "@/app/components/site/SiteFooter";
+import { SiteNav } from "@/app/components/site/SiteNav";
+import { Tracks } from "@/app/components/site/Tracks";
+import { TutorVoices } from "@/app/components/site/TutorVoices";
+import { WhySection } from "@/app/components/site/WhySection";
 
 /**
- * The landing frame: one viewport, three rows — header, bottom-anchored hero,
- * stats. It runs on the `.night` surface (see `globals.css`), which is scoped
- * to this page and the auth shell; the product itself stays on the white
- * theme.
+ * The landing page, on the `.day` surface (see `globals.css`), in the order
+ * of the reference it is modelled on: pinned 3D hero, training tracks, the
+ * dark journey rising over them, why, concepts, what makes it different,
+ * training by category, sample tutor messages, the closing call, footer.
+ * Copy lives in `app/components/site/site-content.ts`.
  */
 export default function Home() {
   return (
-    <div className="night night-page relative isolate">
-      <VideoBackdrop />
-      <div className="night-grain" />
-
+    <div className="day relative isolate min-h-svh">
       <MotionPreference>
-        <Navbar />
-        <Hero />
-        <Stats />
+        <SiteNav />
+        <main>
+          <Hero />
+          <Tracks />
+          <Journey />
+          <WhySection />
+          <ConceptGrid />
+          <BuiltDifferent />
+          <Categories />
+          <TutorVoices />
+          <FinalCta />
+        </main>
+        <SiteFooter />
       </MotionPreference>
     </div>
   );
