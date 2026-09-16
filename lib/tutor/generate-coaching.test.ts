@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ScoringResult, VoucherDiff } from '@/lib/schemas/scoring';
-import type { CoachingSignal } from '@/lib/llm/prompts/coaching';
-import { buildCoachingSignal, buildSequenceLabels, checkFeedbackIdentifiers, checkOpeningLineFacts, composeFallbackOpeningLine, groupDescriptionsByField } from './generate-coaching';
+import type { CoachingFact, CoachingSignal } from '@/lib/llm/prompts/coaching';
+import type { CoachingModelOutput } from '@/lib/schemas/coaching';
+import type { CorrectionDecision } from '@/lib/tutor/correction-round';
+import {
+  buildCoachingFacts,
+  buildCoachingSignal,
+  buildSequenceLabels,
+  checkGrounding,
+  checkOpeningLineFacts,
+  composeFallbackCoaching,
+  composeFallbackOpeningLine,
+  composeNextNote,
+  generateCoaching,
+  groupDescriptionsByField,
+} from './generate-coaching';
 
 function signalWith(overrides: Partial<CoachingSignal>): CoachingSignal {
   return {
@@ -11,7 +24,7 @@ function signalWith(overrides: Partial<CoachingSignal>): CoachingSignal {
     correctConceptDescriptions: [],
     qualitative: null,
     missingPartDescriptions: [],
-    rectificationDescriptions: [],
+    rectifications: [],
     ...overrides,
   };
 }
@@ -246,41 +259,7 @@ describe('buildCoachingSignal flagged-area accuracy (pilot 2026-08-31)', () => {
   });
 });
 
-describe('guardrails (2026-09-01: identifier echo, praise/flag exclusivity, label collisions)', () => {
-  it('checkFeedbackIdentifiers catches a mistyped identifier (the live DW-115 slip)', () => {
-    const signal = signalWith({
-      incorrectConceptDescriptions: ['the ledger account classification (DT-115 (the Office Equipment purchase))'],
-    });
-    const issue = checkFeedbackIdentifiers(
-      { went_well: [], needs_work: ['Take another look at DW-115, the Office Equipment purchase.'] },
-      signal,
-    );
-    expect(issue).toContain('DW-115');
-  });
-
-  it('checkFeedbackIdentifiers passes when identifiers are copied exactly', () => {
-    const signal = signalWith({
-      incorrectConceptDescriptions: ['the GST treatment (INV-016 and CA26-101)'],
-      correctConceptDescriptions: ['the Debit/Credit direction (INV-M-101)'],
-    });
-    const issue = checkFeedbackIdentifiers(
-      {
-        went_well: ['Your direction on INV-M-101 was precise.'],
-        needs_work: ['Review the GST on INV-016 and CA26-101.'],
-      },
-      signal,
-    );
-    expect(issue).toBeNull();
-  });
-
-  it('checkFeedbackIdentifiers ignores plain prose without identifier tokens', () => {
-    const issue = checkFeedbackIdentifiers(
-      { went_well: ['Solid voucher-type choices throughout.'], needs_work: ['Revisit the narrations.'] },
-      signalWith({}),
-    );
-    expect(issue).toBeNull();
-  });
-
+describe('guardrails (2026-09-01: praise/flag exclusivity, label collisions)', () => {
   it('buildCoachingSignal drops a partially-wrong transaction from the praise side', () => {
     const signal = buildCoachingSignal(
       scoringResultWith([
@@ -294,6 +273,20 @@ describe('guardrails (2026-09-01: identifier echo, praise/flag exclusivity, labe
     expect(signal.correctConceptDescriptions).toEqual(['the Debit/Credit direction (transaction 9)']);
   });
 
+  // Template595 (2026-09-16): "Bill-by-bill referencing was handled
+  // correctly" sat directly above three flagged bill references.
+  it('buildCoachingSignal praises a field only when no diff of that field was flagged', () => {
+    const signal = buildCoachingSignal(
+      scoringResultWith([
+        { voucherRef: 5, field: 'bill_reference', expected_masked: true, is_correct: false, error_code: 'BILL_REFERENCE_WRONG' },
+        { voucherRef: 9, field: 'bill_reference', expected_masked: true, is_correct: true, error_code: null },
+        { voucherRef: 9, field: 'voucher_type', expected_masked: true, is_correct: true, error_code: null },
+      ]),
+    );
+    expect(signal.correctConceptDescriptions.join(' ')).not.toMatch(/bill-by-bill/);
+    expect(signal.correctConceptDescriptions).toEqual(['the voucher type used (transaction 9)']);
+  });
+
   it('buildSequenceLabels disambiguates colliding labels with the amount', () => {
     const leg = (sequence: number, amount: number) => ({
       sequence, correct_account: 'Bank Charges', dr_cr: 'Dr' as const, amount,
@@ -305,5 +298,305 @@ describe('guardrails (2026-09-01: identifier echo, praise/flag exclusivity, labe
     const labels = buildSequenceLabels({ entries: [leg(46, 350), leg(78, 850)] });
     expect(labels.get(46)).toBe('the Bank Charges payment of Rs. 350');
     expect(labels.get(78)).toBe('the Bank Charges payment of Rs. 850');
+  });
+});
+
+// Grounded coaching (2026-09-16): a closed fact list, a citation contract
+// checked in code, retries with the violations, and a fallback that never
+// drops a finding. Template595's first review invented history, reversed a
+// Sales gap and closed with "nothing more to send" during a correction round.
+
+const FACTS: CoachingFact[] = [
+  { id: 'P1', kind: 'praise', text: 'the voucher type used (INV-M-101 (the Karnataka Emporium receipt)) was handled correctly' },
+  { id: 'I1', kind: 'issue', text: 'the GST treatment (INV-012 (the Coimbatore Interiors sales)) needs another look' },
+  { id: 'T1', kind: 'tieout', text: "Sales shows Rs 15,000 more on the credit side in the Trial Balance than this month's correct postings" },
+];
+
+function bullet(text: string, factIds: string[]) {
+  return { text, fact_ids: factIds };
+}
+
+const GROUNDED: CoachingModelOutput = {
+  opening_line: 'The month is mostly in shape, and the GST heads are the place to look.',
+  went_well: [bullet('Voucher types were right, including on INV-M-101.', ['P1'])],
+  needs_work: [
+    bullet('Take another look at the GST on INV-012. The head follows the place of supply.', ['I1']),
+    bullet('Sales shows Rs 15,000 more on the credit side than the correct postings for the month.', ['T1']),
+  ],
+};
+
+describe('checkGrounding', () => {
+  const context = { tbTieOut: false };
+
+  it('accepts output where every bullet is grounded in the facts it cites', () => {
+    expect(checkGrounding(GROUNDED, FACTS, context)).toEqual([]);
+  });
+
+  it('accepts Indian digit grouping written without commas', () => {
+    const output = { ...GROUNDED, needs_work: [GROUNDED.needs_work[0], bullet('Sales is Rs 15000 heavier on the credit side.', ['T1'])] };
+    expect(checkGrounding(output, FACTS, context)).toEqual([]);
+  });
+
+  it('rejects a fabricated identifier (the live DW-115 slip)', () => {
+    const output = { ...GROUNDED, needs_work: [bullet('Take another look at the GST on INV-021.', ['I1']), GROUNDED.needs_work[1]] };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toContain('INV-021');
+  });
+
+  it('rejects an identifier that exists but is not in the cited facts', () => {
+    const output = { ...GROUNDED, needs_work: [bullet('Take another look at the GST on INV-M-101.', ['I1']), GROUNDED.needs_work[1]] };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toContain('INV-M-101');
+  });
+
+  it('rejects a fabricated amount', () => {
+    const output = { ...GROUNDED, needs_work: [GROUNDED.needs_work[0], bullet('Sales is off by Rs 50,000 on the credit side.', ['T1'])] };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toContain('50000');
+  });
+
+  it('rejects a history claim with no fixed or still fact behind it', () => {
+    const output = {
+      ...GROUNDED,
+      needs_work: [bullet('The GST gap on INV-012 is still recurring from an earlier round.', ['I1']), GROUNDED.needs_work[1]],
+    };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toMatch(/claims history/);
+  });
+
+  it('rejects a history word in the opening line when no fixed or still fact exists', () => {
+    const output = { ...GROUNDED, opening_line: 'The same GST gap shows up again this month.' };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toMatch(/opening_line uses "shows up again"/);
+  });
+
+  // Every form the invented history took on Template595's first review.
+  it.each([
+    'This is the same classification gap flagged in an earlier round, still recurring.',
+    'This is part of the same journal basics that showed up as a gap before too.',
+    'The next round should zero in on these, since all three have now shown up two rounds running.',
+    'The GST head is wrong again, same as last time.',
+    'It failed again on INV-012.',
+    'This was flagged previously.',
+    'The GST gap is no longer a one-off.',
+  ])('rejects the history claim "%s"', (text) => {
+    const output = { ...GROUNDED, needs_work: [bullet(text, ['I1']), GROUNDED.needs_work[1]] };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toMatch(/claims history/);
+  });
+
+  // Ordinary coaching the bare-word rule used to reject (live replay: two of
+  // three attempts retried over "look again" and "before").
+  it.each([
+    'On INV-012, look again at which GST head applies.',
+    'Check the place of supply before posting the GST on INV-012.',
+    'The GST on INV-012 still needs a closer look.',
+    'Take another look at the GST on INV-012: the same issue can sit on more than one line.',
+  ])('accepts the ordinary phrasing "%s"', (text) => {
+    const output = { ...GROUNDED, needs_work: [bullet(text, ['I1']), GROUNDED.needs_work[1]] };
+    expect(checkGrounding(output, FACTS, context)).toEqual([]);
+  });
+
+  it('allows history in a bullet that cites a still-failing fact', () => {
+    const facts: CoachingFact[] = [
+      ...FACTS,
+      { id: 'S1', kind: 'still', text: 'GST classification was failing in the previous round of this batch and is still failing now' },
+    ];
+    const output = {
+      ...GROUNDED,
+      needs_work: [...GROUNDED.needs_work, bullet('GST classification is still slipping, as in the previous round.', ['S1'])],
+    };
+    expect(checkGrounding(output, facts, context)).toEqual([]);
+  });
+
+  it('rejects an issue fact that no bullet cites', () => {
+    const output = { ...GROUNDED, needs_work: [GROUNDED.needs_work[0]] };
+    expect(checkGrounding(output, FACTS, context).join(' ')).toMatch(/not cited by any needs_work bullet: T1/);
+  });
+
+  it('rejects went_well citing an issue fact, and a bullet with no or unknown ids', () => {
+    const output = {
+      ...GROUNDED,
+      went_well: [bullet('The GST on INV-012 was good.', ['I1']), bullet('Nice work overall.', []), bullet('Great ledgers.', ['P9'])],
+    };
+    const violations = checkGrounding(output, FACTS, context).join(' ');
+    expect(violations).toMatch(/went_well may cite only P and F facts/);
+    expect(violations).toMatch(/cites no fact ids/);
+    expect(violations).toMatch(/"P9", which is not a listed fact/);
+  });
+
+  it('rejects an em dash in a bullet or the opening line', () => {
+    const output = {
+      ...GROUNDED,
+      opening_line: 'A solid month — mostly.',
+      went_well: [bullet('Voucher types were right — every one.', ['P1'])],
+    };
+    const violations = checkGrounding(output, FACTS, context);
+    expect(violations.filter((violation) => /em dash/.test(violation))).toHaveLength(2);
+  });
+
+  it('rejects numbers and identifiers in the opening line, and keeps the verdict rules', () => {
+    expect(checkGrounding({ ...GROUNDED, opening_line: 'Look at INV-012 first.' }, FACTS, context).join(' ')).toMatch(
+      /number or an identifier/,
+    );
+    expect(checkGrounding({ ...GROUNDED, opening_line: 'A partial result this month.' }, FACTS, context).join(' ')).toMatch(
+      /verdict word/,
+    );
+  });
+});
+
+describe('buildCoachingFacts', () => {
+  it('numbers facts per kind and keeps rectification history only on F and S facts', () => {
+    const facts = buildCoachingFacts(
+      signalWith({
+        tbTieOut: false,
+        correctConceptDescriptions: ['the narration (transaction 2)'],
+        incorrectConceptDescriptions: ['the GST treatment (transaction 3)', 'the amount posted (transaction 4)'],
+        tbMismatchDescriptions: ["Sales shows Rs 15,000 more on the credit side in the Trial Balance than this month's correct postings"],
+        rectifications: [
+          { classification: 'FIXED', text: 'TDS classification was failing in the last batch that tested it and is fixed now' },
+        ],
+        missingPartDescriptions: ['your explanation never arrived before the review window closed, so this was scored on the parts that did.'],
+      }),
+    );
+    expect(facts.map((fact) => fact.id)).toEqual(['P1', 'F1', 'I1', 'I2', 'T1', 'M1']);
+  });
+
+  it('frames a books gap as possible earlier-month drift only after the first month', () => {
+    const books = { clean: false, descriptions: ['Sales closes with Rs 15,000 more on the credit side than the correct books, year to date'] };
+    const first = buildCoachingFacts(signalWith({ booksReconciliation: books, batchOrdinal: 0 }));
+    const later = buildCoachingFacts(signalWith({ booksReconciliation: books, batchOrdinal: 3 }));
+    expect(first[0].text).not.toMatch(/earlier/);
+    expect(later[0].text).toMatch(/earlier months/);
+  });
+});
+
+function fakeScoring(): ScoringResult {
+  return {
+    per_voucher_diffs: [
+      { voucherRef: 3, field: 'gst', expected_masked: true, is_correct: false, error_code: 'GST_HEAD_WRONG' },
+      { voucherRef: 4, field: 'voucher_type', expected_masked: true, is_correct: true, error_code: null },
+    ],
+    tb_tie_out: false,
+    tb_tie_out_mismatches: [{ account: 'Sales', status: 'off', difference: -15000 }],
+    unmatched_vouchers: [{ position: 7, date: '20250412', voucher_type: 'Payment', ledgers: ['Suspense'], amount: 18000, kind: 'extra' }],
+    ledger_findings: [{ code: 'SECOND_BANK_LEDGER', ledgers: ['HDFC BANK', 'HDFC 123'] }],
+    books_reconciliation: [{ account: 'Sundry Debtors', status: 'off', difference: 2500 }],
+    weighted_score: 0.6,
+    overall_result: 'partial',
+    concept_results: [{ concept_tag: 'gst_classification', result: 'fail' }],
+  };
+}
+
+const OPEN_ROUND: CorrectionDecision = {
+  kind: 'open',
+  round: 1,
+  focusConceptTag: 'gst_classification',
+  failingConceptTags: ['gst_classification'],
+};
+
+const HALLUCINATION = {
+  opening_line: 'The same gaps are recurring again this month.',
+  went_well: [{ text: 'Your GST was spot on.', fact_ids: ['I1'] }],
+  needs_work: [{ text: 'The Deccan Traders gap of Rs 50,000 is still there from last batch.', fact_ids: ['I1'] }],
+};
+
+describe('generateCoaching (grounded loop, injected completion)', () => {
+  it('falls back to the facts after three ungrounded outputs, keeping every finding', async () => {
+    const complete = vi.fn().mockResolvedValue(HALLUCINATION);
+    const recordViolations = vi.fn();
+    const coaching = await generateCoaching(
+      'learner-1',
+      { overallResult: 'partial', scoringResult: fakeScoring(), qualitative: null, rectifications: [], batchOrdinal: 0, nextStep: OPEN_ROUND },
+      { complete, recordViolations },
+    );
+
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(recordViolations).toHaveBeenCalledTimes(3);
+    expect(recordViolations.mock.calls[2][0]).toMatchObject({ attempt: 3, usedFallback: true });
+    // The retry prompts carry the violations back to the model.
+    const retryMessages = complete.mock.calls[1][0].messages as { content: string }[];
+    expect(retryMessages[retryMessages.length - 1].content).toMatch(/rejected by the fact checker/);
+
+    const needsWork = coaching.needs_work.join(' | ');
+    expect(coaching.needs_work).toHaveLength(5);
+    expect(needsWork).toContain('GST treatment');
+    expect(needsWork).toContain('Payment voucher no. 7');
+    expect(needsWork).toMatch(/more than one bank ledger/i);
+    expect(needsWork).toContain('Sales shows Rs 15,000 more on the credit side');
+    expect(needsWork).toContain('Sundry Debtors closes with Rs 2,500 more on the debit side');
+    expect(needsWork).not.toMatch(/earlier months/);
+    expect(coaching.went_well).toEqual(['The voucher type used (transaction 4) was handled correctly.']);
+    expect(JSON.stringify(coaching)).not.toMatch(/Deccan|recurring|50,000/);
+    expect(Object.keys(coaching).sort()).toEqual(['needs_work', 'next_note', 'opening_line', 'went_well']);
+  });
+
+  it('uses the second output when the first is rejected and the second is grounded', async () => {
+    const grounded = {
+      opening_line: 'Most of the month is in place, with a few areas to check below.',
+      went_well: [{ text: 'Voucher types were right on transaction 4.', fact_ids: ['P1'] }],
+      needs_work: [
+        { text: 'Take another look at the GST on transaction 3.', fact_ids: ['I1'] },
+        { text: 'Check Payment voucher no. 7 dated 12-04-2025 for Rs 18,000 on Suspense.', fact_ids: ['U1'] },
+        { text: 'Two bank ledgers are in use, HDFC BANK and HDFC 123. Keep one.', fact_ids: ['L1'] },
+        { text: 'Sales shows Rs 15,000 more on the credit side than the month should.', fact_ids: ['T1'] },
+        { text: 'Sundry Debtors closes Rs 2,500 heavier on the debit side than the correct books.', fact_ids: ['B1'] },
+      ],
+    };
+    const complete = vi.fn().mockResolvedValueOnce(HALLUCINATION).mockResolvedValueOnce(grounded);
+    const coaching = await generateCoaching(
+      'learner-1',
+      { overallResult: 'partial', scoringResult: fakeScoring(), qualitative: null, nextStep: OPEN_ROUND },
+      { complete, recordViolations: vi.fn() },
+    );
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[0][0].temperature).toBe(0.2);
+    expect(coaching).toEqual({
+      opening_line: grounded.opening_line,
+      went_well: ['Voucher types were right on transaction 4.'],
+      needs_work: grounded.needs_work.map((item) => item.text),
+      next_note: composeNextNote({ nextStep: OPEN_ROUND, missingPartDescriptions: [], hasFindings: true }),
+    });
+  });
+
+  it('the fallback passes its own grounding check', () => {
+    const signal = buildCoachingSignal(fakeScoring());
+    const facts = buildCoachingFacts({
+      ...signal,
+      batchOrdinal: 2,
+      rectifications: [
+        { classification: 'STILL_FAILING', text: 'GST classification was failing in the previous round of this batch and is still failing now' },
+      ],
+    });
+    const fallback = composeFallbackCoaching(facts, signal);
+    const praiseFacts = facts.filter((fact) => fact.kind === 'praise' || fact.kind === 'fixed');
+    const issueFacts = facts.filter((fact) => fact.kind !== 'praise' && fact.kind !== 'fixed');
+    const cited: CoachingModelOutput = {
+      opening_line: fallback.opening_line,
+      went_well: praiseFacts.map((fact, index) => bullet(fallback.went_well[index], [fact.id])),
+      needs_work: issueFacts.map((fact, index) => bullet(fallback.needs_work[index], [fact.id])),
+    };
+    expect(checkGrounding(cited, facts, { tbTieOut: signal.tbTieOut })).toEqual([]);
+  });
+});
+
+describe('composeNextNote', () => {
+  it('points at the correction when a round opens, without repeating the send instruction that follows it', () => {
+    const note = composeNextNote({ nextStep: OPEN_ROUND, missingPartDescriptions: [], hasFindings: true });
+    expect(note).toMatch(/Fix these points in Tally/);
+    expect(note).not.toMatch(/nothing more to send|Day Book and Trial Balance|—/);
+  });
+
+  it('moves on when the batch advances', () => {
+    expect(
+      composeNextNote({ nextStep: { kind: 'advance', reason: 'nothing-failing' }, missingPartDescriptions: [], hasFindings: false }),
+    ).toBe('Nothing here needs fixing. What comes next follows below.');
+    expect(
+      composeNextNote({ nextStep: { kind: 'advance', reason: 'rounds-exhausted' }, missingPartDescriptions: [], hasFindings: true }),
+    ).toMatch(/move on/);
+  });
+
+  it('states a missing part first', () => {
+    const note = composeNextNote({
+      nextStep: { kind: 'advance', reason: 'not-supported' },
+      missingPartDescriptions: ['your explanation never arrived before the review window closed, so this was scored on the parts that did.'],
+      hasFindings: true,
+    });
+    expect(note.startsWith('Your explanation never arrived')).toBe(true);
   });
 });

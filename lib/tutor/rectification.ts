@@ -4,9 +4,19 @@ import type { ConceptAttempt } from '@/lib/db/queries/mastery';
 export const RECTIFICATION_CLASSIFICATIONS = ['FIXED', 'STILL_FAILING', 'NEW'] as const;
 export type RectificationClassification = (typeof RECTIFICATION_CLASSIFICATIONS)[number];
 
+// Where the attempt being compared against came from (2026-09-16). A
+// correction round re-scores the SAME exercise, so "the attempt before this
+// one" is either an earlier round of this batch or a different, earlier
+// batch, and the learner-facing line has to say which. Null for NEW, which
+// has no prior attempt at all. Before this existed the coaching told a
+// learner on their very first scored batch that a gap was "flagged in an
+// earlier round, still recurring" (Template595, 2026-09-16).
+export type RectificationPriorContext = 'previous-round' | 'earlier-batch';
+
 export type RectificationResult = {
   conceptTag: ConceptTag;
   classification: RectificationClassification;
+  prior: RectificationPriorContext | null;
 };
 
 // Pure function, no LLM call. Given a concept touched by the current
@@ -40,17 +50,20 @@ export function classifyRectification(
 
   if (prior === null) {
     if (latest.result === 'fail') {
-      return { conceptTag, classification: 'NEW' };
+      return { conceptTag, classification: 'NEW', prior: null };
     }
     return null;
   }
 
+  const priorContext: RectificationPriorContext =
+    prior.exercise_id === latest.exercise_id ? 'previous-round' : 'earlier-batch';
+
   if (prior.result === 'fail' && latest.result === 'pass') {
-    return { conceptTag, classification: 'FIXED' };
+    return { conceptTag, classification: 'FIXED', prior: priorContext };
   }
 
   if (prior.result === 'fail' && latest.result === 'fail') {
-    return { conceptTag, classification: 'STILL_FAILING' };
+    return { conceptTag, classification: 'STILL_FAILING', prior: priorContext };
   }
 
   // prior passed — whether latest passed again (steady progress) or failed

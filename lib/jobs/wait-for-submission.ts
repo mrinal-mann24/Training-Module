@@ -13,6 +13,7 @@ import { adjudicateScoringResult } from '@/lib/tutor/adjudicate-findings';
 import { scoreSubmission, collectErrorCodes } from '@/lib/tutor/score-submission';
 import { scoreQualitative, groundingFromAnswerKey, combineOverallResult } from '@/lib/tutor/score-qualitative';
 import { generateCoaching } from '@/lib/tutor/generate-coaching';
+import { decideCorrection } from '@/lib/tutor/correction-round';
 import { insertScoringResult } from '@/lib/db/queries/scoring-results';
 import { recordSubmissionScore } from '@/lib/llm/tracing';
 import {
@@ -20,7 +21,7 @@ import {
   recomputeMasteryAndModuleProgress,
   openCorrectionRoundOrAdvance,
   submissionIdFromFailureEvent,
-  describeRectification,
+  describeRectifications,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
   loadExerciseOrdinal,
@@ -275,15 +276,27 @@ export const waitForSubmission = inngest.createFunction(
         })
       : [];
 
+    // Decided before coaching so the closing line states the real next step
+    // (2026-09-16), with the same inputs openCorrectionRoundOrAdvance uses
+    // below. Pure, over memoized step results.
+    const nextStep = decideCorrection({
+      requiredParts: exercise.requiredParts,
+      conceptResults: scoringResult?.concept_results ?? [],
+      currentRound: submission.correction_round,
+    });
+
     const feedback = await step.run('generate-coaching', async () => {
       const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
+      const batchOrdinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
       return generateCoaching(submission.learner_id, {
         overallResult,
         scoringResult,
         qualitative: qualitativeScore,
         answerKey,
-        rectificationDescriptions: rectifications.map(describeRectification),
+        rectifications: describeRectifications(rectifications),
         missingPartDescriptions: stillMissing.map(describeMissingPart),
+        batchOrdinal,
+        nextStep,
       });
     });
 

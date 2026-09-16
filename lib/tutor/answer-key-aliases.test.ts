@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerKey } from '@/lib/schemas/exercise';
-import { inheritAccountAliases } from './answer-key-aliases';
+import { collectAccountAliases, inheritAccountAliases } from './answer-key-aliases';
 import { scoreSubmission } from './score-submission';
 
 const leg = (
@@ -67,5 +67,29 @@ describe('inheritAccountAliases (Praveen MA/205 + SL/118, 2026-09-04)', () => {
 
   it('returns the key untouched when no learner key carries aliases', () => {
     expect(inheritAccountAliases(september, [september])).toBe(september);
+  });
+});
+
+describe('returns aliases (returns require their own ledger, 2026-09-16)', () => {
+  const pilotPack: AnswerKey = {
+    entries: [
+      leg(43, 'Sales Returns', 'Dr', 15000, ['Sales Return', 'Sales', 'Credit Sales A/c']),
+      leg(51, 'Purchase Returns', 'Cr', 25000, ['Purchase Return', 'Purchases', 'Trading goods']),
+    ],
+  };
+
+  it('never collects a base ledger as an alias of a returns ledger', () => {
+    const aliases = collectAccountAliases([pilotPack]);
+    expect(aliases.get('salesreturns')).toEqual(['Sales Return']);
+    expect(aliases.get('purchasereturns')).toEqual(['Purchase Return']);
+  });
+
+  it('never inherits one, and drops one the key itself lists', () => {
+    const generated: AnswerKey = {
+      entries: [leg(1, 'Sales Returns', 'Dr', 8000, ['Sales']), leg(2, 'Purchase Returns', 'Cr', 5000)],
+    };
+    const merged = inheritAccountAliases(generated, [pilotPack]);
+    expect(merged.entries[0].account_aliases).toEqual(['Sales Return']);
+    expect(merged.entries[1].account_aliases).toEqual(['Purchase Return']);
   });
 });

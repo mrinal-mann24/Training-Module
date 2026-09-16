@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerKey, AnswerKeyEntry } from '@/lib/schemas/exercise';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
-import { evaluateTrialBalanceTieOut, hasOpeningColumn } from './score-submission';
+import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
+import { evaluateTrialBalanceTieOut, fuzzilyReservedRows, hasOpeningColumn } from './score-submission';
 
 // 2026-09-11: a Trial Balance exported for the month carries Tally's
 // opening column, so the month's movement is closing minus opening from
@@ -161,5 +162,79 @@ describe('a suspense ledger named like the Tally group', () => {
       ['HDFC BANK', 100000, 105000],
     ]);
     expect(evaluateTrialBalanceTieOut(may, key, null).mismatches).toEqual([]);
+  });
+});
+
+describe('Template595\'s first batch (2026-09-16 live replay)', () => {
+  it('a party paid down to a blank closing still shows its movement (Deccan Traders)', () => {
+    const key: AnswerKey = {
+      entries: [
+        leg(1, 'Deccan Traders', 'Dr', 50000, { voucher_type: 'Payment', bill_reference: 'DT-OPEN' }),
+        leg(1, 'HDFC Bank — 1234', 'Cr', 50000, { voucher_type: 'Payment' }),
+        leg(2, 'Purchases', 'Dr', 94400, { bill_reference: 'DT-114' }),
+        leg(2, 'Deccan Traders', 'Cr', 94400, { bill_reference: 'DT-114' }),
+        leg(3, 'Deccan Traders', 'Dr', 94400, { voucher_type: 'Payment', bill_reference: 'DT-114' }),
+        leg(3, 'HDFC Bank — 1234', 'Cr', 94400, { voucher_type: 'Payment' }),
+      ],
+    };
+    const xml =
+      '<ENVELOPE>' +
+      '<DSPACCNAME><DSPDISPNAME>Deccan Traders</DSPDISPNAME></DSPACCNAME>' +
+      '<DSPACCINFO><DSPOPAMT><DSPOPAMTA>50000.00</DSPOPAMTA></DSPOPAMT><DSPCLAMT><DSPCLAMTA></DSPCLAMTA></DSPCLAMT></DSPACCINFO>' +
+      '<DSPACCNAME><DSPDISPNAME>Purchases</DSPDISPNAME></DSPACCNAME>' +
+      '<DSPACCINFO><DSPOPAMT><DSPOPAMTA></DSPOPAMTA></DSPOPAMT><DSPCLAMT><DSPCLAMTA>-94400.00</DSPCLAMTA></DSPCLAMT></DSPACCINFO>' +
+      '<DSPACCNAME><DSPDISPNAME>HDFC Bank</DSPDISPNAME></DSPACCNAME>' +
+      '<DSPACCINFO><DSPOPAMT><DSPOPAMTA>-500000.00</DSPOPAMTA></DSPOPAMT><DSPCLAMT><DSPCLAMTA>-355600.00</DSPCLAMTA></DSPCLAMT></DSPACCINFO>' +
+      '</ENVELOPE>';
+    const result = evaluateTrialBalanceTieOut(parseTrialBalanceXml(Buffer.from(xml, 'utf8')), key, null);
+    expect(result.mismatches).toEqual([]);
+  });
+
+  it('an expense alias never takes the vendor row of another expected account (Advertisement & Marketing vs Signage Advertising)', () => {
+    const key: AnswerKey = {
+      entries: [
+        leg(1, 'Advertisement & Marketing', 'Dr', 60000, { account_aliases: ['Marketing collaterals', 'Advertising', 'Marketing Expenses'] }),
+        leg(1, 'Signage Advertising', 'Cr', 69600, { bill_reference: 'SA/2027-04' }),
+        leg(2, 'Signage Advertising', 'Dr', 69384, { voucher_type: 'Payment', bill_reference: 'SA/2027-04' }),
+        leg(2, 'HDFC Bank — 1234', 'Cr', 69384, { voucher_type: 'Payment' }),
+      ],
+    };
+    const april = monthExport([
+      ['Marketing collaterals', 0, 60000],
+      ['Signage Advertising (firm)', 0, -216],
+      ['HDFC Bank', 500000, 430616],
+    ]);
+    const result = evaluateTrialBalanceTieOut(april, key, null);
+    expect(result.mismatches).toEqual([]);
+  });
+});
+
+describe('fuzzilyReservedRows', () => {
+  it('reserves an unclaimed row for the one account whose own name matches it, never through an alias', () => {
+    const names = new Map([
+      ['advertisement & marketing', ['advertisement & marketing', 'Advertising']],
+      ['signage advertising', ['signage advertising']],
+      ['deccan traders', ['deccan traders']],
+    ]);
+    const exported = monthExport([
+      ['Signage Advertising (firm)', 0, -216],
+      ['Deccan Traders', 0, 0],
+      ['Deccan Traders Debtor', 0, 100],
+      ['Advertising', 0, 10],
+      ['Sundry Debtors', 0, 100],
+    ]);
+    const reserved = fuzzilyReservedRows(exported, names);
+    expect([...reserved.entries()]).toEqual([
+      ['Signage Advertising (firm)', 'signage advertising'],
+      ['Deccan Traders Debtor', 'deccan traders'],
+    ]);
+  });
+
+  it('leaves a row matching two accounts by their own names unreserved', () => {
+    const names = new Map([
+      ['office rent', ['office rent']],
+      ['rent', ['rent']],
+    ]);
+    expect(fuzzilyReservedRows(monthExport([['Rent A/c', 0, 100]]), names).size).toBe(0);
   });
 });

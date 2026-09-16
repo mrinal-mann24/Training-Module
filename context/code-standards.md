@@ -58,6 +58,7 @@ This document exists so unit 5 and unit 20 look like they were written by the sa
 32. Presentational components (pure rendering, no data fetching) are separated from container components (fetch/mutate + compose). A component that calls a Server Action and a component that renders a bubble of text are not the same file.
 33. Lists render with stable, meaningful keys (submission ID, exercise ID) — never array index, since chat/history lists reorder and update.
 34. Every interactive element (hint button, upload control, submit) has a visible loading/disabled state while its action is in flight — no dead-click windows where a second click could double-submit.
+35. Learner-facing LLM prose is grounded, not trusted (2026-09-16). Any new LLM output shown to a learner follows the coaching pattern: code builds a closed list of facts with ids, the model cites ids per claim, a pure exported validator checks identifiers, figures and history claims against the cited facts, violations are fed back for a bounded retry, and a code-composed fallback built from the same facts is used when retries run out. Statements about what happens next, or about the learner's past attempts, are composed in code from real state, never left to the model. Prompt wording alone is never the guard.
 
 ## 6a. Testing Patterns
 

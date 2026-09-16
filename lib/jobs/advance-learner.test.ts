@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveBaseDifficultyLevel, describeRectification, submissionIdFromFailureEvent } from './advance-learner';
+import { deriveBaseDifficultyLevel, describeRectification, describeRectifications, submissionIdFromFailureEvent } from './advance-learner';
 
 describe('submissionIdFromFailureEvent', () => {
   // inngest/function.failed carries the ORIGINAL event one level down, at
@@ -29,12 +29,37 @@ describe('advance-learner helpers (shared by both scoring jobs)', () => {
     expect(deriveBaseDifficultyLevel('L4')).toBe('L4');
   });
 
-  it('phrases rectifications in plain language', () => {
-    expect(describeRectification({ conceptTag: 'gst_classification', classification: 'FIXED' })).toBe(
-      'gst classification was failing before and is now fixed',
+  // 2026-09-16: NEW used to read "failed again, same as last time", so a
+  // learner's first scored batch was told a gap was still recurring.
+  it('says nothing about history for a first-time failure', () => {
+    expect(describeRectification({ conceptTag: 'gst_classification', classification: 'NEW', prior: null })).toBeNull();
+    expect(
+      describeRectifications([{ conceptTag: 'gst_classification', classification: 'NEW', prior: null }]),
+    ).toEqual([]);
+  });
+
+  it('names the previous round of this batch for a correction round', () => {
+    expect(
+      describeRectification({ conceptTag: 'contra_voucher_basics', classification: 'STILL_FAILING', prior: 'previous-round' }),
+    ).toBe('contra voucher basics was failing in the previous round of this batch and is still failing now');
+  });
+
+  it('names the last batch that tested the concept when the prior attempt was another exercise', () => {
+    expect(
+      describeRectification({ conceptTag: 'contra_voucher_basics', classification: 'STILL_FAILING', prior: 'earlier-batch' }),
+    ).toBe('contra voucher basics was failing in the last batch that tested it and is still failing now');
+    expect(describeRectification({ conceptTag: 'gst_classification', classification: 'FIXED', prior: 'earlier-batch' })).toBe(
+      'GST classification was failing in the last batch that tested it and is fixed now',
     );
-    expect(describeRectification({ conceptTag: 'contra_voucher_basics', classification: 'STILL_FAILING' })).toBe(
-      'contra voucher basics failed again, same as last time: still failing',
-    );
+  });
+
+  it('keeps the classification on each note so the grounding check knows which facts carry history', () => {
+    expect(
+      describeRectifications([
+        { conceptTag: 'gst_classification', classification: 'FIXED', prior: 'previous-round' },
+        { conceptTag: 'tds_classification', classification: 'NEW', prior: null },
+        { conceptTag: 'contra_voucher_basics', classification: 'STILL_FAILING', prior: 'earlier-batch' },
+      ]).map((note) => note.classification),
+    ).toEqual(['FIXED', 'STILL_FAILING']);
   });
 });

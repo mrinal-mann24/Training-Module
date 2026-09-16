@@ -1,4 +1,5 @@
 import type { AnswerKey } from '@/lib/schemas/exercise';
+import { aliasFitsAccount } from './account-names';
 
 // A learner's ledger names are accepted through the answer key's
 // account_aliases. The authored April pack carries them ("Legal services",
@@ -9,6 +10,9 @@ import type { AnswerKey } from '@/lib/schemas/exercise';
 // (2026-09-04). A name the book accepted once stays accepted: at scoring
 // time every key inherits the union of aliases any of the learner's keys
 // has ever listed for the same canonical account.
+// An alias that does not fit its account (a base ledger listed for a
+// returns ledger, aliasFitsAccount) is never collected or inherited
+// (2026-09-16): returns require their own ledger.
 function canonical(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -21,6 +25,7 @@ export function collectAccountAliases(keys: AnswerKey[]): Map<string, string[]> 
       const id = canonical(entry.correct_account);
       const known = aliases.get(id) ?? [];
       for (const alias of entry.account_aliases) {
+        if (!aliasFitsAccount(alias, entry.correct_account)) continue;
         if (!known.some((existing) => canonical(existing) === canonical(alias))) {
           known.push(alias);
         }
@@ -39,7 +44,7 @@ export function inheritAccountAliases(key: AnswerKey, learnerKeys: AnswerKey[]):
     entries: key.entries.map((entry) => {
       const extra = inherited.get(canonical(entry.correct_account));
       if (!extra?.length) return entry;
-      const merged = [...(entry.account_aliases ?? [])];
+      const merged = (entry.account_aliases ?? []).filter((alias) => aliasFitsAccount(alias, entry.correct_account));
       for (const alias of extra) {
         if (!merged.some((existing) => canonical(existing) === canonical(alias))) {
           merged.push(alias);

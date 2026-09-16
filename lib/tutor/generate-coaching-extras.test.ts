@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ScoringResult } from '@/lib/schemas/scoring';
-import { buildCoachingSignal, describeCompositeMatches, describeLedgerFindings, describeUnmatchedVouchers } from './generate-coaching';
+import {
+  buildCoachingSignal,
+  describeBooksReconciliation,
+  describeCompositeMatches,
+  describeLedgerFindings,
+  describeTieOutMismatches,
+  describeUnmatchedVouchers,
+} from './generate-coaching';
 
 // 2026-09-10: extra vouchers, ledger set-up findings and accepted composite
 // postings reach the coaching call as plain lines.
@@ -66,5 +73,52 @@ describe('buildCoachingSignal carries the new facts', () => {
     expect(signal.unmatchedVoucherDescriptions?.[0]).toContain('a duplicate of another voucher');
     expect(signal.ledgerFindingDescriptions?.[0]).toContain('more than one bank ledger');
     expect(signal.compositeDescriptions?.[0]).toContain('transaction 4 was posted as two vouchers');
+  });
+});
+
+// 2026-09-16: the difference is Dr-positive. "Sales moved Rs 15,000 more"
+// was written for a Sales ledger carrying LESS credit than it should
+// (Template595); naming the side is correct for debit and credit ledgers.
+describe('describeTieOutMismatches', () => {
+  it('names the credit side for a negative difference on a credit ledger', () => {
+    expect(describeTieOutMismatches([{ account: 'Sales', status: 'off', difference: -15000 }])).toEqual([
+      "Sales shows Rs 15,000 more on the credit side in the Trial Balance than this month's correct postings",
+    ]);
+  });
+
+  it('names the debit side for a positive difference', () => {
+    expect(describeTieOutMismatches([{ account: 'Office Rent', status: 'off', difference: 720.34 }])).toEqual([
+      "Office Rent shows Rs 720 more on the debit side in the Trial Balance than this month's correct postings",
+    ]);
+  });
+
+  it('describes a ledger missing from the export and states the cap as its own line', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ account: `Ledger ${i + 1}`, status: 'off' as const, difference: 100 }));
+    const lines = describeTieOutMismatches([{ account: 'Sales Returns', status: 'missing', difference: -5000 }, ...many]);
+    expect(lines[0]).toBe('Sales Returns does not appear in the Trial Balance export at all (it should have moved by Rs 5,000 this month)');
+    expect(lines).toHaveLength(7);
+    expect(lines[6]).toBe('and 3 more ledger(s) in the Trial Balance are off');
+  });
+});
+
+describe('describeBooksReconciliation', () => {
+  it('names the side of a closing-balance gap in both directions', () => {
+    expect(
+      describeBooksReconciliation([
+        { account: 'Sundry Debtors', status: 'off', difference: 2500 },
+        { account: 'Sales', status: 'off', difference: -150000 },
+      ]),
+    ).toEqual([
+      'Sundry Debtors closes with Rs 2,500 more on the debit side than the correct books, year to date',
+      'Sales closes with Rs 1,50,000 more on the credit side than the correct books, year to date',
+    ]);
+  });
+
+  it('describes a ledger missing from the export and caps with its own line', () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ account: `Ledger ${i + 1}`, status: 'off' as const, difference: -10 }));
+    const lines = describeBooksReconciliation([{ account: 'HDFC Bank', status: 'missing', difference: -150000 }, ...many]);
+    expect(lines[0]).toBe('HDFC Bank has no ledger in the export although the correct books carry a balance of about Rs 1,50,000 on it');
+    expect(lines).toHaveLength(7);
+    expect(lines[6]).toBe('and 2 more ledger(s) differ');
   });
 });

@@ -21,6 +21,28 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (late night): GROUNDED FEEDBACK — no invented history, no false Trial Balance findings
+
+**Trigger:** Template595's first scored batch (elina pilot XMLs on the Blossom pack) got a review that was mostly right but said things the data did not support. A read-only replay of the engine on the stored files traced each one to code, not to the learner's files.
+
+**Engine fixes (`lib/parsing`, `score-submission.ts`, `account-names.ts`, `answer-key-aliases.ts`, `books-reconciliation.ts`):**
+- **Blank signed closing lost the opening balance.** A ledger that opened with a balance and closed at nil (a creditor paid off, Deccan Traders Rs 50,000) exported `<DSPCLAMTA></DSPCLAMTA>`; the parser fell to the Dr/Cr branch and dropped `DSPOPAMT`, so the tie-out read a movement of zero and reported "Deccan Traders moved Rs 50,000 less". The signed shape is now detected by the wrapper. The old test had locked the bug in and was corrected.
+- **An alias swallowed another account's party row.** Alias "Advertising" (Advertisement & Marketing) embedded the unclaimed "Signage Advertising (firm)" row, a false -216 mismatch. New `fuzzilyReservedRows`: a row matching exactly one expected account by its own name is reserved for it; tie-out and books reconciliation both use it (books reconciliation's balance-sheet-only workaround is gone).
+- **Returns need their own ledger (user decision).** `aliasFitsAccount` (returns token must agree) now filters aliases everywhere: alias inheritance, voucher legs, tie-out, books. A return debited to Credit Sales A/c or credited to Trading goods is `ACCOUNT_WRONG`; before, the voucher said right while the Trial Balance said wrong. `derive-blossom-answer-key.py` aliases updated; the seeded JSON still lists the old aliases but the engine ignores them. Pilot calibration: 98.1% to 97.6%, TB mismatches 11 to 9 (Deccan and Advertisement gone).
+
+**Grounded coaching (`generate-coaching.ts`, `prompts/coaching.ts`, `schemas/coaching.ts`, jobs, `rectification.ts`, `llm/client.ts`, `llm/tracing.ts`):**
+- **Invented history.** `describeRectification` phrased NEW (first failure) as "failed again, same as last time", which became "flagged in an earlier round, still recurring" and "two rounds running". NEW now produces no rectification fact; FIXED/STILL_FAILING say whether the earlier attempt was the previous round of this batch or the last batch that tested it.
+- **Citation contract.** Code builds a closed, numbered fact list; the model returns bullets with `fact_ids`; `checkGrounding` rejects uncited or wrong-section ids, identifiers or figures not in the cited facts, history phrases without an F/S fact, uncited issue facts, numbers or identifiers in the opening line, and em dashes. Violations are fed back (3 attempts, logged to Langfuse); then `composeFallbackCoaching` writes the review from the facts alone and never drops a finding. The silent 6-area cap is gone. History detection is phrase-based: a first version on bare words (again/before/still) rejected ordinary coaching and sent two of three live attempts to retry.
+- **Sign-correct Trial Balance wording.** "Sales moved Rs 15,000 more" was backwards for credit ledgers; facts now say "more on the debit side / credit side".
+- **Praise next to errors.** A field is praised only when it has no flagged diff in the submission.
+- **"Earlier months" drift framing** only when the batch ordinal is above 0.
+- **`next_note` is code.** `decideCorrection` runs before coaching in both jobs and `composeNextNote` writes the closing line (open round, advance, missing parts), so it can no longer say "nothing more to send" while a correction round asks for re-upload. Stored `feedback_text` shape unchanged (fact ids stripped).
+- **Review findings fixed:** the correction-round fallback to advancing is now logged; OpenRouter requests carry a 5-minute `AbortSignal.timeout` (treated as transient). Also fixed: a literal backspace in a `buildSequenceLabels` regex that never matched.
+
+**Docs:** architecture.md invariant 7 and coaching row; code-standards.md rule 35.
+
+**Verification:** `tsc`, `eslint`, `vitest` and `next build` clean. Offline replay on the elina files + Blossom key (Template595's rows had been reset, so no stored submission): Deccan and Advertisement mismatches gone, returns vouchers flagged, one real coaching call passed grounding on the first attempt with no history words, correct debit/credit wording and a note matching the open round; a planted hallucination (INV-999, Rs 50,000, "again", "last round") was rejected on every count. Stored reviews were not regenerated (user decision: future batches only).
+
 ## Session log — 2026-09-16 (night): ONE SURFACE — dashboard, chat, progress and auth on the day look; chat video sidebar; sign-up URL
 
 **P1 from the user:** retire the "two surfaces" split. Every route now renders on the day surface (`.day`, `day-*` colours, Nunito/Urbanist, grey `rounded-card` shells around white `rounded-panel` panels). Three subagents implemented auth, dashboard+progress and chat in parallel on disjoint files; a code reviewer and a React reviewer checked the diff. `ui-context.md` was rewritten in the same change.

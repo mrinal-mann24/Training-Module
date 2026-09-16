@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { accountNamesMatch, partyAccountsOf, tdsSectionOf } from './account-names';
+import { accountNamesMatch, aliasFitsAccount, partyAccountsOf, tdsSectionOf } from './account-names';
+
+describe('aliasFitsAccount (returns require their own ledger, 2026-09-16)', () => {
+  it('refuses a base ledger as an alias of a returns ledger, and a returns ledger as an alias of its base', () => {
+    expect(aliasFitsAccount('Sales', 'Sales Returns')).toBe(false);
+    expect(aliasFitsAccount('Credit Sales A/c', 'Sales Returns')).toBe(false);
+    expect(aliasFitsAccount('Trading goods', 'Purchase Returns')).toBe(false);
+    expect(aliasFitsAccount('Purchase Return', 'Sales')).toBe(false);
+  });
+
+  it('accepts aliases on the same side of the returns line', () => {
+    expect(aliasFitsAccount('Sales Return', 'Sales Returns')).toBe(true);
+    expect(aliasFitsAccount('Trading goods', 'Purchases')).toBe(true);
+    expect(aliasFitsAccount('Marketing collaterals', 'Advertisement & Marketing')).toBe(true);
+  });
+});
 
 describe('partyAccountsOf', () => {
   const entry = (voucher_type: string, correct_account: string, dr_cr: 'Dr' | 'Cr', bill_reference: string | null) => ({ voucher_type, correct_account, dr_cr, bill_reference });

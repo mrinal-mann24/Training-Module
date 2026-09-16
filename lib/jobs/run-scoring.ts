@@ -8,7 +8,7 @@ import {
   recomputeMasteryAndModuleProgress,
   openCorrectionRoundOrAdvance,
   submissionIdFromFailureEvent,
-  describeRectification,
+  describeRectifications,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
   loadExerciseOrdinal,
@@ -21,6 +21,7 @@ import { runValidityGate, type ValidityError } from '@/lib/tutor/submission-gate
 import { scoreSubmission, collectErrorCodes } from '@/lib/tutor/score-submission';
 import { adjudicateScoringResult } from '@/lib/tutor/adjudicate-findings';
 import { generateCoaching } from '@/lib/tutor/generate-coaching';
+import { decideCorrection } from '@/lib/tutor/correction-round';
 import { insertScoringResult } from '@/lib/db/queries/scoring-results';
 import { recordSubmissionScore } from '@/lib/llm/tracing';
 
@@ -193,14 +194,28 @@ export const runScoring = inngest.createFunction(
       return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, submissionId, scoringResult);
     });
 
+    // What happens after this feedback (2026-09-16), decided BEFORE coaching
+    // so the closing line is written from the real outcome. The same pure
+    // rule, on the same inputs, that openCorrectionRoundOrAdvance applies
+    // below. Pure and computed from memoized step results, so it is
+    // deterministic across Inngest replays without a step of its own.
+    const nextStep = decideCorrection({
+      requiredParts: exercise.requiredParts,
+      conceptResults: scoringResult.concept_results,
+      currentRound: submission.correction_round,
+    });
+
     const feedback = await step.run('generate-coaching', async () => {
       const answerKey = await getExerciseAnswerKeyForScoring(supabase, exercise.id, submission.learner_id);
+      const batchOrdinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
       return generateCoaching(submission.learner_id, {
         overallResult: scoringResult.overall_result,
         scoringResult,
         qualitative: null,
         answerKey,
-        rectificationDescriptions: rectifications.map(describeRectification),
+        rectifications: describeRectifications(rectifications),
+        batchOrdinal,
+        nextStep,
       });
     });
 

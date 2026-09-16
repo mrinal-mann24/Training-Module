@@ -28,6 +28,7 @@ import { getPreviousScoredTrialBalancePath } from '@/lib/db/queries/submissions'
 import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
 import { expectedClosingBalances, type ExpectedClosing } from '@/lib/tutor/books-reconciliation';
 import type { AnswerKey } from '@/lib/schemas/exercise';
+import type { RectificationNote } from '@/lib/llm/prompts/coaching';
 
 // The previous scored Trial Balance for the movement-based tie-out
 // (2026-09-09), shared by both scoring jobs. Null on the first scored
@@ -386,12 +387,20 @@ export async function openCorrectionRoundOrAdvance(
       await saveHint(supabase, params.learnerId, params.exercise.id, hint, decision.focusConceptTag);
 
       return { opened: true, round: decision.round, conceptTag: decision.focusConceptTag };
-    } catch {
+    } catch (error) {
       // A help step that cannot be generated must not strand the learner with
       // no hint AND no next batch. Fall through to advancing: the concept is
       // already logged as failing, so it comes back as the next batch's
       // target anyway. Never leave a learner permanently stuck
       // (project-overview.md goal 5) outranks finishing the loop.
+      //
+      // Logged (review finding, 2026-09-16): the feedback was already written
+      // for an open round, so a silent fallback here would leave no trace of
+      // why the learner got a new batch instead.
+      console.error(
+        `[correction] round ${decision.round} for exercise ${params.exercise.id} could not open, advancing instead:`,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
@@ -420,10 +429,38 @@ export function deriveBaseDifficultyLevel(previousLevel: ExerciseDifficultyLevel
 
 // Plain-language phrasing of a rectification classification, handed to the
 // coaching prompt as a fact to weave into prose (never a raw enum value).
-export function describeRectification(result: RectificationResult): string {
-  const conceptLabel = result.conceptTag.replace(/_/g, ' ');
-  if (result.classification === 'FIXED') {
-    return `${conceptLabel} was failing before and is now fixed`;
+//
+// NEW returns null (2026-09-16). It used to fall through to the
+// STILL_FAILING sentence, "failed again, same as last time", so a learner's
+// very first scored batch (Template595) was told a gap had been "flagged in
+// an earlier round, still recurring" and "two rounds running". A first-time
+// failure is already a needs_work finding; it has no history to state. The
+// FIXED/STILL_FAILING lines name where the earlier attempt really was.
+export function describeRectification(result: RectificationResult): string | null {
+  const conceptLabel = result.conceptTag.replace(/_/g, ' ').replace(/\b(gst|tds)\b/g, (tax) => tax.toUpperCase());
+  const where = result.prior === 'previous-round' ? 'the previous round of this batch' : 'the last batch that tested it';
+  switch (result.classification) {
+    case 'NEW':
+      return null;
+    case 'FIXED':
+      return `${conceptLabel} was failing in ${where} and is fixed now`;
+    case 'STILL_FAILING':
+      return `${conceptLabel} was failing in ${where} and is still failing now`;
+    default:
+      return assertNeverClassification(result.classification);
   }
-  return `${conceptLabel} failed again, same as last time: still failing`;
+}
+
+function assertNeverClassification(value: never): never {
+  throw new Error(`Unhandled rectification classification: ${String(value)}`);
+}
+
+// The rectifications that have something true to say, as the coaching call
+// takes them: NEW is dropped, the rest carry their classification so the
+// grounding check knows which facts may speak about history.
+export function describeRectifications(results: RectificationResult[]): RectificationNote[] {
+  return results.flatMap((result) => {
+    const text = describeRectification(result);
+    return text === null || result.classification === 'NEW' ? [] : [{ classification: result.classification, text }];
+  });
 }

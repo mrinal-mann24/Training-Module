@@ -12,7 +12,7 @@ import type {
   CompositeMatch,
 } from '@/lib/schemas/scoring';
 import { findLedgerFindings } from './ledger-findings';
-import { accountNamesMatch, classifyLedger, gstHeadOf, normalizeAccountName, partyAccountsOf, RETURNS_TOKEN } from './account-names';
+import { accountNamesMatch, aliasFitsAccount, classifyLedger, gstHeadOf, normalizeAccountName, partyAccountsOf } from './account-names';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -44,11 +44,18 @@ const FIELD_WEIGHT: Record<ScoredField, number> = {
 // ASSUMPTION: matches on ledger name text, per Unit 06 spec discussion — the
 // parsed voucher shape carries no structured GST/TDS fields, so classification
 // is inferred here rather than extending Unit 05's parser.
+// Aliases that do not fit the account (a base ledger listed for a returns
+// ledger) are ignored here exactly as in the tie-out (2026-09-16): a credit
+// note debited to "Credit Sales A/c" on a Sales Returns leg is ACCOUNT_WRONG.
+// The voucher is still paired with its transaction through the party leg,
+// amounts and type, so only the account field is flagged.
 function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry): boolean {
   if (accountNamesMatch(entry.ledgerName, leg.correct_account)) {
     return true;
   }
-  return (leg.account_aliases ?? []).some((alias) => accountNamesMatch(entry.ledgerName, alias));
+  return (leg.account_aliases ?? []).some(
+    (alias) => aliasFitsAccount(alias, leg.correct_account) && accountNamesMatch(entry.ledgerName, alias),
+  );
 }
 
 const GST_HEAD_PATTERNS: { pattern: RegExp; head: 'IGST' | 'CGST' | 'SGST' }[] = [
@@ -643,7 +650,8 @@ export function signedOpening(rows: ParsedTrialBalance['ledgers']): number {
 }
 
 // An export carries Tally's opening column when any row has it (the
-// parser sets both fields, zero for a blank tag, whenever the tag exists).
+// parser sets both fields, zero for a blank tag, whenever the tag exists —
+// including on a signed row whose closing is blank, since 2026-09-16).
 export function hasOpeningColumn(trialBalance: ParsedTrialBalance): boolean {
   return trialBalance.ledgers.some((row) => row.openingDebit !== undefined || row.openingCredit !== undefined);
 }
@@ -653,7 +661,9 @@ export function signedClosing(rows: ParsedTrialBalance['ledgers']): number {
 }
 
 // Every export row that stands for `account`: exact name (or alias) matches,
-// plus the fuzzy rows no other expected account has claimed exactly. A
+// plus the fuzzy rows no other expected account has claimed (the caller's
+// `excluded` set: rows claimed exactly, and rows reserved for another
+// account by fuzzilyReservedRows). A
 // learner may split one logical account across ledgers ("Credit Sales A/c"
 // + "Cash Sales A/c" where the key says "Sales"; "Deccan Traders" +
 // "Deccan Traders Debtor" for a party that both buys and sells, Praveen
@@ -689,12 +699,12 @@ export function isTallyGroupRow(ledgerName: string): boolean {
 export function rowsForAccount(
   trialBalance: ParsedTrialBalance,
   acceptableNames: string[],
-  exactlyClaimed: Set<string>,
+  excluded: Set<string>,
 ): ParsedTrialBalance['ledgers'] {
   const normalizedNames = acceptableNames.map(normalizeAccountName);
   const ledgerRows = trialBalance.ledgers.filter((ledger) => !isTallyGroupRow(ledger.ledgerName));
   const exactRows = ledgerRows.filter((ledger) => normalizedNames.includes(normalizeAccountName(ledger.ledgerName)));
-  const unclaimed = ledgerRows.filter((ledger) => !exactlyClaimed.has(ledger.ledgerName));
+  const unclaimed = ledgerRows.filter((ledger) => !excluded.has(ledger.ledgerName));
   if (exactRows.length > 0) {
     // Alongside an exact row, only rows whose name EMBEDS the account name
     // count as the same account split in two ("Deccan Traders Debtor" for
@@ -706,7 +716,7 @@ export function rowsForAccount(
         !exactRows.includes(ledger) &&
         acceptableNames.some((name) => {
           const needle = normalizeAccountName(name);
-          return needle.length >= MIN_CONTAINMENT_CHARS && rowName.includes(needle) && RETURNS_TOKEN.test(ledger.ledgerName) === RETURNS_TOKEN.test(name);
+          return needle.length >= MIN_CONTAINMENT_CHARS && rowName.includes(needle) && aliasFitsAccount(ledger.ledgerName, name);
         })
       );
     });
@@ -731,6 +741,40 @@ export function exactlyClaimedRows(trialBalance: ParsedTrialBalance, namesByAcco
     }
   }
   return claimed;
+}
+
+// Fuzzy rows reserved for their owner (2026-09-16). A row no account claims
+// exactly is reserved for the one expected account whose OWN name (the
+// first name in its list, never an alias) matches it. Without the
+// reservation an alias could take a row that plainly belongs to another
+// account: Advertisement & Marketing's alias "Advertising" is embedded in
+// "Signage Advertising (firm)", the vendor row of the expected account
+// "Signage Advertising", and Template595's Rs 216 vendor balance was read
+// as an expense mismatch. A row matching two or more accounts by own name
+// is left unreserved (no owner can be told apart). Returns ledger name →
+// owning account key.
+export function fuzzilyReservedRows(trialBalance: ParsedTrialBalance, namesByAccount: Map<string, string[]>): Map<string, string> {
+  const claimed = exactlyClaimedRows(trialBalance, namesByAccount);
+  const reserved = new Map<string, string>();
+  for (const ledger of trialBalance.ledgers) {
+    if (claimed.has(ledger.ledgerName) || isTallyGroupRow(ledger.ledgerName)) continue;
+    const owners = [...namesByAccount.entries()]
+      .filter(([account, names]) => accountNamesMatch(ledger.ledgerName, names[0] ?? account))
+      .map(([account]) => account);
+    if (owners.length === 1) reserved.set(ledger.ledgerName, owners[0]);
+  }
+  return reserved;
+}
+
+// The rows `account` may not take: every exactly claimed row, and every row
+// reserved for a different account. Its own reserved rows stay open to it,
+// so a split party ("Deccan Traders Debtor") still sums with its exact row.
+export function rowsExcludedFor(account: string, claimed: Set<string>, reserved: Map<string, string>): Set<string> {
+  const excluded = new Set(claimed);
+  for (const [ledgerName, owner] of reserved) {
+    if (owner !== account) excluded.add(ledgerName);
+  }
+  return excluded;
 }
 
 // Financial-year change (2026-09-11): Tally restarts every profit-and-loss
@@ -775,7 +819,7 @@ export function evaluateTrialBalanceTieOut(
     expected.set(key, (expected.get(key) ?? 0) + (entry.dr_cr === 'Dr' ? entry.amount : -entry.amount));
     if (entry.account_aliases?.length) {
       // A returns ledger never borrows its base ledger's name as an alias.
-      aliasesByAccount.set(key, entry.account_aliases.filter((alias) => RETURNS_TOKEN.test(alias) === RETURNS_TOKEN.test(entry.correct_account)));
+      aliasesByAccount.set(key, entry.account_aliases.filter((alias) => aliasFitsAccount(alias, entry.correct_account)));
     }
   }
 
@@ -783,12 +827,14 @@ export function evaluateTrialBalanceTieOut(
   for (const account of expected.keys()) namesByAccount.set(account, [account, ...(aliasesByAccount.get(account) ?? [])]);
   const claimedNow = exactlyClaimedRows(trialBalance, namesByAccount);
   const claimedBefore = previousTrialBalance ? exactlyClaimedRows(previousTrialBalance, namesByAccount) : new Set<string>();
+  const reservedNow = fuzzilyReservedRows(trialBalance, namesByAccount);
+  const reservedBefore = previousTrialBalance ? fuzzilyReservedRows(previousTrialBalance, namesByAccount) : new Map<string, string>();
 
   const mismatches: TieOutMismatch[] = [];
   for (const [account, expectedFigure] of expected) {
     if (TIE_OUT_EXEMPT_PATTERN.test(account)) continue;
     const names = namesByAccount.get(account) ?? [account];
-    const rowsNow = rowsForAccount(trialBalance, names, claimedNow);
+    const rowsNow = rowsForAccount(trialBalance, names, rowsExcludedFor(account, claimedNow, reservedNow));
     if (selfContained) {
       // Tally leaves out a ledger with no movement and a nil balance, so
       // an absent row is a movement of zero.
@@ -804,7 +850,9 @@ export function evaluateTrialBalanceTieOut(
       }
       continue;
     }
-    const rowsBefore = previousTrialBalance ? rowsForAccount(previousTrialBalance, names, claimedBefore) : [];
+    const rowsBefore = previousTrialBalance
+      ? rowsForAccount(previousTrialBalance, names, rowsExcludedFor(account, claimedBefore, reservedBefore))
+      : [];
     if (rowsNow.length === 0 && rowsBefore.length === 0) {
       if (Math.abs(expectedFigure) >= TIE_OUT_TOLERANCE) {
         mismatches.push({ account, status: 'missing', difference: -expectedFigure });

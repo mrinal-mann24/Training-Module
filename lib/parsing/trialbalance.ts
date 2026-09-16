@@ -80,8 +80,15 @@ export function parseTrialBalanceXml(buffer: Buffer): ParsedTrialBalance {
     // DSPOPAMT/DSPOPAMTA, or DSPOPDRAMT/DSPOPCRAMT. A present-but-blank tag
     // is an opening of zero; an absent tag leaves the fields undefined so
     // the tie-out knows the file carries no opening column at all.
-    const signedClosing = extractSignedAmount(infoRecord, 'DSPCLAMT', 'DSPCLAMTA');
-    if (signedClosing !== null) {
+    // The signed shape is recognised by its DSPCLAMT wrapper, not by a
+    // closing figure (2026-09-16): a ledger that closed at nil exports a
+    // blank <DSPCLAMTA></DSPCLAMTA>, and reading that as "not the signed
+    // shape" fell through to the Dr/Cr branch and dropped the DSPOPAMT
+    // opening. Deccan Traders opened at Rs 50,000 Cr and was paid off in the
+    // month; the tie-out read a movement of zero and told Template595 the
+    // party "moved Rs 50,000 less" when all three vouchers were right.
+    if (hasWrapper(infoRecord, 'DSPCLAMT')) {
+      const signedClosing = extractSignedAmount(infoRecord, 'DSPCLAMT', 'DSPCLAMTA') ?? 0;
       const signedOpening = extractSignedAmount(infoRecord, 'DSPOPAMT', 'DSPOPAMTA') ?? 0;
       const opening = hasWrapper(infoRecord, 'DSPOPAMT')
         ? { openingDebit: signedOpening < 0 ? -signedOpening : 0, openingCredit: signedOpening > 0 ? signedOpening : 0 }

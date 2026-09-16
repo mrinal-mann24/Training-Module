@@ -61,11 +61,17 @@ ACCOUNT_ALIASES = {
     "Prepaid Software": ["Prepaid Expenses", "Prepaid Exp", "Prepaid Services"],
     "Electricity Charges": ["Electricity Expenses", "Power Charges", "BESCOM"],
     "HDFC Bank — 1234": ["HDFC Bank", "Bank", "HDFC Bank A/c"],
-    # Netting a return into the main Sales/Purchases ledger (instead of a
-    # separate Returns ledger) is legitimate practice — the pilot trainee did
-    # exactly that and the reviewer accepted it.
-    "Sales Returns": ["Sales Return", "Sales", "Credit Sales A/c"],
-    "Purchase Returns": ["Purchase Return", "Purchases", "Trading goods"],
+    # Returns require their own ledger (user decision, 2026-09-16). The pilot
+    # reviewer once accepted a return netted into Sales/Purchases, and these
+    # entries listed "Sales", "Credit Sales A/c", "Purchases" and "Trading
+    # goods" as aliases. The voucher check honoured them while the Trial
+    # Balance tie-out ignored them, so Template595's credit note posted to
+    # Credit Sales A/c was accepted and then reported as "Sales Returns
+    # missing". Only returns-ledger spellings are aliases now; the engine's
+    # aliasFitsAccount (lib/tutor/account-names.ts) drops a base-ledger alias
+    # from keys already stored.
+    "Sales Returns": ["Sales Return"],
+    "Purchase Returns": ["Purchase Return"],
     "Suspense": ["Suspense A/c", "Suspense Account"],
     "Cash": ["Cash-in-Hand", "Cash A/c"],
     "Interest Income": ["Interest Received", "Bank Interest", "Interest", "INT CREDIT"],

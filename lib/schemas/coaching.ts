@@ -12,6 +12,26 @@ export const CoachingSchema = z.object({
 });
 export type Coaching = z.infer<typeof CoachingSchema>;
 
+// What the MODEL returns (2026-09-16), which is not what is stored. Every
+// bullet cites the ids of the facts it restates, so code can check that the
+// bullet says nothing the facts do not (generate-coaching.ts checkGrounding).
+// next_note is absent on purpose: what happens next is decided in code
+// (correction round or next batch) and the model was writing it blind,
+// telling a learner "nothing more to send" while a correction round was
+// asking for corrected exports. The ids are stripped before storage, so
+// feedback_text keeps the CoachingSchema shape above and no reader changes.
+const CitedBulletSchema = z.object({
+  text: z.string(),
+  fact_ids: z.array(z.string()),
+});
+
+export const CoachingModelOutputSchema = z.object({
+  opening_line: z.string(),
+  went_well: z.array(CitedBulletSchema),
+  needs_work: z.array(CitedBulletSchema),
+});
+export type CoachingModelOutput = z.infer<typeof CoachingModelOutputSchema>;
+
 // Rows stored before the Phase 1 schema change carry the original shape
 // { result_line, praise, flagged_areas, next_step_note }. The compat mapper
 // lives HERE, once: every read path (live feedback fetch and the chat-history

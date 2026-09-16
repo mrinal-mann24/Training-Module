@@ -15,6 +15,10 @@ export type StructuredCompletionParams = {
   // a faster model than coaching/batch design — see OPENROUTER_DOCUMENT_MODEL.
   // Falls back to OPENROUTER_MODEL when unset.
   model?: string;
+  // Sampling temperature (2026-09-16), sent only when set so every existing
+  // call keeps the provider default. Coaching passes a low value: its job is
+  // to phrase a fixed list of facts, not to be inventive about them.
+  temperature?: number;
 };
 
 // Token/cost accounting per call (2026-09-01): OpenRouter reports prompt/
@@ -78,6 +82,9 @@ export async function getStructuredCompletion(
   // validation retries or the job step fails. Non-transient errors (4xx
   // other than 429, invalid JSON) surface immediately.
   const TRANSIENT_ATTEMPTS = 3;
+  // Generous on purpose: exercise generation returns answer keys of 90 KB and
+  // more. The point is to bound a hung request, not to hurry a slow one.
+  const REQUEST_TIMEOUT_MS = 300_000;
   let lastTransient: Error | null = null;
   type OpenRouterResponse = {
     model?: string;
@@ -96,6 +103,10 @@ export async function getStructuredCompletion(
     let response: Response;
     try {
       response = await fetch(OPENROUTER_URL, {
+        // A hung request would otherwise hold the Inngest step until the
+        // platform kills it and the whole step re-runs (review finding,
+        // 2026-09-16). A timeout is caught below as a transient failure.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -104,6 +115,7 @@ export async function getStructuredCompletion(
         body: JSON.stringify({
           model,
           messages: messagesWithSchema,
+          ...(params.temperature === undefined ? {} : { temperature: params.temperature }),
           // OpenRouter usage accounting: include the actual charged cost (USD)
           // in the response's usage block, alongside token counts.
           usage: { include: true },

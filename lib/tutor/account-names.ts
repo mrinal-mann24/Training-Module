@@ -106,6 +106,18 @@ function significantTokensMatch(actual: string, expected: string): boolean {
 
 export const RETURNS_TOKEN = /\breturns?\b/i;
 
+// Returns require their own ledger (user decision, 2026-09-16). An alias
+// fits an account only when both are returns ledgers or neither is: the
+// pilot pack aliased Sales Returns as "Sales" / "Credit Sales A/c" (netting
+// a return into Sales), which the voucher check honoured while the Trial
+// Balance tie-out and books reconciliation stripped it, so Template595's
+// credit note posted to Credit Sales A/c was praised at voucher level and
+// reported as "Sales Returns missing" on the Trial Balance. One predicate,
+// applied wherever aliases are read, keeps every consumer in agreement.
+export function aliasFitsAccount(alias: string, account: string): boolean {
+  return RETURNS_TOKEN.test(alias) === RETURNS_TOKEN.test(account);
+}
+
 // Ledger classification shared by the books reconciliation and the Trial
 // Balance tie-out (moved here from books-reconciliation.ts on 2026-09-11
 // so the scorer can use it without an import cycle). Balance-sheet ledgers

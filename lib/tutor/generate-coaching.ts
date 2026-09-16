@@ -1,12 +1,16 @@
-import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
+import { getTracedStructuredCompletion, recordCoachingGroundingViolations, type TracedCompletionParams } from '@/lib/llm/tracing';
 import {
   buildCoachingPrompt,
   buildCoachingRetryPrompt,
+  FACT_ID_PREFIX,
   FIELD_CONCEPT_LABELS,
+  type CoachingFact,
+  type CoachingFactKind,
   type CoachingSignal,
   type QualitativeCoachingSignal,
+  type RectificationNote,
 } from '@/lib/llm/prompts/coaching';
-import { CoachingSchema, type Coaching } from '@/lib/schemas/coaching';
+import { CoachingModelOutputSchema, type Coaching, type CoachingModelOutput } from '@/lib/schemas/coaching';
 import type {
   ScoringResult,
   OverallResult,
@@ -19,8 +23,12 @@ import type {
 } from '@/lib/schemas/scoring';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
+import type { CorrectionDecision } from '@/lib/tutor/correction-round';
 
 const MAX_ATTEMPTS = 3;
+
+// Coaching phrases a fixed fact list; it has no use for creative sampling.
+const COACHING_TEMPERATURE = 0.2;
 
 // Turns the scoring result into concept-level descriptions only — the internal
 // error code and the literal expected value never leave this function. This is
@@ -81,7 +89,7 @@ export function buildSequenceLabels(answerKey: AnswerKey): Map<number, string> {
     // still label it by its most descriptive leg rather than falling back to
     // a bare sequence number the learner can't act on. Prefer the non-bank/
     // cash leg ("the Suspense receipt" over "the HDFC Bank receipt").
-    const descriptiveLeg = legs.find((leg) => !/^(hdfc|bank|cash)/i.test(leg.correct_account)) ?? legs[0];
+    const descriptiveLeg = legs.find((leg) => !/^(hdfc|bank|cash)\b/i.test(leg.correct_account)) ?? legs[0];
     labels.set(sequence, `the ${descriptiveLeg.correct_account} ${legs[0].voucher_type.toLowerCase()}`);
   }
 
@@ -150,13 +158,13 @@ export function groupDescriptionsByField(
   });
 }
 
-// Cap on how many distinct areas are handed to the coaching call. A learner
-// told everything is wrong at once has no idea where to start — the spec
-// asks for areas to re-look at, not an exhaustive error list. Highest-weighted
-// fields (GST/TDS, per score-submission.ts's FIELD_WEIGHT) sort first so the
-// most consequential errors survive the cap.
-const MAX_FLAGGED_AREAS = 6;
-
+// No cap on flagged areas (removed 2026-09-16). The list is already grouped
+// by field, so it tops out at one entry per scored field plus the
+// not-recorded entry, and the old silent cap of six meant a learner could be
+// told less than the scoring engine found with nothing saying so. Every
+// finding now reaches the learner, in the model's words or the fallback's.
+// Highest-weighted fields (GST/TDS, per score-submission.ts's FIELD_WEIGHT)
+// still sort first so the most consequential errors lead.
 const FIELD_FLAG_PRIORITY: Record<ScoredField, number> = {
   gst: 0,
   tds: 1,
@@ -201,13 +209,21 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
   // well" and "revisit DT-115" in the same feedback is factually consistent
   // (different fields) but reads as the tool contradicting itself to a
   // learner. Praise only fully-clean transactions.
+  //
+  // Field exclusivity (2026-09-16): the same holds per FIELD. Template595's
+  // review said "Bill-by-bill referencing was handled correctly" directly
+  // above three flagged bill references, because the clean transactions'
+  // correct bill_reference diffs were praised as a group. A field is praised
+  // only when not one diff of it was flagged in this submission.
   const flaggedSequences = new Set(
     incorrectDiffs.map((diff) => diff.voucherRef).filter((ref): ref is number => ref !== null),
   );
+  const flaggedFields = new Set(assessedIncorrect.map((diff) => diff.field));
   const correctDiffs = scoringResult.per_voucher_diffs.filter(
     (diff) =>
       diff.is_correct &&
       !diff.vacuously_correct &&
+      !flaggedFields.has(diff.field) &&
       (diff.voucherRef === null || !flaggedSequences.has(diff.voucherRef)),
   );
 
@@ -236,7 +252,7 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
   const incorrectConceptDescriptions = [
     ...missingDescriptions,
     ...groupDescriptionsByField(prioritizedIncorrect, sequenceLabels),
-  ].slice(0, MAX_FLAGGED_AREAS);
+  ];
   const correctConceptDescriptions = groupDescriptionsByField(correctDiffs, sequenceLabels);
 
   return {
@@ -254,7 +270,7 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
     correctConceptDescriptions,
     qualitative: null,
     missingPartDescriptions: [],
-    rectificationDescriptions: [],
+    rectifications: [],
   };
 }
 
@@ -262,19 +278,33 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
 // (2026-09-09, movement-based tie-out). The gap is the learner's own
 // figure against the correct movement, never the expected figure, so the
 // coaching can point at the ledger without handing over the answer. Capped
-// so a badly exported Trial Balance does not flood the prompt.
+// so a badly exported Trial Balance does not flood the prompt; the cap is
+// stated as its own line, never silent.
 const MAX_TIE_OUT_MISMATCHES = 6;
+
+// The difference is Dr-positive (learner's signed movement minus the correct
+// one). It used to be rendered as "moved by Rs X more/less", which reads
+// backwards for a credit ledger: Sales carrying LESS credit than it should
+// came out as "Sales moved Rs 15,000 more" (Template595, 2026-09-16). Naming
+// the side removes the ambiguity for every kind of ledger.
+function sideOf(difference: number): 'debit' | 'credit' {
+  return difference > 0 ? 'debit' : 'credit';
+}
+
+function rupeesOf(amount: number): string {
+  return `Rs ${Math.abs(Math.round(amount)).toLocaleString('en-IN')}`;
+}
 
 export function describeTieOutMismatches(mismatches: TieOutMismatch[]): string[] {
   const lines = mismatches.slice(0, MAX_TIE_OUT_MISMATCHES).map((mismatch) => {
-    const rupees = `Rs ${Math.abs(Math.round(mismatch.difference)).toLocaleString('en-IN')}`;
+    const rupees = rupeesOf(mismatch.difference);
     if (mismatch.status === 'missing') {
       return `${mismatch.account} does not appear in the Trial Balance export at all (it should have moved by ${rupees} this month)`;
     }
-    return `${mismatch.account} moved by ${rupees} ${mismatch.difference > 0 ? 'more' : 'less'} than the month's correct postings would move it`;
+    return `${mismatch.account} shows ${rupees} more on the ${sideOf(mismatch.difference)} side in the Trial Balance than this month's correct postings`;
   });
   if (mismatches.length > MAX_TIE_OUT_MISMATCHES) {
-    lines.push(`and ${mismatches.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) are off`);
+    lines.push(`and ${mismatches.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) in the Trial Balance are off`);
   }
   return lines;
 }
@@ -309,14 +339,14 @@ export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[
 
 // Books reconciliation lines (2026-09-10): closing balance per ledger
 // against the correct books, year to date. Gap only, never the expected
-// figure. Same cap as the tie-out list.
+// figure. Same cap as the tie-out list, and the same sign convention.
 export function describeBooksReconciliation(differences: TieOutMismatch[]): string[] {
   const lines = differences.slice(0, MAX_TIE_OUT_MISMATCHES).map((difference) => {
-    const rupees = `Rs ${Math.abs(Math.round(difference.difference)).toLocaleString('en-IN')}`;
+    const rupees = rupeesOf(difference.difference);
     if (difference.status === 'missing') {
       return `${difference.account} has no ledger in the export although the correct books carry a balance of about ${rupees} on it`;
     }
-    return `${difference.account} closes ${rupees} ${difference.difference > 0 ? 'more debit' : 'more credit'} than the correct books`;
+    return `${difference.account} closes with ${rupees} more on the ${sideOf(difference.difference)} side than the correct books, year to date`;
   });
   if (differences.length > MAX_TIE_OUT_MISMATCHES) {
     lines.push(`and ${differences.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) differ`);
@@ -351,8 +381,12 @@ export function describeCompositeMatches(composites: CompositeMatch[], sequenceL
 // the spec's "never raw subscores as numbers to the learner" rule. Coarse on
 // purpose: the LLM turns these into natural prose, it doesn't need
 // finer-grained input than "strong/mixed/weak" to do that well.
+function qualitativeBucket(value: number): 'strong' | 'mixed' | 'weak' {
+  return value >= 80 ? 'strong' : value >= 50 ? 'mixed' : 'weak';
+}
+
 function describeQualitativeSubscore(value: number, dimension: 'recall' | 'precision' | 'reasoning'): string {
-  const bucket = value >= 80 ? 'strong' : value >= 50 ? 'mixed' : 'weak';
+  const bucket = qualitativeBucket(value);
   const LABEL: Record<typeof dimension, Record<'strong' | 'mixed' | 'weak', string>> = {
     recall: {
       strong: 'caught nearly all of the real issues',
@@ -378,8 +412,81 @@ function buildQualitativeCoachingSignal(qualitative: QualitativeScoring): Qualit
     recallDescription: describeQualitativeSubscore(qualitative.recall, 'recall'),
     precisionDescription: describeQualitativeSubscore(qualitative.precision, 'precision'),
     reasoningDescription: describeQualitativeSubscore(qualitative.reasoning_quality, 'reasoning'),
+    recallStrong: qualitativeBucket(qualitative.recall) === 'strong',
+    precisionStrong: qualitativeBucket(qualitative.precision) === 'strong',
+    reasoningStrong: qualitativeBucket(qualitative.reasoning_quality) === 'strong',
   };
 }
+
+// The closed fact ledger (2026-09-16): every statement the feedback may make,
+// each with an id the model must cite. The texts are the description
+// builders above, unchanged in substance, so the facts are exactly what the
+// scoring engine found. Nothing outside this list may reach the learner:
+// checkGrounding enforces it, and the fallback is built from it.
+export function buildCoachingFacts(signal: CoachingSignal): CoachingFact[] {
+  const entries: { kind: CoachingFactKind; text: string }[] = [];
+  const add = (kind: CoachingFactKind, texts: readonly string[]) => {
+    for (const text of texts) {
+      entries.push({ kind, text });
+    }
+  };
+
+  add('praise', signal.correctConceptDescriptions.map((area) => `${area} was handled correctly`));
+  add('praise', signal.compositeDescriptions ?? []);
+  if (signal.booksReconciliation?.clean) {
+    add('praise', ["every ledger's closing balance agrees with the correct books year to date"]);
+  }
+  const qualitative = signal.qualitative;
+  const qualitativeLines = qualitative
+    ? [
+        { strong: qualitative.recallStrong, text: qualitative.recallDescription },
+        { strong: qualitative.precisionStrong, text: qualitative.precisionDescription },
+        { strong: qualitative.reasoningStrong, text: qualitative.reasoningDescription },
+      ]
+    : [];
+  add('praise', qualitativeLines.filter((line) => line.strong).map((line) => `in the written answer: ${line.text}`));
+  add('fixed', signal.rectifications.filter((note) => note.classification === 'FIXED').map((note) => note.text));
+
+  add('issue', signal.incorrectConceptDescriptions.map((area) =>
+    /^entries that appear not to have been recorded/.test(area) ? area : `${area} needs another look`,
+  ));
+  add('issue', qualitativeLines.filter((line) => !line.strong).map((line) => `in the written answer: ${line.text}`));
+  add('unmatched', signal.unmatchedVoucherDescriptions ?? []);
+  add('ledger', signal.ledgerFindingDescriptions ?? []);
+  if (signal.tbTieOut === false) {
+    add('tieout', signal.tbMismatchDescriptions ?? []);
+  }
+  if (signal.booksReconciliation && !signal.booksReconciliation.clean) {
+    // Drift framing only when there are earlier months (2026-09-16). It was
+    // stated unconditionally, so a learner's first month was told the gap
+    // "often traces back further than just this month".
+    const hasEarlierMonths = (signal.batchOrdinal ?? 0) > 0;
+    add(
+      'books',
+      signal.booksReconciliation.descriptions.map((line) =>
+        hasEarlierMonths ? `${line} (a year-to-date gap can build up over earlier months as well as this one)` : line,
+      ),
+    );
+  }
+  add('still', signal.rectifications.filter((note) => note.classification === 'STILL_FAILING').map((note) => note.text));
+  add('missing', signal.missingPartDescriptions);
+
+  const counters = new Map<CoachingFactKind, number>();
+  return entries.map((entry) => {
+    const next = (counters.get(entry.kind) ?? 0) + 1;
+    counters.set(entry.kind, next);
+    return { id: `${FACT_ID_PREFIX[entry.kind]}${next}`, kind: entry.kind, text: entry.text };
+  });
+}
+
+const PRAISE_KINDS: ReadonlySet<CoachingFactKind> = new Set(['praise', 'fixed']);
+const ISSUE_KINDS: ReadonlySet<CoachingFactKind> = new Set(['issue', 'unmatched', 'ledger', 'tieout', 'books', 'still', 'missing']);
+const HISTORY_KINDS: ReadonlySet<CoachingFactKind> = new Set(['fixed', 'still']);
+
+export type CoachingDeps = {
+  complete: (params: TracedCompletionParams) => Promise<unknown>;
+  recordViolations: typeof recordCoachingGroundingViolations;
+};
 
 // Generates one combined feedback message covering whichever of quantitative
 // (Tally posting) and qualitative (free-text answer) scoring applied to this
@@ -388,6 +495,12 @@ function buildQualitativeCoachingSignal(qualitative: QualitativeScoring): Qualit
 // one feedback message weaving in both signals, per the spec's "combine...
 // into the exercise's overall result" instruction and Unit 06's existing
 // single-feedback-bubble UI.
+//
+// Grounded (2026-09-16): the model phrases the fact ledger and cites it,
+// checkGrounding verifies every bullet in code, violations are fed back for
+// a retry, and after MAX_ATTEMPTS the feedback is composed from the facts in
+// code. next_note is always composed in code from the correction decision.
+// The stored shape is unchanged: fact ids are stripped here.
 export async function generateCoaching(
   learnerId: string,
   params: {
@@ -400,10 +513,19 @@ export async function generateCoaching(
     // learner's own registers, never the correct treatment itself.
     answerKey?: AnswerKey | null;
     missingPartDescriptions?: string[];
-    rectificationDescriptions?: string[];
+    rectifications?: RectificationNote[];
+    // Position of the batch in the learner's timeline (0 = first month).
+    batchOrdinal?: number | null;
+    // What happens after this feedback, decided by the same pure rule
+    // openCorrectionRoundOrAdvance applies (correction-round.ts).
+    nextStep: CorrectionDecision;
   },
+  deps?: Partial<CoachingDeps>,
 ): Promise<Coaching> {
-  const baseSignal = params.scoringResult
+  const complete = deps?.complete ?? getTracedStructuredCompletion;
+  const recordViolations = deps?.recordViolations ?? recordCoachingGroundingViolations;
+
+  const baseSignal: CoachingSignal = params.scoringResult
     ? buildCoachingSignal(params.scoringResult, params.answerKey)
     : {
         overallResult: params.overallResult,
@@ -412,7 +534,7 @@ export async function generateCoaching(
         correctConceptDescriptions: [],
         qualitative: null,
         missingPartDescriptions: [],
-        rectificationDescriptions: [],
+        rectifications: [],
       };
 
   const signal: CoachingSignal = {
@@ -420,100 +542,229 @@ export async function generateCoaching(
     overallResult: params.overallResult,
     qualitative: params.qualitative ? buildQualitativeCoachingSignal(params.qualitative) : null,
     missingPartDescriptions: params.missingPartDescriptions ?? [],
-    rectificationDescriptions: params.rectificationDescriptions ?? [],
+    rectifications: params.rectifications ?? [],
+    batchOrdinal: params.batchOrdinal ?? null,
   };
+  const facts = buildCoachingFacts(signal);
+  const nextNote = composeNextNote({
+    nextStep: params.nextStep,
+    missingPartDescriptions: signal.missingPartDescriptions,
+    hasFindings: facts.some((fact) => ISSUE_KINDS.has(fact.kind)),
+  });
 
-  let lastError: string | null = null;
+  let violations: string[] = [];
+  let previousOutput: unknown = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { messages, jsonSchema } =
-      lastError === null ? buildCoachingPrompt(signal) : buildCoachingRetryPrompt(signal, lastError);
+      attempt === 1
+        ? buildCoachingPrompt(signal, facts)
+        : buildCoachingRetryPrompt(signal, facts, violations, previousOutput);
 
-    const raw = await getTracedStructuredCompletion({
+    const raw = await complete({
       messages,
       jsonSchema,
       traceName: 'coaching',
       learnerId,
       callType: 'coaching',
+      temperature: COACHING_TEMPERATURE,
+      extraMetadata: { attempt, factCount: facts.length, ...(attempt > 1 ? { previousViolations: violations } : {}) },
     });
+    previousOutput = raw;
 
-    const parsed = CoachingSchema.safeParse(raw);
+    const parsed = CoachingModelOutputSchema.safeParse(raw);
+    violations = parsed.success
+      ? checkGrounding(parsed.data, facts, { tbTieOut: signal.tbTieOut })
+      : [`The response did not match the schema: ${parsed.error.message}`];
 
-    if (parsed.success) {
-      // Factual guard beyond shape validation (2026-08-19): Zod can't catch a
-      // result_line that blames the Trial Balance when tie-out actually
-      // matched — observed live, prompt instruction alone was not reliable.
-      // A factually-wrong line is treated as a validation failure and
-      // retried; if retries exhaust, the result_line is replaced with a
-      // code-composed one rather than showing the learner a false cause.
-      const factualIssue = checkOpeningLineFacts(parsed.data.opening_line, signal);
-      // Identifier-echo guard (2026-09-01): the model must copy identifiers
-      // from the signal EXACTLY — a live feedback bullet printed "DW-115"
-      // where the signal said DT-115, sending the learner hunting for an
-      // entry that doesn't exist. Both issues retry together.
-      const identifierIssue = checkFeedbackIdentifiers(parsed.data, signal);
-      const issues = [factualIssue, identifierIssue].filter(Boolean).join(' ');
-      if (issues === '') {
-        return parsed.data;
-      }
-      if (attempt === MAX_ATTEMPTS) {
-        // Deterministic fallbacks rather than shipping wrong text: replace a
-        // factually-wrong opening line, and replace the bullet lists with
-        // code-composed ones when they carry an identifier the signal never
-        // stated.
-        return {
-          ...parsed.data,
-          opening_line: factualIssue === null ? parsed.data.opening_line : composeFallbackOpeningLine(signal),
-          ...(identifierIssue === null
-            ? {}
-            : {
-                went_well: [],
-                needs_work: signal.incorrectConceptDescriptions.map(
-                  (area) => `Take another look at ${area}.`,
-                ),
-              }),
-        };
-      }
-      lastError = issues;
-      continue;
+    if (parsed.success && violations.length === 0) {
+      return toStoredCoaching(parsed.data, nextNote);
     }
 
-    lastError = parsed.error.message;
+    recordViolations({ learnerId, attempt, violations, usedFallback: attempt === MAX_ATTEMPTS });
   }
 
-  throw new Error(`Coaching generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`);
+  // Deterministic fallback rather than ungrounded text or a thrown step: a
+  // throw would re-run the same model through Inngest's retries and could
+  // end with the submission marked failed. The fallback states every
+  // finding, in the engine's own words.
+  return { ...composeFallbackCoaching(facts, signal), next_note: nextNote };
+}
+
+function toStoredCoaching(output: CoachingModelOutput, nextNote: string): Coaching {
+  return {
+    opening_line: output.opening_line.trim(),
+    went_well: output.went_well.map((bullet) => bullet.text.trim()),
+    needs_work: output.needs_work.map((bullet) => bullet.text.trim()),
+    next_note: nextNote,
+  };
 }
 
 // Identifier-like tokens: uppercase-led hyphenated references as they appear
 // in the signal's labels — DT-115, INV-016, INV-M-101, CA26-101, AI-201.
 const FEEDBACK_IDENTIFIER_PATTERN = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b/g;
 
-// Every identifier the model writes must literally appear in the signal it
-// was given — the scoring engine is the only source of truth for WHICH
-// entries are affected, and a mistyped reference sends the learner hunting
-// for an entry that doesn't exist. Returns a retry message naming the
-// invented identifiers, or null when the text is clean. Exported for tests.
-export function checkFeedbackIdentifiers(
-  coaching: Pick<Coaching, 'went_well' | 'needs_work'>,
-  signal: CoachingSignal,
-): string | null {
-  const allowedText = [
-    ...signal.incorrectConceptDescriptions,
-    ...signal.correctConceptDescriptions,
-    ...signal.missingPartDescriptions,
-    ...signal.rectificationDescriptions,
-  ].join(' ');
-  const allowed = new Set(allowedText.match(FEEDBACK_IDENTIFIER_PATTERN) ?? []);
+// Any figure: 15,000 / 1,50,000 (Indian grouping) / 720.34 / 12-04-2025's
+// parts. Compared after removing grouping commas and leading zeros, so
+// "Rs 15,000" in a fact and "Rs 15000" in a bullet agree.
+const NUMBER_PATTERN = /\d[\d,]*(?:\.\d+)?/g;
 
-  const written = [...coaching.went_well, ...coaching.needs_work].join(' ');
-  const unknown = [
-    ...new Set((written.match(FEEDBACK_IDENTIFIER_PATTERN) ?? []).filter((id) => !allowed.has(id))),
-  ];
+// Phrases that claim history. Allowed only where the cited facts carry
+// history themselves (see checkGrounding).
+//
+// Phrases, not bare words (2026-09-16, live replay): "look again", "check
+// before posting" and "still needs a look" are ordinary coaching, and banning
+// the bare words sent two of three attempts on Template595's pack back for a
+// retry. What must never slip through is every form the invented history on
+// that learner's first review took: "flagged in an earlier round", "still
+// recurring", "two rounds running", "showed up as a gap before too", "same
+// classification gap flagged", "same as last time".
+const HISTORY_PATTERN = new RegExp(
+  [
+    String.raw`recurr\w*`,
+    String.raw`rounds? running`,
+    String.raw`(?:earlier|previous|prior|last|past|other) (?:rounds?|batch(?:es)?|months?|attempts?|submissions?|exercises?|weeks?|time)`,
+    String.raw`(?:as|like|from|than) (?:before|last time)`,
+    String.raw`before (?:too|as well)`,
+    String.raw`(?:flagged|seen|noted|raised|pointed out|mentioned|caught|called out) (?:\w+ )?(?:before|earlier|previously|last time|again)`,
+    String.raw`(?:come|came|comes|shown|showed|shows|turned|turns|cropped|crops) up (?:\w+ ){0,4}?(?:before|earlier|previously|again)`,
+    String.raw`(?:still|again) (?:failing|wrong|slipping|recurring|showing up|an issue|a problem|a gap|off)`,
+    String.raw`(?:failed|slipped|went wrong|missed|repeated|happened|occurred) (?:\w+ )?again`,
+    String.raw`(?:once|yet) again`,
+    String.raw`previously`,
+    String.raw`no longer`,
+    String.raw`same (?:\w+ )?(?:gap|issue|mistake|problem|error|slip|weakness) (?:as|from|flagged|seen|noted|again|before|that (?:came|showed|was))`,
+  ]
+    .map((phrase) => String.raw`\b${phrase}\b`)
+    .join('|'),
+  'i',
+);
 
-  if (unknown.length === 0) {
-    return null;
+const EM_DASH = '—';
+
+function numbersIn(text: string): string[] {
+  return (text.match(NUMBER_PATTERN) ?? [])
+    .map((token) => token.replace(/,/g, ''))
+    .filter((token) => token.length > 0)
+    .map((token) => String(Number(token)));
+}
+
+function identifiersIn(text: string): string[] {
+  return text.match(FEEDBACK_IDENTIFIER_PATTERN) ?? [];
+}
+
+export type GroundingContext = { tbTieOut: boolean | null };
+
+// The citation contract, checked in code (2026-09-16). Returns every
+// violation found, each phrased so it can be handed straight back to the
+// model; an empty list means the output is grounded. Pure and exported for
+// tests. The rules:
+//  - every bullet cites at least one listed fact; went_well cites only
+//    praise/fixed facts, needs_work only issue-type facts;
+//  - every identifier and every number in a bullet occurs in the text of the
+//    facts that bullet cites;
+//  - history words only in a bullet citing a fixed/still fact (or a fact
+//    whose own text uses history words); in opening_line only when a
+//    fixed/still fact exists;
+//  - every issue-type fact is cited at least once, so no finding is dropped;
+//  - opening_line keeps the score/verdict/Trial Balance rules and carries no
+//    numbers or identifiers;
+//  - no em dash anywhere.
+export function checkGrounding(
+  output: CoachingModelOutput,
+  facts: CoachingFact[],
+  context: GroundingContext,
+): string[] {
+  const violations: string[] = [];
+  const factsById = new Map(facts.map((fact) => [fact.id, fact]));
+  const cited = new Set<string>();
+  const hasHistoryFacts = facts.some((fact) => HISTORY_KINDS.has(fact.kind));
+
+  const sections = [
+    { name: 'went_well', bullets: output.went_well, allowed: PRAISE_KINDS },
+    { name: 'needs_work', bullets: output.needs_work, allowed: ISSUE_KINDS },
+  ] as const;
+
+  for (const section of sections) {
+    section.bullets.forEach((bullet, index) => {
+      const where = `${section.name} bullet ${index + 1} ("${bullet.text.slice(0, 60)}")`;
+      const citedFacts: CoachingFact[] = [];
+      if (bullet.fact_ids.length === 0) {
+        violations.push(`${where} cites no fact ids. Every bullet must cite the facts it restates.`);
+      }
+      for (const id of bullet.fact_ids) {
+        const fact = factsById.get(id);
+        if (!fact) {
+          violations.push(`${where} cites "${id}", which is not a listed fact.`);
+          continue;
+        }
+        if (!section.allowed.has(fact.kind)) {
+          violations.push(
+            section.name === 'went_well'
+              ? `${where} cites ${id}, a ${fact.kind} fact. went_well may cite only P and F facts.`
+              : `${where} cites ${id}, a ${fact.kind} fact. needs_work may not cite P or F facts.`,
+          );
+        }
+        cited.add(id);
+        citedFacts.push(fact);
+      }
+
+      const sourceText = citedFacts.map((fact) => fact.text).join(' ');
+      const allowedIdentifiers = new Set(identifiersIn(sourceText));
+      const unknownIdentifiers = [...new Set(identifiersIn(bullet.text).filter((id) => !allowedIdentifiers.has(id)))];
+      if (unknownIdentifiers.length > 0) {
+        violations.push(
+          `${where} mentions ${unknownIdentifiers.join(', ')}, not written in the facts it cites. Copy identifiers exactly from a cited fact, never retype or invent one.`,
+        );
+      }
+
+      const allowedNumbers = new Set(numbersIn(sourceText));
+      const unknownNumbers = [...new Set(numbersIn(bullet.text).filter((number) => !allowedNumbers.has(number)))];
+      if (unknownNumbers.length > 0) {
+        violations.push(
+          `${where} states the number(s) ${unknownNumbers.join(', ')}, not written in the facts it cites. Use only figures copied from a cited fact.`,
+        );
+      }
+
+      const historyMatch = HISTORY_PATTERN.exec(bullet.text);
+      const historyAllowed = citedFacts.some((fact) => HISTORY_KINDS.has(fact.kind) || HISTORY_PATTERN.test(fact.text));
+      if (historyMatch && !historyAllowed) {
+        violations.push(
+          `${where} uses "${historyMatch[0]}", which claims history no cited fact supports. Remove any reference to earlier attempts.`,
+        );
+      }
+
+      if (bullet.text.includes(EM_DASH)) {
+        violations.push(`${where} contains an em dash. Use a colon, a comma or a full stop.`);
+      }
+    });
   }
-  return `Your bullets mention identifier(s) not present in the scoring signal: ${unknown.join(', ')}. Copy identifiers EXACTLY as the signal states them — never retype, alter, or invent a reference.`;
+
+  const uncited = facts.filter((fact) => ISSUE_KINDS.has(fact.kind) && !cited.has(fact.id));
+  if (uncited.length > 0) {
+    violations.push(
+      `These findings are not cited by any needs_work bullet: ${uncited.map((fact) => fact.id).join(', ')}. Every I, U, L, T, B, S and M fact must be covered.`,
+    );
+  }
+
+  const openingIssue = checkOpeningLineFacts(output.opening_line, context);
+  if (openingIssue !== null) {
+    violations.push(openingIssue);
+  }
+  if (numbersIn(output.opening_line).length > 0 || identifiersIn(output.opening_line).length > 0) {
+    violations.push('Your opening_line contains a number or an identifier. It cites no fact, so it must contain neither.');
+  }
+  const openingHistory = HISTORY_PATTERN.exec(output.opening_line);
+  if (openingHistory && !hasHistoryFacts) {
+    violations.push(
+      `Your opening_line uses "${openingHistory[0]}", but there are no F or S facts. Say nothing about earlier attempts.`,
+    );
+  }
+  if (output.opening_line.includes(EM_DASH)) {
+    violations.push('Your opening_line contains an em dash. Use a colon, a comma or a full stop.');
+  }
+
+  return violations;
 }
 
 // A percentage, a mark, or the word "score" in the opening line (2026-09-16).
@@ -531,7 +782,7 @@ const VERDICT_LANGUAGE_PATTERN = /\bpartial(?:ly)?\b|\bfail(?:s|ed|ure|ing)?\b|\
 // Returns a retry-feedback message when opening_line contradicts the computed
 // scoring facts or reaches for score/verdict language, null when it's clean.
 // Exported for tests.
-export function checkOpeningLineFacts(openingLine: string, signal: CoachingSignal): string | null {
+export function checkOpeningLineFacts(openingLine: string, signal: Pick<CoachingSignal, 'tbTieOut'>): string | null {
   if (signal.tbTieOut === true && /trial\s*balance/i.test(openingLine)) {
     return 'Your opening_line attributes the result to the Trial Balance, but the Trial Balance tie-out MATCHED. Restate the opening_line without mentioning the Trial Balance.';
   }
@@ -549,7 +800,7 @@ export function checkOpeningLineFacts(openingLine: string, signal: CoachingSigna
 // verdict, no em dashes (learner-facing hard rule). These three lines must
 // themselves survive checkOpeningLineFacts, since they are what replaces a
 // line that failed it.
-export function composeFallbackOpeningLine(signal: CoachingSignal): string {
+export function composeFallbackOpeningLine(signal: Pick<CoachingSignal, 'overallResult'>): string {
   if (signal.overallResult === 'pass') {
     return 'This batch came out clean. Here is what you got right.';
   }
@@ -557,4 +808,59 @@ export function composeFallbackOpeningLine(signal: CoachingSignal): string {
     return 'Good work on a lot of this. Some entries are right, and a few areas below are worth another look.';
   }
   return 'There is real ground to cover in this one. The areas below are where to start.';
+}
+
+function asSentence(text: string): string {
+  const trimmed = text.trim();
+  const capitalised = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capitalised) ? capitalised : `${capitalised}.`;
+}
+
+// The feedback composed from the facts alone (2026-09-16), used when the
+// model cannot produce grounded output in MAX_ATTEMPTS. Plainer than the
+// model's prose, but every praise fact is in went_well and EVERY finding is
+// in needs_work: the old fallback kept only the concept areas and silently
+// dropped extra vouchers, ledger findings, Trial Balance and books gaps,
+// rectifications and missing parts. It passes checkGrounding by construction
+// (each bullet is its own fact's text).
+export function composeFallbackCoaching(
+  facts: CoachingFact[],
+  signal: Pick<CoachingSignal, 'overallResult'>,
+): Omit<Coaching, 'next_note'> {
+  return {
+    opening_line: composeFallbackOpeningLine(signal),
+    went_well: facts.filter((fact) => PRAISE_KINDS.has(fact.kind)).map((fact) => asSentence(fact.text)),
+    needs_work: facts.filter((fact) => ISSUE_KINDS.has(fact.kind)).map((fact) => asSentence(fact.text)),
+  };
+}
+
+// The closing line, written in code from what will actually happen next
+// (2026-09-16). The model wrote it blind and told Template595 there was
+// "nothing more to send" in the same run that opened a correction round
+// asking for corrected exports.
+//
+// An open round is followed in the chat by the pushed help step and then
+// correctionInviteLine ("...send me the corrected Day Book and Trial
+// Balance"), so this line does not repeat the send instruction. It also stays
+// true in the one case the decision is overridden: openCorrectionRoundOrAdvance
+// advances instead when the help step cannot be generated, and then what
+// follows is the next batch, which "the next steps follow below" still
+// describes. Likewise "what comes next" rather than "your next batch" on the
+// advance side, because generateNextExercise can find every concept mastered
+// or a batch already generated.
+export function composeNextNote(params: {
+  nextStep: CorrectionDecision;
+  missingPartDescriptions: readonly string[];
+  hasFindings: boolean;
+}): string {
+  const missing = params.missingPartDescriptions.map(asSentence);
+  const step =
+    params.nextStep.kind === 'open'
+      ? params.hasFindings
+        ? 'Fix these points in Tally first. The next steps follow below.'
+        : 'The next steps follow below.'
+      : params.hasFindings
+        ? 'Keep these points in mind as you move on. What comes next follows below.'
+        : 'Nothing here needs fixing. What comes next follows below.';
+  return [...missing, step].join(' ');
 }

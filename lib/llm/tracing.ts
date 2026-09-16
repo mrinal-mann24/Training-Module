@@ -61,6 +61,7 @@ export async function getTracedStructuredCompletion(
       messages: params.messages,
       jsonSchema: params.jsonSchema,
       model: params.model,
+      temperature: params.temperature,
     });
     generation.end({
       output: result.output,
@@ -118,5 +119,34 @@ export function recordSubmissionScore(params: {
     void langfuse.flushAsync().catch(() => {});
   } catch {
     // Observability failures never affect scoring.
+  }
+}
+
+// Grounding violations on a coaching attempt (2026-09-16): which checks the
+// model's feedback failed, and whether the code-composed fallback shipped
+// instead. Recorded as its own trace so a prompt or model change that starts
+// tripping the validator shows up in Langfuse rather than only as blander
+// feedback. Fire-and-forget, never on the learner's critical path.
+export function recordCoachingGroundingViolations(params: {
+  learnerId: string;
+  attempt: number;
+  violations: string[];
+  usedFallback: boolean;
+}): void {
+  try {
+    const trace = langfuse.trace({
+      name: 'coaching-grounding',
+      userId: params.learnerId,
+      metadata: { callType: 'coaching', attempt: params.attempt, usedFallback: params.usedFallback },
+    });
+    trace.event({
+      name: params.usedFallback ? 'grounding-fallback' : 'grounding-retry',
+      level: 'WARNING',
+      output: { violations: params.violations },
+    });
+    trace.score({ name: 'coaching_grounding_violations', value: params.violations.length });
+    void langfuse.flushAsync().catch(() => {});
+  } catch {
+    // Observability failures never affect coaching.
   }
 }

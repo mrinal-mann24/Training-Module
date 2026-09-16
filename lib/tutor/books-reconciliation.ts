@@ -2,8 +2,8 @@ import { netAnswerKeys } from '@/lib/db/queries/company';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { TieOutMismatch } from '@/lib/schemas/scoring';
 import type { ParsedTrialBalance } from '@/lib/schemas/voucher';
-import { classifyLedger, normalizeAccountName, partyAccountsOf, RETURNS_TOKEN, type LedgerKind } from './account-names';
-import { exactlyClaimedRows, rowsForAccount, signedClosing } from './score-submission';
+import { aliasFitsAccount, classifyLedger, normalizeAccountName, partyAccountsOf, type LedgerKind } from './account-names';
+import { exactlyClaimedRows, fuzzilyReservedRows, rowsExcludedFor, rowsForAccount, signedClosing } from './score-submission';
 
 // Books reconciliation (2026-09-10 meeting: "it does not yet tell the
 // intern how far their opening and closing balances are from the correct
@@ -66,7 +66,7 @@ export function expectedClosingBalances(keys: AnswerKey[], ordinal: number): Exp
         // A returns ledger never borrows its base ledger's name (an old key
         // listed "Sales" as an alias of Sales Returns, which added Garima's
         // whole Sales figure to her Sales Returns, 2026-09-11).
-        if (RETURNS_TOKEN.test(alias) !== RETURNS_TOKEN.test(entry.correct_account)) continue;
+        if (!aliasFitsAccount(alias, entry.correct_account)) continue;
         const set = aliases.get(norm) ?? new Set<string>();
         set.add(alias);
         aliases.set(norm, set);
@@ -128,22 +128,20 @@ export function evaluateBooksReconciliation(trialBalance: ParsedTrialBalance, ex
   const namesByAccount = new Map<string, string[]>();
   for (const item of expected) namesByAccount.set(item.account, [item.account, ...item.aliases]);
   const claimed = exactlyClaimedRows(trialBalance, namesByAccount);
-  // Balance-sheet ledgers (the parties among them) take their rows first,
-  // and a row taken that way is never lent to a profit-and-loss ledger:
-  // an old key's alias "Advertising" for Advertisement & Marketing sits
-  // inside "Signage Advertising (firm)", and the vendor's balance was read
-  // as the expense ledger's (Praveen's May, 2026-09-11).
-  const takenByBalanceSheet = new Set<string>();
-  for (const item of expected) {
-    if (item.kind !== 'balance_sheet') continue;
-    for (const row of rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed)) {
-      takenByBalanceSheet.add(row.ledgerName);
-    }
-  }
+  // A fuzzy row is reserved for the ledger whose own name it matches, and
+  // is never lent to another ledger through an alias: an old key's alias
+  // "Advertising" for Advertisement & Marketing sits inside "Signage
+  // Advertising (firm)", and the vendor's balance was read as the expense
+  // ledger's (Praveen's May, 2026-09-11). Until 2026-09-16 this was a
+  // balance-sheet-first rule local to this file; the same reservation now
+  // serves the Trial Balance tie-out, which had the same leak.
+  const reserved = fuzzilyReservedRows(trialBalance, namesByAccount);
   const differences: TieOutMismatch[] = [];
   for (const item of expected) {
-    const rows = rowsForAccount(trialBalance, namesByAccount.get(item.account) ?? [item.account], claimed).filter(
-      (row) => item.kind === 'balance_sheet' || !takenByBalanceSheet.has(row.ledgerName),
+    const rows = rowsForAccount(
+      trialBalance,
+      namesByAccount.get(item.account) ?? [item.account],
+      rowsExcludedFor(item.account, claimed, reserved),
     );
     if (rows.length === 0) {
       // A month-only export omits a profit-and-loss ledger that did not

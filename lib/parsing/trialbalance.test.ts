@@ -55,8 +55,32 @@ describe('opening column (2026-09-11: the month\'s movement read from the file i
       '</ENVELOPE>';
     const result = parseTrialBalanceXml(Buffer.from(xml, 'utf8'));
     // Closing tag blank means a nil closing; the opening is still read.
-    expect(result.ledgers[0]).toEqual({ ledgerName: 'Signage Advertising (firm)', closingDebit: 0, closingCredit: 0 });
+    expect(result.ledgers[0]).toEqual({ ledgerName: 'Signage Advertising (firm)', closingDebit: 0, closingCredit: 0, openingDebit: 0, openingCredit: 25960 });
     expect(result.ledgers[1]).toEqual({ ledgerName: 'Rent', closingDebit: 80000, closingCredit: 0, openingDebit: 40000, openingCredit: 0 });
+  });
+
+  it('keeps the opening of a party settled to nil in the month (Deccan Traders, Template595, 2026-09-16)', () => {
+    // A blank closing used to drop the whole signed row to the Dr/Cr branch,
+    // losing the opening: the tie-out then read no movement at all.
+    const xml =
+      '<ENVELOPE>' +
+      '<DSPACCNAME><DSPDISPNAME>Deccan Traders</DSPDISPNAME></DSPACCNAME>' +
+      '<DSPACCINFO><DSPOPAMT><DSPOPAMTA>50000.00</DSPOPAMTA></DSPOPAMT><DSPDRAMT><DSPDRAMTA>-144400.00</DSPDRAMTA></DSPDRAMT><DSPCRAMT><DSPCRAMTA>94400.00</DSPCRAMTA></DSPCRAMT><DSPCLAMT><DSPCLAMTA></DSPCLAMTA></DSPCLAMT></DSPACCINFO>' +
+      '<DSPACCNAME><DSPDISPNAME>Nil Everything</DSPDISPNAME></DSPACCNAME>' +
+      '<DSPACCINFO><DSPOPAMT></DSPOPAMT><DSPCLAMT></DSPCLAMT></DSPACCINFO>' +
+      '</ENVELOPE>';
+    const result = parseTrialBalanceXml(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]));
+    expect(result.ledgers[0]).toEqual({ ledgerName: 'Deccan Traders', closingDebit: 0, closingCredit: 0, openingDebit: 0, openingCredit: 50000 });
+    expect(result.ledgers[1]).toEqual({ ledgerName: 'Nil Everything', closingDebit: 0, closingCredit: 0, openingDebit: 0, openingCredit: 0 });
+  });
+
+  it('reads the pilot export: every signed row carries an opening, blank closings included', () => {
+    const buffer = readFileSync(path.resolve(__dirname, '../../xmls/pilot-submission/elina-trialbal.xml'));
+    const result = parseTrialBalanceXml(buffer);
+    expect(result.ledgers.every((row) => row.openingDebit !== undefined && row.openingCredit !== undefined)).toBe(true);
+    expect(result.ledgers.find((row) => row.ledgerName === 'Deccan Traders')).toEqual({
+      ledgerName: 'Deccan Traders', closingDebit: 0, closingCredit: 0, openingDebit: 0, openingCredit: 50000,
+    });
   });
 
   it('reads the separate opening Dr/Cr tags and treats a blank tag as zero', () => {

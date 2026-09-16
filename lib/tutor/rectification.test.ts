@@ -26,7 +26,7 @@ describe('classifyRectification', () => {
 
     const result = classifyRectification(CONCEPT, attempts);
 
-    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'FIXED' });
+    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'FIXED', prior: 'earlier-batch' });
   });
 
   it('classifies STILL_FAILING when the immediately prior attempt failed and this one failed again', () => {
@@ -37,7 +37,7 @@ describe('classifyRectification', () => {
 
     const result = classifyRectification(CONCEPT, attempts);
 
-    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'STILL_FAILING' });
+    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'STILL_FAILING', prior: 'earlier-batch' });
   });
 
   it('classifies NEW when this is the first-ever attempt and it failed', () => {
@@ -45,7 +45,7 @@ describe('classifyRectification', () => {
 
     const result = classifyRectification(CONCEPT, attempts);
 
-    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'NEW' });
+    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'NEW', prior: null });
   });
 
   it('produces no classification for a first-ever attempt that passed', () => {
@@ -84,7 +84,35 @@ describe('classifyRectification', () => {
 
     const result = classifyRectification(CONCEPT, attempts);
 
-    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'FIXED' });
+    expect(result).toEqual({ conceptTag: CONCEPT, classification: 'FIXED', prior: 'earlier-batch' });
+  });
+
+  // 2026-09-16: a correction round re-scores the same exercise, so the prior
+  // attempt can be an earlier round of THIS batch rather than a past batch.
+  it('marks the prior attempt as a previous round when it belongs to the same exercise', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-may' }),
+      attempt({ created_at: '2026-01-02', result: 'fail', exercise_id: 'exercise-may' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts)).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'STILL_FAILING',
+      prior: 'previous-round',
+    });
+  });
+
+  it('marks the prior attempt as an earlier batch when it belongs to a different exercise', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-02', result: 'pass', exercise_id: 'exercise-may' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts)).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'FIXED',
+      prior: 'earlier-batch',
+    });
   });
 });
 
@@ -105,8 +133,8 @@ describe('classifyRectificationsForExercise', () => {
     const results = classifyRectificationsForExercise([gst, tds, narration], attempts);
 
     expect(results).toEqual([
-      { conceptTag: gst, classification: 'FIXED' },
-      { conceptTag: tds, classification: 'STILL_FAILING' },
+      { conceptTag: gst, classification: 'FIXED', prior: 'earlier-batch' },
+      { conceptTag: tds, classification: 'STILL_FAILING', prior: 'earlier-batch' },
     ]);
   });
 });

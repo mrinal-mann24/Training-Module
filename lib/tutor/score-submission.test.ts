@@ -1368,3 +1368,53 @@ describe('bill reference that names only a type, no number (Praveen February #12
     expect(result.per_voucher_diffs.some((d) => d.error_code === 'BILL_REFERENCE_MISSING')).toBe(true);
   });
 });
+
+describe('returns require their own ledger (Template595 #43 / #51, 2026-09-16)', () => {
+  const leg = (
+    sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string,
+    extra: Partial<AnswerKey['entries'][number]> = {},
+  ): AnswerKey['entries'][number] => ({
+    sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: voucherType,
+    gst_head: null, gst_rate: null, tds_section: null, tds_rate: null, tds_base: null,
+    bill_reference: null, narration: null, concept_tags: ['sales_voucher_basics' as const],
+    requires_source_document: false, source_document_type: null, ...extra,
+  });
+  const entry = (ledgerName: string, amount: number, drOrCr: 'Dr' | 'Cr', ref?: string) => ({
+    ledgerName, amount, drOrCr, billAllocations: ref ? [{ name: ref, amount }] : [],
+  });
+  // The pilot pack's aliases, still stored on existing keys.
+  const key: AnswerKey = { entries: [
+    leg(43, 'Sales Returns', 'Dr', 15000, 'Credit Note', { account_aliases: ['Sales Return', 'Sales', 'Credit Sales A/c'], bill_reference: 'INV-020' }),
+    leg(43, 'Output CGST', 'Dr', 1350, 'Credit Note', { gst_head: 'CGST', gst_rate: 9, bill_reference: 'INV-020' }),
+    leg(43, 'Output SGST', 'Dr', 1350, 'Credit Note', { gst_head: 'SGST', gst_rate: 9, bill_reference: 'INV-020' }),
+    leg(43, 'Karnataka Emporium', 'Cr', 17700, 'Credit Note', { bill_reference: 'INV-020' }),
+    leg(51, 'Mumbai Suppliers', 'Dr', 29500, 'Debit Note', { bill_reference: 'MS-512' }),
+    leg(51, 'Purchase Returns', 'Cr', 25000, 'Debit Note', { account_aliases: ['Purchase Return', 'Purchases', 'Trading goods'], bill_reference: 'MS-512' }),
+    leg(51, 'Input CGST', 'Cr', 2250, 'Debit Note', { gst_head: 'CGST', gst_rate: 9, bill_reference: 'MS-512' }),
+    leg(51, 'Input SGST', 'Cr', 2250, 'Debit Note', { gst_head: 'SGST', gst_rate: 9, bill_reference: 'MS-512' }),
+  ] };
+  const creditNote = (returnsLedger: string) => ({ voucherType: 'Credit Note', date: '20260418', narration: 'Goods returned against INV-020', ledgerEntries: [
+    entry(returnsLedger, 15000, 'Dr'), entry('Output CGST', 1350, 'Dr'), entry('Output SGST', 1350, 'Dr'), entry('Karnataka Emporium', 17700, 'Cr', 'INV-020'),
+  ] });
+  const debitNote = (returnsLedger: string) => ({ voucherType: 'Debit Note', date: '20260422', narration: 'Goods returned against MS-512', ledgerEntries: [
+    entry('Mumbai Suppliers', 29500, 'Dr', 'MS-512'), entry(returnsLedger, 25000, 'Cr'), entry('Input CGST', 2250, 'Cr'), entry('Input SGST', 2250, 'Cr'),
+  ] });
+  // An unrelated extra voucher rules out the positional fallback: the notes must pair on evidence.
+  const extra = { voucherType: 'Payment', date: '20260425', narration: 'Rent', ledgerEntries: [entry('Rent', 40000, 'Dr'), entry('HDFC Bank', 40000, 'Cr')] };
+  const codesBySequence = (dayBook: Parameters<typeof scoreSubmission>[0]) => {
+    const result = scoreSubmission(dayBook, { ledgers: [] }, key);
+    return [43, 51].map((sequence) => result.per_voucher_diffs.filter((d) => d.voucherRef === sequence && d.error_code).map((d) => d.error_code));
+  };
+
+  it('a credit note debited to Credit Sales A/c and a debit note credited to Trading goods are ACCOUNT_WRONG, still paired with their transactions', () => {
+    expect(codesBySequence({ vouchers: [extra, creditNote('Credit Sales A/c'), debitNote('Trading goods')] })).toEqual([['ACCOUNT_WRONG'], ['ACCOUNT_WRONG']]);
+  });
+
+  it('the base ledger name itself is ACCOUNT_WRONG too', () => {
+    expect(codesBySequence({ vouchers: [extra, creditNote('Sales'), debitNote('Purchases')] })).toEqual([['ACCOUNT_WRONG'], ['ACCOUNT_WRONG']]);
+  });
+
+  it('a separate returns ledger, in the learner\'s own spelling, is correct', () => {
+    expect(codesBySequence({ vouchers: [extra, creditNote('Sales Return A/c'), debitNote('Purchase Return')] })).toEqual([[], []]);
+  });
+});
