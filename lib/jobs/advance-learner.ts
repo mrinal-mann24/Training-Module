@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { countExercisesForLearner, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
 import {
   getHintDepthByConceptForExercise,
+  getLatestHintForExerciseAfter,
   hintDepthForConcept,
   insertHintRequest,
 } from '@/lib/db/queries/hint-requests';
@@ -283,6 +284,7 @@ export type CorrectionOutcome =
 // LLM call (code-standards rule 6a). Production passes nothing.
 export type CorrectionDeps = {
   nextRung: typeof determineNextRung;
+  existingHint: typeof getLatestHintForExerciseAfter;
   loadAnswerKey: typeof getExerciseAnswerKeyForScoring;
   makeHint: typeof generateHint;
   saveHint: typeof insertHintRequest;
@@ -309,12 +311,16 @@ export async function openCorrectionRoundOrAdvance(
     learnerId: string;
     exercise: ExerciseForLearner;
     submissionCorrectionRound: number;
+    // The scored submission's created_at, used only to tell this round's
+    // pushed hint apart from earlier rounds' hints.
+    submissionScoredAfter: string;
     conceptResults: ScoringResult['concept_results'];
     licenseMode: LicenseMode;
   },
   deps?: Partial<CorrectionDeps>,
 ): Promise<CorrectionOutcome> {
   const nextRung = deps?.nextRung ?? determineNextRung;
+  const existingHint = deps?.existingHint ?? getLatestHintForExerciseAfter;
   const loadAnswerKey = deps?.loadAnswerKey ?? getExerciseAnswerKeyForScoring;
   const makeHint = deps?.makeHint ?? generateHint;
   const saveHint = deps?.saveHint ?? insertHintRequest;
@@ -328,6 +334,25 @@ export async function openCorrectionRoundOrAdvance(
 
   if (decision.kind === 'open') {
     try {
+      // Idempotency (2026-09-16, review finding). insertHintRequest has no
+      // conflict key, and determineNextRung derives the step from a COUNT of
+      // hint rows, so running this body twice for one submission would write
+      // a second hint a step deeper than this round deserves, and
+      // getLatestHintForExerciseAfter would serve that deeper one. The
+      // ladder would then stay permanently ahead of the round counter,
+      // handing over the full answer early and costing the learner mastery
+      // credit they had not spent. A hint already exists for this round, so
+      // the round is already open: say so and write nothing.
+      const alreadyPushed = await existingHint(
+        supabase,
+        params.learnerId,
+        params.exercise.id,
+        params.submissionScoredAfter,
+      );
+      if (alreadyPushed) {
+        return { opened: true, round: decision.round, conceptTag: decision.focusConceptTag };
+      }
+
       const [rung, answerKey] = await Promise.all([
         nextRung(supabase, params.learnerId, params.exercise.id),
         loadAnswerKey(supabase, params.exercise.id, params.learnerId),

@@ -23,6 +23,8 @@ const EXERCISE: ExerciseForLearner = {
   created_at: '2026-05-01T00:00:00.000Z',
 };
 
+const SCORED_AT = '2026-05-20T10:00:00.000Z';
+
 const CLEAN: ScoringResult['concept_results'] = [{ concept_tag: 'sales_voucher_basics', result: 'pass' }];
 const FAILING: ScoringResult['concept_results'] = [
   { concept_tag: 'sales_voucher_basics', result: 'pass' },
@@ -32,6 +34,7 @@ const FAILING: ScoringResult['concept_results'] = [
 function makeDeps(overrides: Partial<CorrectionDeps> = {}): CorrectionDeps {
   return {
     nextRung: vi.fn<CorrectionDeps['nextRung']>().mockResolvedValue(1),
+    existingHint: vi.fn<CorrectionDeps['existingHint']>().mockResolvedValue(null),
     loadAnswerKey: vi.fn<CorrectionDeps['loadAnswerKey']>().mockResolvedValue({ entries: [] }),
     makeHint: vi
       .fn<CorrectionDeps['makeHint']>()
@@ -59,6 +62,7 @@ function run(
       learnerId: 'learner-1',
       exercise: params.exercise ?? EXERCISE,
       submissionCorrectionRound: params.submissionCorrectionRound,
+      submissionScoredAfter: SCORED_AT,
       conceptResults: params.conceptResults,
       licenseMode: 'licensed',
     },
@@ -160,6 +164,34 @@ describe('openCorrectionRoundOrAdvance', () => {
 
     expect(outcome).toEqual({ opened: false });
     expect(deps.saveHint).not.toHaveBeenCalled();
+  });
+
+  // insertHintRequest has no conflict key and determineNextRung counts hint
+  // rows, so a second run of this step body for one submission would write a
+  // hint one step DEEPER than the round deserves, and the chat serves the
+  // newest one. The learner would be handed the full answer early and lose
+  // mastery credit they had not spent.
+  it('writes nothing when this round already pushed a hint', async () => {
+    const deps = makeDeps({
+      existingHint: vi
+        .fn<CorrectionDeps['existingHint']>()
+        .mockResolvedValue({ rung: 1, hint_text: 'Watch the GST module.', concept_tag: 'gst_classification' }),
+    });
+
+    const outcome = await run({ conceptResults: FAILING, submissionCorrectionRound: 0 }, deps);
+
+    expect(outcome).toEqual({ opened: true, round: 1, conceptTag: 'gst_classification' });
+    expect(deps.makeHint).not.toHaveBeenCalled();
+    expect(deps.saveHint).not.toHaveBeenCalled();
+    expect(deps.advance).not.toHaveBeenCalled();
+  });
+
+  it('looks for an existing hint only after the submission being scored', async () => {
+    const deps = makeDeps();
+
+    await run({ conceptResults: FAILING, submissionCorrectionRound: 1 }, deps);
+
+    expect(deps.existingHint).toHaveBeenCalledWith(expect.anything(), 'learner-1', 'exercise-1', SCORED_AT);
   });
 
   it('pushes the deeper help step the ladder is already at', async () => {

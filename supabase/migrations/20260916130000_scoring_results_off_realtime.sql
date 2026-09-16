@@ -1,0 +1,27 @@
+-- Review finding (2026-09-16): column privileges do not filter Realtime.
+--
+-- 20260915130000 revoked error_codes and qualitative_score from
+-- `authenticated`, and 20260916120000 revoked weighted_score and
+-- overall_result, on the understanding that a learner could then no longer
+-- read them. That is true of PostgREST and of direct SQL, but NOT of Supabase
+-- Realtime: postgres_changes payloads are filtered by the table's RLS SELECT
+-- policy (scoring_results_select_own, learner_id = auth.uid()) and by nothing
+-- else. A column-level REVOKE does not touch them.
+--
+-- So any learner could open a postgres_changes subscription to
+-- scoring_results with their own already-authenticated browser client and
+-- receive the whole row on every insert: their weighted score, the pass/fail
+-- verdict, and every internal error code. That defeats both the 2026-09-15
+-- hardening and today's removal of percentages from the UI.
+--
+-- scoring_results joined the publication on 2026-08-13 alongside submissions,
+-- but nothing has ever subscribed to it: the chat listens to submissions
+-- (useSubmissionStatus) and submission_parts (useSubmissionParts) only, and
+-- picks feedback up through the getScoringFeedback Server Action, which
+-- selects feedback_text alone. Removing it from the publication closes the
+-- exposure and changes no behaviour.
+--
+-- submissions stays published: its columns are status, validity_errors and
+-- Storage paths, all of which the learner is shown anyway.
+
+alter publication supabase_realtime drop table scoring_results;

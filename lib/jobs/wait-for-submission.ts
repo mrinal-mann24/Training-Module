@@ -330,6 +330,7 @@ export const waitForSubmission = inngest.createFunction(
         learnerId: submission.learner_id,
         exercise,
         submissionCorrectionRound: submission.correction_round,
+        submissionScoredAfter: submission.created_at,
         conceptResults: scoringResult?.concept_results ?? [],
         licenseMode: profile.license_mode,
       });

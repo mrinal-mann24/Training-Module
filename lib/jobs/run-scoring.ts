@@ -29,8 +29,27 @@ import { recordSubmissionScore } from '@/lib/llm/tracing';
 // completed steps — see architecture.md Section 5. No business logic is
 // reimplemented here: parsing, the gate, scoring, and coaching are all
 // imported from Units 05/06 as-is.
+// singleton on submissionId (2026-09-16, review finding): submitFiles can
+// join an already-open submission (getOpenSubmissionForExercise matches
+// 'validating' and 'scoring') and re-send submission/uploaded with the SAME
+// id, which would put two runs of this function on the same submission at
+// once. Two concurrent runs both read "no exercise newer than this one"
+// before either writes, and both generate a batch: the 2026-09-07 two-batch
+// incident again, by a different route. They would also both push a
+// correction hint, and determineNextRung counts hint rows, so the second
+// would come out a step deeper than the round it belongs to.
+//
+// wait-for-submission has carried this guard since Unit 11 for the same
+// reason; this function was simply never given one, because until correction
+// rounds a second upload for a scored exercise was refused outright. 'skip'
+// rather than 'cancel': the run already in flight is the one holding the
+// scoring work, and a duplicate event carries nothing new.
 export const runScoring = inngest.createFunction(
-  { id: 'run-scoring', triggers: [{ event: 'submission/uploaded' }] },
+  {
+    id: 'run-scoring',
+    triggers: [{ event: 'submission/uploaded' }],
+    singleton: { key: 'event.data.submissionId', mode: 'skip' },
+  },
   async ({ event, step }) => {
     const submissionId: string = event.data.submissionId;
 
@@ -227,6 +246,7 @@ export const runScoring = inngest.createFunction(
         learnerId: submission.learner_id,
         exercise,
         submissionCorrectionRound: submission.correction_round,
+        submissionScoredAfter: submission.created_at,
         conceptResults: scoringResult.concept_results,
         licenseMode: profile.license_mode,
       });

@@ -67,12 +67,20 @@ Four changes in three commits (e00487f, 0383a67, ff4c454) plus a follow-up landi
 
 **Landing copy:** `app/components/site/site-content.ts` had "Scored 88%", "three clean runs above 90%" (twice), "5 rungs" and "Hint, rung 2" — advertising a UI that no longer exists, and the rung count was already stale since the ladder became 3 steps. All reworded.
 
+**Review pass (ecc:code-reviewer, same day) — three MEDIUM findings, all confirmed and fixed:**
+
+- **A duplicate run of the correction step would have skipped a help step.** `insertHintRequest` has no conflict key, and `determineNextRung` derives the step from a COUNT of hint rows, so a second run of `openCorrectionRoundOrAdvance` for one submission (an Inngest retry after the insert succeeded, or two concurrent runs) would have written a second hint one step DEEPER than the round deserved. `getLatestHintForExerciseAfter` serves the newest row, so the learner would have been handed the full answer early, and the ladder would have stayed permanently ahead of the round counter for the rest of the loop. Fixed: the step now checks for a hint written after the submission being scored and, finding one, reports the round already open and writes nothing.
+- **`run-scoring` had no `singleton` guard.** `submitFiles` can join an already-open submission (`getOpenSubmissionForExercise` matches `'validating'` and `'scoring'`) and re-send `submission/uploaded` with the same id, putting two runs on one submission. Both would read "no exercise newer than this one" before either wrote, and both would generate a batch: the 2026-09-07 two-batch incident again by a different route. `wait-for-submission` has carried this guard since Unit 11; this function never had one, because until correction rounds a second upload for a scored exercise was refused outright. Fixed with `singleton: { key: 'event.data.submissionId', mode: 'skip' }`.
+- **The REVOKEs did not close Realtime.** `postgres_changes` payloads are filtered by the table's RLS SELECT policy and by nothing else; a column-level REVOKE does not touch them. Any learner could have opened a subscription to `scoring_results` with their own browser client and received `weighted_score`, `overall_result` and every internal `error_code` on each insert, defeating both the 2026-09-15 hardening and today's removal of percentages. Nothing has ever subscribed to that table (the chat listens to `submissions` and `submission_parts` only), so it is now dropped from the publication: `supabase/migrations/20260916130000_scoring_results_off_realtime.sql`. This gap predates today's work and also covered `error_codes`/`qualitative_score`.
+
+The reviewer raised no CRITICAL or HIGH findings, and confirmed that `decideCorrection`/`isCorrectionOpen` cannot disagree across their four call sites, that the migration's backfill and widened unique key cannot fail on existing rows, and that the module/progress helpers do not throw on a learner with no mastery rows.
+
 **Open items:**
-- Migration `20260916120000_correction_rounds.sql` is NOT yet applied to any database.
+- Migrations `20260916120000_correction_rounds.sql` and `20260916130000_scoring_results_off_realtime.sql` are NOT yet applied to any database.
 - The correction loop has not been exercised end to end in a browser.
 - Explain and review batches are outside the loop by design.
 
-**Gates:** `npx tsc --noEmit -p .` clean, `npx eslint` clean, `npx vitest run` 62 files / 632 tests passing, `npx next build` compiled successfully. NOT yet verified in a browser.
+**Gates (after the review fixes):** `npx tsc --noEmit -p .` clean, `npx eslint` clean, `npx vitest run` 62 files / 634 tests passing, `npx next build` compiled successfully. Landing page verified in a browser (new copy renders, no console errors) and `/dashboard` and `/progress` redirect cleanly when signed out; the chat and dashboard themselves need a signed-in learner and are NOT yet verified.
 
 ## Session log — 2026-09-15 (night): CODEBASE PLACEMENT FIXES + SMART SEND
 
