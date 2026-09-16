@@ -21,6 +21,10 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (late night): LANDING NAV SCROLL SQUEEZE
+
+`app/components/site/SiteNav.tsx` only. The dark pill is a `motion.div` that narrows to 48rem and loses 0.5rem of height while the page scrolls down, and expands back on any scroll up or within 80px of the top (8px direction threshold). Uses `useScroll` + `useMotionValueEvent` like `site-motion.ts`, `SITE_DURATION.settle` / `SITE_EASE`, starts expanded on server and client, and stays full size under `useReducedMotion()`. Nav content, Learn dropdown and the mobile panel are unchanged; the mobile panel keeps aligning with the pill. Verified in the browser pane at 1024px and 375px by measuring the pill (945x68 to 768x60 desktop, 343x56 to 343x48 mobile) and with the mobile menu open while squeezed; `tsc`, `eslint`, `next build` clean.
+
 ## Session log — 2026-09-16 (late night): GROUNDED FEEDBACK — no invented history, no false Trial Balance findings
 
 **Trigger:** Template595's first scored batch (elina pilot XMLs on the Blossom pack) got a review that was mostly right but said things the data did not support. A read-only replay of the engine on the stored files traced each one to code, not to the learner's files.
