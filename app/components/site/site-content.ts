@@ -75,7 +75,7 @@ export const TRACKS: readonly TrainingCard[] = [
   {
     id: "diagnostic",
     tag: "Start here",
-    pills: ["Authored pack", "Scored, not taught"],
+    pills: ["Authored pack", "Sets your starting point"],
     title: ["Diagnostic:", "Where You Stand"],
     discs: ["diagnostic"],
   },
@@ -138,14 +138,14 @@ export const WHY = {
   ],
   right: [
     "Post the work in your own copy of Tally, then upload the Detailed Day Book and Trial Balance XML. No retyping answers into a form.",
-    "Stuck on an entry? Ask. The hint ladder climbs one rung per genuine attempt until it gets you there.",
+    "Got an entry wrong? The tutor points you at it, you fix it in Tally and send it again. The help climbs one step each time until it gets you there.",
   ],
   caption: { name: "Your AI tutor", role: "Scores, coaches, never leads with the answer" },
   stats: [
     { figure: "7", unit: "checks", text: "on every voucher: ledger, Dr/Cr, GST, TDS, voucher type, bill reference, narration" },
     { figure: "2×", unit: "", text: "the weight on GST and TDS errors, compared with narration slips" },
-    { figure: "5", unit: "rungs", text: "on the hint ladder, ending in a full worked answer so you are never stuck" },
-    { figure: "3", unit: "runs", text: "clean in a row above 90% before a concept counts as mastered" },
+    { figure: "3", unit: "steps", text: "on the help ladder, ending in a full worked answer so you are never stuck" },
+    { figure: "3", unit: "runs", text: "clean in a row before a concept counts as mastered" },
   ],
 } as const;
 
@@ -153,7 +153,7 @@ export const WHY = {
 export const WHY_PREVIEW = {
   label: "Sample feedback",
   batch: "Batch 6 · Purchases",
-  result: "Scored 88%. Your Trial Balance ties out.",
+  result: "Your Trial Balance ties out and the purchase side is clean.",
   praise: "GST heads were right on all 14 vouchers.",
   flag: "Re-look at the TDS base on the Deccan Traders bill.",
   fixed: "Bank charges ledger: FIXED",
@@ -208,7 +208,7 @@ export const BUILT: readonly BuiltBlock[] = [
     id: "mastery",
     number: "03",
     title: "Mastery, Not Luck",
-    body: "A concept counts as mastered after three clean runs above 90%. One lucky batch never does, and a concept that slips back is caught.",
+    body: "A concept counts as mastered after three clean runs. One lucky batch never does, and a concept that slips back is caught.",
   },
   {
     id: "yours",
@@ -236,7 +236,7 @@ export const CATEGORY_TOOLS: readonly TrainingCard[] = [
   { id: "t-tally", tag: "Where you post", pills: ["Licensed", "Educational"], title: ["Tally"], discs: ["tally"] },
   { id: "t-daybook", tag: "What you upload", pills: ["XML export", "Every voucher"], title: ["Detailed Day Book"], discs: ["daybook", "tally"] },
   { id: "t-tb", tag: "What ties out", pills: ["XML export", "Tie-out check"], title: ["Trial Balance"], discs: ["trialBalance"] },
-  { id: "t-hints", tag: "When stuck", pills: ["5 rungs", "Full answer last"], title: ["Hint Ladder"], discs: ["hints", "journal", "diagnostic"] },
+  { id: "t-hints", tag: "When stuck", pills: ["3 steps", "Full answer last"], title: ["Help Ladder"], discs: ["hints", "journal", "diagnostic"] },
   { id: "t-aia", tag: "After mastery", pills: ["Bill ingestion", "Sync to Tally"], title: ["AI Accountant"], discs: ["aia", "daybook"] },
 ];
 
@@ -254,7 +254,7 @@ export const VOICES_NOTE = "Sample messages, written the way the tutor coaches. 
 export const VOICES: readonly (readonly VoiceCard[])[] = [
   [
     { id: "result", kind: "Result", topic: "Sales batch", quote: "14 of 15 vouchers clean and your Trial Balance ties out. That is a strong first run." },
-    { id: "hint", kind: "Hint, rung 2", topic: "TDS", quote: "Before you pick a rate, check which section covers a professional fee. The reference video at 04:12 walks through it." },
+    { id: "hint", kind: "Help, step 2", topic: "TDS", quote: "Before you pick a rate, check which section covers a professional fee. The reference video at 04:12 walks through it." },
     { id: "upload", kind: "Validity check", topic: "Upload", quote: "This Day Book is the condensed format, so it cannot be scored yet. Export the Detailed Day Book and send it again." },
   ],
   [
@@ -264,7 +264,7 @@ export const VOICES: readonly (readonly VoiceCard[])[] = [
   ],
   [
     { id: "payables", kind: "Flag", topic: "Payables", quote: "This payment went in as a new reference. Which open bill or advance was it meant to settle?" },
-    { id: "mastered", kind: "Next step", topic: "Mastery", quote: "GST heads: three clean runs above 90%. Mastered. Your next batch moves on to a mock bank statement." },
+    { id: "mastered", kind: "Next step", topic: "Mastery", quote: "GST heads: three clean runs. Mastered. Your next batch moves on to a mock bank statement." },
     { id: "reflect", kind: "Reflection", topic: "Capstone", quote: "Put this month next to your diagnostic. Which mistake from day one did you not make even once?" },
   ],
 ];

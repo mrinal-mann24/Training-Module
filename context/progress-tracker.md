@@ -21,6 +21,59 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16: LEARNING-FIRST BATCHES — no scores, a correction loop, five modules, one progress bar
+
+Four changes in three commits (e00487f, 0383a67, ff4c454) plus a follow-up landing-copy pass. A batch becomes a learning step rather than a mark: percentages and pass/fail leave the learner's view, a wrong batch opens a correction round instead of moving on, the backend module numbers become five named areas, and the dashboard carries one position bar.
+
+**(1) Percentages and pass/fail removed from the learner's view (e00487f).**
+- Before: the feedback bubble showed a Pass / Partial / "Needs work" badge, and the coaching prompt instructed the model to OPEN the message with the weighted score percentage ("Your submission came in at 63 percent"). The prompt literally said "This number IS learner-visible".
+- Now: no badge, no number. The opening line is one plain orienting sentence; "What went well" and "What needs work" (which already existed on `CoachingSchema`) carry the message.
+- The scoring engine is untouched: `weighted_score`, `overall_result`, `PASS_THRESHOLD` and `CONCEPT_PASS_RATIO` all still drive mastery, reinforcement and adjudication. Only presentation changed.
+- Three things make it stick: (a) `overallResult` was removed from the client-facing `ChatMessage` type, not merely unrendered; (b) `checkOpeningLineFacts` now rejects score and verdict language in code and retries, falling back to `composeFallbackOpeningLine`, which is tested to survive its own guard; (c) the feedback queries stopped selecting `weighted_score`/`overall_result` and a migration REVOKEs both from `authenticated` — until now a learner could read their own raw score straight from the browser, which would have made the UI change cosmetic.
+- The verdict pattern deliberately allows "passed the entry" (ordinary Indian accounting usage) and catches only verdict shapes, so clean feedback is not thrown into a pointless retry.
+- Files: `lib/llm/prompts/coaching.ts`, `lib/tutor/generate-coaching.ts`, `app/(chat)/chat/MessageBubble.tsx`, `lib/chat/message.ts`, `lib/db/queries/scoring-results.ts`, `app/(chat)/chat/actions.ts`, `app/(chat)/chat/PendingSubmission.tsx`, `lib/chat/build-timeline.ts`.
+
+**(2) Five learner-facing modules (0383a67).**
+- Before: `CONCEPT_TO_MODULE` mapped 20 concept tags to modules 1..20, and /progress rendered 19 cards literally titled "Module 1" ... "Module 20", one concept each.
+- Now: `MAJOR_MODULES` in `lib/schemas/exercise.ts` groups the 19 active concepts into Sales and Receivables (2), Purchases and Payables (5), Banking (3), GST and TDS (6), Month End and Assets (3). The grouping follows `CONCEPT_TO_MODULE_DOC` in `lib/llm/grounding/module-docs.ts` — the content team's own concept-to-training-document mapping — collapsed to five headline areas. A test asserts every active concept is placed exactly once and no retired concept is placed.
+- `CONCEPT_TO_MODULE`, `module_progress` and `deriveNextModuleProgress` are deliberately UNCHANGED: they stay the stored backend structure advancement gates on. Regrouping them would have made progression materially harder, because leaving a five-concept module would require all five mastered instead of one.
+- New pure helpers in `lib/tutor/major-modules.ts`: `overallProgress`, `majorModuleProgress`, `currentMajorModule`, `activeConceptsOf`.
+- This also FIXED a live inconsistency: the chat chip printed a module number derived from the mastered-concept count (`getModuleNumber`) while /progress printed the stored `module_progress.current_module`, so one learner could read "Module 3" in chat and "Module 7" on /progress. Both numbers are gone; all three surfaces now derive their label from one helper over the same mastery map. `getModuleNumber` was deleted.
+
+**(3) One overall progress bar on the dashboard (0383a67).**
+- Before: `app/dashboard/page.tsx` loaded no progress data at all and showed no indicator; /progress had NO inbound link from anywhere in the app and was reachable only by typing the URL.
+- Now: new `app/components/ui/ProgressBar.tsx` (`role="progressbar"`, `aria-valuenow`, shadcn tokens, width as an inline style, which code-standards rule 24 explicitly permits for a computed progress-bar width — there was no bar/meter component anywhere in the repo before). The dashboard shows "N% complete · X of 19 concepts" plus the current module name, and the card links to /progress. Both `loading.tsx` skeletons were updated to mirror it.
+- The bar counts mastered concepts out of `ACTIVE_CONCEPT_TAGS.length` (19). It is a position, not a mark, which is why it survives the same change that removed batch percentages.
+
+**(4) Correction loop (ff4c454 — the big one).**
+- Before: a scored exercise was hard-blocked from accepting another submission (`hasScoredSubmissionForExercise`), and the next batch was generated immediately after scoring. Getting something wrong just moved you on.
+- Now: a batch with a failing concept does NOT hand out a new exercise. The tutor pushes the next step of the existing 3-step help ladder, aimed at the concept that failed (new optional `focusConceptTag` on `HintPromptContext`), and asks for corrected exports. The learner fixes it in Tally, re-uploads Day Book + Trial Balance, and that submission is scored against the SAME answer key (invariant 6 already allowed this). Three rounds, one per help step; after the third the learner has the worked answer, so the loop closes whatever the result. Nobody is left permanently stuck.
+- The concept still counts as weak: the round-0 failure is already in the append-only trail, so the streak is broken and `selectWeakConcept` re-targets it with a different question later. That is the existing mastery model, not new logic.
+- Scope: two-file batches (diagnostic and adaptive) only. Explain batches carry a text part the learner already wrote and review batches have no upload at all, so a "send corrected exports" round has nothing coherent to mean for either; both advance exactly as before.
+- This closes the open assumption recorded in `lib/tutor/hint-ladder.ts` ("there is no signal distinguishing a genuine retry from an immediate re-click... Revisit if a per-exercise resubmission signal ever gates this"). The re-upload IS that signal.
+- The loop survives a refresh, which matters because the learner leaves for Tally between rounds: the help step is a `hint_requests` row and comes back with the timeline, and the line asking for corrected exports is re-derived from rows on every page load rather than stored.
+- If a help step cannot be generated, the learner advances rather than being left with neither a hint nor a batch.
+- New files: `lib/tutor/correction-round.ts` (+test), `lib/jobs/correction-step.test.ts`, `lib/db/queries/hint-requests.test.ts`. New migration: `supabase/migrations/20260916120000_correction_rounds.sql`.
+
+**Four pre-existing bugs that would have broken under re-upload** — found by analysis before building and fixed in the same change (plus a fifth, related, found in the same pass):
+
+- **H1 — the correction would have been silently discarded.** `concept_attempts` was unique on `(learner_id, exercise_id, concept_tag)` and `insertConceptAttempts` upserted with `ignoreDuplicates`, so a SECOND scoring of the same exercise wrote ZERO rows: mastery would never have moved. Fixed by adding `submission_id` to the uniqueness key, which keeps the Inngest step-retry guard the 2026-09-15 migration added.
+- **H2 — a second batch plus a second difficulty bump.** `generateNextExercise` was idempotent on the SUBMISSION's `created_at`. A correction round is newer than the batch round 0 already generated, so the guard would have seen nothing after it and produced a second batch. This is exactly the 2026-09-07 production incident (a learner re-uploaded December and got two January batches plus duplicated concept attempts) that `hasScoredSubmissionForExercise` was added to stop. Fixed by keying on the EXERCISE's `created_at`. Covered by a named regression test.
+- **H3 — the tie-out would have measured against the learner's own wrong version.** The movement-based Trial Balance tie-out took its baseline from the most recent scored submission, which on a re-upload is the FAILED round of the same exercise. Fixed with an `excludeExerciseId` parameter on `getPreviousScoredTrialBalancePath`.
+- **H4 — nothing would ever have reached 'mastered'.** `hint_rungs_used` was a single per-exercise count charged to EVERY concept in the batch, and `isCleanPass` denies the mastery streak to any pass with 3+ help requests behind it. With help now pushed on every failing batch, that would have denied the streak to everything: module advancement would stall and the new dashboard bar would sit at zero forever. Fixed by adding `concept_tag` to `hint_requests` and counting depth per concept, with untagged rows (legacy rows and the manual help button) still charged to all concepts so existing data scores as it always did.
+- **H5 — the score was still readable from the browser.** The 2026-09-15 column-privilege migration revoked `answer_key`/`error_codes`/`qualitative_score` but NOT `weighted_score` or `overall_result`. Fixed by revoking both (see change 1).
+
+**Migration `supabase/migrations/20260916120000_correction_rounds.sql` (NOT YET APPLIED to any database):** adds `submissions.correction_round` (0..3, checked); adds `concept_attempts.submission_id` with a backfill from `scoring_results` and the new 4-column unique constraint, plus a partial unique index preserving the old guarantee for any row the backfill could not resolve; adds `hint_requests.concept_tag` with a backfill from `hint_content->>'concept_tag'`; revokes `weighted_score`/`overall_result` from `authenticated`.
+
+**Landing copy:** `app/components/site/site-content.ts` had "Scored 88%", "three clean runs above 90%" (twice), "5 rungs" and "Hint, rung 2" — advertising a UI that no longer exists, and the rung count was already stale since the ladder became 3 steps. All reworded.
+
+**Open items:**
+- Migration `20260916120000_correction_rounds.sql` is NOT yet applied to any database.
+- The correction loop has not been exercised end to end in a browser.
+- Explain and review batches are outside the loop by design.
+
+**Gates:** `npx tsc --noEmit -p .` clean, `npx eslint` clean, `npx vitest run` 62 files / 632 tests passing, `npx next build` compiled successfully. NOT yet verified in a browser.
+
 ## Session log — 2026-09-15 (night): CODEBASE PLACEMENT FIXES + SMART SEND
 
 **Placement audit cleanup (2026-09-15):**

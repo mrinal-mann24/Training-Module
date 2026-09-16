@@ -105,18 +105,22 @@ Components must use semantic tokens, never raw color values (status colors below
 - **Inputs**: app surfaces use `rounded-lg border-border bg-background px-4 py-2.5 text-sm`, focus = `border-ring` + `ring-1 ring-ring` (indigo).
 - **App dashboard cards**: `rounded-2xl border-border`, uppercase micro-eyebrow (accent for the active Task card), Instrument Serif card titles, `bg-primary` arrow circle, hover lift + `shadow-dashboard`.
 - **Chat composer (Smart Send, 2026-09-15)** (`app/(chat)/chat/Composer.tsx`): single Send button with context-aware placeholders ("Type your explanation, or ask me a question, then send." / "Type your review of the packet, or ask me a question, then send."). Displays `AnswerConfirmation` (app/(chat)/chat/AnswerConfirmation.tsx) as a tutor bubble when text is classified as an answer, showing "Send this as your explanation? It will be scored." with "Submit answer" and "It's a question" buttons. No autofocus on confirmation card.
+- **Progress bar** (`app/components/ui/ProgressBar.tsx`, 2026-09-16): the only bar in the product. `role="progressbar"` with `aria-valuenow/min/max` and an `aria-label`, `bg-secondary` track and `bg-accent` fill, both of which resolve on the dashboard's shadcn token set AND the older chat/progress set, so one component serves both surfaces. Width is an inline style, the case code-standards rule 24 names explicitly. Appears on the dashboard above the two cards ("N% complete · X of 19 concepts", linking to /progress, which had no inbound link before) and at the top of /progress. Mirrored in both `loading.tsx` skeletons.
+- **Progress page** (2026-09-16): five named module cards (Sales and Receivables, Purchases and Payables, Banking, GST and TDS, Month End and Assets) replacing nineteen cards titled "Module 1" to "Module 20". Each shows its blurb, an "X of Y" or "Complete" count, and its concepts with the existing `ConceptStatusBadge`. The numbered heading is gone: the chat chip, this page and the dashboard bar all derive their module label from one helper over the same mastery map, which fixes the old split where chat said "Module 3" and this page said "Module 7" for the same learner.
+- **Feedback bubble, no verdict** (2026-09-16): the Pass / Partial / "Needs work" badge above the coaching prose is gone, along with every percentage. The bubble opens with one plain line, then "What went well" and "What needs work". The status colours stay in use elsewhere (`ConceptStatusBadge`, the invalid-upload chip); only the batch verdict was removed. The chat chip now reads "GST and TDS · Level 2" rather than "Module 8 · Level 2".
 - **Loading and error states (2026-09-15)**: every product route (/chat, /progress, /dashboard) and /onboarding has `loading.tsx` (Server Component skeleton copying the page's layout with `aria-busy="true"`, pulsing placeholders one shade darker than their surface, `motion-safe:animate-pulse` only) and `error.tsx` (Client Component logging in `useEffect`, never showing `error.message`, displaying `error.digest` as a small "Reference code" only when one exists, with "Try again" button calling `retry` and a safe-route link: dashboard for chat/progress, `/` for dashboard, `/login` for onboarding).
 
 ## Layout
 
 - Chat/progress (untouched): centered `max-w-[1150px]` widescreen column; they inherit fonts/tokens automatically.
-- Progress framing (unchanged): green "Mastered", amber "Keep iterating", neutral "Developing".
+- Progress framing (unchanged): green "Mastered", amber "Keep iterating", neutral "Developing". These three are the only judgement the learner sees on their work.
 
 ## Design Notes
 
 - One accent: indigo `239 84% 67%` for interactive emphasis; primary actions are charcoal-black pills. No terracotta, no old blue.
 - The nav items and the hero's "See how it works" are `<button>`s that do nothing yet, on purpose. They are placeholders for sections that do not exist, and a dead `#anchor` would be a worse lie than an inert control.
 - `suppressHydrationWarning` sits on `<html>` and `<body>` in `app/layout.tsx` on purpose (browser extensions inject attributes pre-hydration); do not remove it.
-- The hint ladder stays visually flat across steps (support mechanism, not a penalty ramp).
+- The help ladder stays visually flat across steps (support mechanism, not a penalty ramp). This matters more since 2026-09-16, when a failing batch began pushing a step automatically: help now arrives unasked, so it must not read as a telling-off.
+- Nothing the learner sees rates them. No percentage, no mark, no pass/fail. Progress is shown as position (how far through the material) and as concept status (Mastered / Keep iterating / Developing), never as a score.
 - No em dashes in learner-facing copy (manager spec hard rule) — applies to marketing copy too.
 - `tailwindcss-animate` deliberately NOT installed: nothing uses its classes (framer-motion owns animation) and it is a Tailwind v3 plugin; this project is on v4.

@@ -34,7 +34,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     /health                  → Liveness route, wired to the Docker Compose healthcheck.
     /inngest                 → Inngest sync endpoint and job callback receiver.
   /components
-    ui/                      → Generic shadcn-style primitives (button.tsx).
+    ui/                      → Generic shadcn-style primitives (button.tsx, ProgressBar.tsx).
     site/                    → Landing page + auth-shell "day surface" components (SiteNav, Hero, HeroScene,
                                Tracks, Journey, WhySection, ConceptGrid, BuiltDifferent, Categories,
                                TutorVoices, FinalCta, SiteFooter, TrainingCard, CardCarousel, Bubbles,
@@ -65,6 +65,10 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
                               → Scoring, findings and the pre-scoring validity gate
     generate-coaching.ts, generate-hint.ts, hint-ladder.ts
                               → Coaching and the hint ladder (includes findReusableDeepHint, 2026-09-15)
+    correction-round.ts       → Correction-loop rules (2026-09-16): pure decision of whether a scored
+                                batch opens another correction round or advances. No DB, no LLM
+    major-modules.ts          → The five learner-facing modules (2026-09-16): overall progress fraction,
+                                per-module breakdown, current module. A pure view over concept_mastery
     pair-tally-uploads.ts     → Sorts uploaded files into Day Book / Trial Balance pair (2026-09-15)
     submission-routing.ts     → Which text part a typed answer fills; which Inngest events to emit (2026-09-15)
     create-diagnostic-exercise.ts → Assigns authored-pack diagnostic or generates one (2026-09-15)
@@ -132,6 +136,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
 | Rulebook + training-module reference text (extracted from the source .docx files)                                               | Repo (`/lib/llm/grounding/`) as extracted text, versioned with the code | Prompt grounding content; changes go through code review, same as prompts themselves                                  |
 | Certificate PDF                                                                                                                 | File Storage                                                            | Generated once, served by URL, referenced from `learner_state`                                                        |
 | In-flight multi-part submission buffer (waiting for daybook + explain + review)                                                 | Database (`submissions` row with nullable parts + `status: pending`)    | Needs to survive across the 30–45 min window and process restarts — not appropriate for an ephemeral cache            |
+| Correction-round state (which round a submission is, whether the loop is still open)                                            | Database, derived from existing rows: `submissions.correction_round` + that submission's `concept_attempts` | The learner leaves for Tally between rounds, so nothing about the loop may live in client state. "Is a round open?" is re-derived on every chat load and after every scoring, never stored as a flag that could go stale |
 | LLM call traces                                                                                                                 | Langfuse (external)                                                     | Not queried by the app at runtime; observability only                                                                 |
 | Learner issue reports (message, status, owner reply, snapshot of the current exercise/submission)                               | Database (`learner_issues`)                                             | Read by the owner in Supabase; learners select their own rows only and have no write grant, inserts go through the service role after validation and a 5-per-hour limit |
 | Rate limiting / short-lived dedupe (e.g. prevent duplicate hint requests within seconds)                                        | In-memory / edge cache                                                  | Only for data that's fine to lose on restart and never affects grading correctness                                    |
@@ -160,6 +165,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
 | Hint response        | Learner requests help                                                                                                                                      | `hint-ladder.ts` output (rung number, hint content)                                                                                                                                                                                                                                                                                                                                                                                           |
 | Mastery/state patch  | After scoring                                                                                                                                              | `state-patch.ts` (mastery map delta, escalation flags)                                                                                                                                                                                                                                                                                                                                                                                        |
 | Message intent       | Typed text sent during explain/review and rules are inconclusive (2026-09-15)                                                                             | `message-intent.ts` ({ intent: question|answer, reason }); never the answer key; on invalid or timeout -> question                                                                                                                                                                                                                                                                                                                                |
+| Hint response (pushed) | A scored batch has a failing concept and a correction round opens (2026-09-16) | Same `hint-ladder.ts` output as a requested hint, with `focusConceptTag` set so the step aims at the concept that failed. A generation failure falls back to advancing the learner rather than leaving them with neither a hint nor a next batch |
 
 Every LLM response is validated against its Zod schema before it is persisted or shown to the learner. On validation failure, the call is retried with the validation error fed back into the prompt (bounded retry count) — the app never falls back to unvalidated model output.
 
@@ -197,3 +203,9 @@ These rules must never be violated by any code path, feature, or shortcut:
 5. **Mastery state changes only through the defined state-update pipeline** (`/lib/tutor/mastery.ts`, invoked from the mastery recompute job). No UI action, admin tool, or ad-hoc script may mutate `mastery_map`, `error_history`, or `hint_rung_usage` directly — mastery history must stay a complete, auditable trail of how a learner got to their current state.
 
 6. **A generated exercise's answer key is immutable once created.** The same answer key that scored the first submission for that exercise scores any resubmission for it. Regenerating or editing an answer key after the fact would silently invalidate prior scoring and break the mastery history's integrity.
+
+**Correction rounds (2026-09-16) make invariant 6's "any resubmission" a live path rather than a hypothetical.** A scored exercise now accepts up to three further submissions while its correction loop is open. Three guarantees hold that safe, and any change to the loop must preserve all three:
+
+- **One exercise produces at most one next batch.** `generateNextExercise` is idempotent on the *exercise's* `created_at`, never the submission's. Keyed on the submission it would hand out a second batch per correction round, which is the 2026-09-07 production incident `hasScoredSubmissionForExercise` was added to stop.
+- **Every round appends its own attempt rows.** `concept_attempts` is unique on `(learner_id, exercise_id, concept_tag, submission_id)`. Dropping `submission_id` from that key silently discards corrections and breaks invariant 5's auditable trail.
+- **Help depth is counted per concept.** A pass with three or more help requests behind it never counts toward mastery, so charging every concept in a batch for help given on one of them would, with help now pushed automatically, stall mastery permanently.
