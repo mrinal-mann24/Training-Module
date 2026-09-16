@@ -34,6 +34,9 @@ def as_date(value):
     return datetime.strptime(str(value).strip(), "%d-%b-%Y").date()
 
 
+# 2026-09-16: the pack files, BANK_MAP keys and month-end voucher dates moved
+# from 2026 to 2024 with the timeline shift (lib/tutor/timeline.ts); derive
+# from the shifted files written by scripts/shift-pack-year.py.
 PACK_DIR = sys.argv[1] if len(sys.argv) > 1 else r"D:\Mrinal.Manna\OneDrive - KOREFI BUSINESS SOLUTIONS PRIVATE LIMITED\Downloads\BlossomRetail_Variant_A\BlossomRetail_Variant_A"
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed", "blossom-variant-a")
 
@@ -189,55 +192,55 @@ for (d, bill, vendor, state, nature, base, gst, total, tds, terms) in purchases:
 # Map each statement line to party + refs. Allocations for partial payments
 # are explicit decisions here — every one is listed in the review doc.
 BANK_MAP = {
-    "NEFT/N26040201/DECCAN/MARCHPMT": ("Payment", "Deccan Traders", "DT-99", "Opening-balance settlement (March bill), Against Ref"),
-    "UPI/26040301/KAREMP/MARCH-INV": ("Receipt", "Karnataka Emporium", "INV-M-101", "Opening-balance receipt (March invoice), Against Ref"),
-    "NEFT/N26040501/MUMBAISUP/MARCHPMT": ("Payment", "Mumbai Suppliers", "MS-M1", "Opening-balance settlement, Against Ref"),
-    "NEFT/N26040502/COIMWHL/PMT": ("Payment", "Coimbatore Wholesale", "CW-101", ""),
-    "UPI/26040601/LUDWOODS/PMT": ("Receipt", "Ludhiana Woodworks", "INV-010", ""),
+    "NEFT/N24040201/DECCAN/MARCHPMT": ("Payment", "Deccan Traders", "DT-99", "Opening-balance settlement (March bill), Against Ref"),
+    "UPI/24040301/KAREMP/MARCH-INV": ("Receipt", "Karnataka Emporium", "INV-M-101", "Opening-balance receipt (March invoice), Against Ref"),
+    "NEFT/N24040501/MUMBAISUP/MARCHPMT": ("Payment", "Mumbai Suppliers", "MS-M1", "Opening-balance settlement, Against Ref"),
+    "NEFT/N24040502/COIMWHL/PMT": ("Payment", "Coimbatore Wholesale", "CW-101", ""),
+    "UPI/24040601/LUDWOODS/PMT": ("Receipt", "Ludhiana Woodworks", "INV-010", ""),
     "GOVT PMT — TDS DEPOSIT 194J MARCH": ("Payment", "TDS Payable — u/s 194J", None, "TRAP: clears the opening TDS LIABILITY — not an expense."),
-    "UPI/26040701/DBAZAAR/MARCH-INV": ("Receipt", "Delhi Bazaar", "INV-M-102", "Opening-balance receipt, Against Ref"),
-    "NEFT/N26040801/AHMDIMPT/PMT": ("Payment", "Ahmedabad Import", "AI-201", ""),
-    "NEFT/N26040901/CHENSUP/PMT": ("Payment", "Chennai Suppliers", "CS-092", ""),
-    "UPI/26041001/RAJHOME/PMT": ("Receipt", "Rajasthan Home Decor", "INV-011", ""),
-    "NEFT/N26041101/COIMINT/PMT": ("Receipt", "Coimbatore Interiors", "INV-012", ""),
-    "UPI/26041201/KHANDICRAFT/ORDR": ("Receipt", "Kerala Handicrafts", "ADV-01", "ADVANCE received (Advance ref ADV-01) — not against an invoice; later applied to INV-009."),
-    "UPI/26041301/AHMDELITE/PMT": ("Receipt", "Ahmedabad Elite", "INV-013", "PARTIAL: 1,00,000 of 2,12,400 — Against Ref INV-013, balance stays outstanding."),
-    "NEFT/N26041501/DECCAN/APRIL-PMT": ("Payment", "Deccan Traders", "DT-115", ""),
-    "UPI/26041502/VIZAGFURN/PMT": ("Receipt", "Vizag Furnishings", "INV-015", ""),
-    "NEFT/N26041601/MUMBAISUP/PMT": ("Payment", "Mumbai Suppliers", "MS-B1, MS-B2, MS-B3 (part)", "SPLIT 4,50,000 across three bills: B1 2,95,000 + B2 1,41,600 + B3 13,400 partial."),
-    "NEFT/N26041602/TRICHYTX/PMT": ("Payment", "Trichy Textiles", "TT-234", ""),
-    "UPI/26041701/BNGLOCAL/PMT": ("Receipt", "Bengaluru Local Store", "INV-017", ""),
+    "UPI/24040701/DBAZAAR/MARCH-INV": ("Receipt", "Delhi Bazaar", "INV-M-102", "Opening-balance receipt, Against Ref"),
+    "NEFT/N24040801/AHMDIMPT/PMT": ("Payment", "Ahmedabad Import", "AI-201", ""),
+    "NEFT/N24040901/CHENSUP/PMT": ("Payment", "Chennai Suppliers", "CS-092", ""),
+    "UPI/24041001/RAJHOME/PMT": ("Receipt", "Rajasthan Home Decor", "INV-011", ""),
+    "NEFT/N24041101/COIMINT/PMT": ("Receipt", "Coimbatore Interiors", "INV-012", ""),
+    "UPI/24041201/KHANDICRAFT/ORDR": ("Receipt", "Kerala Handicrafts", "ADV-01", "ADVANCE received (Advance ref ADV-01) — not against an invoice; later applied to INV-009."),
+    "UPI/24041301/AHMDELITE/PMT": ("Receipt", "Ahmedabad Elite", "INV-013", "PARTIAL: 1,00,000 of 2,12,400 — Against Ref INV-013, balance stays outstanding."),
+    "NEFT/N24041501/DECCAN/APRIL-PMT": ("Payment", "Deccan Traders", "DT-115", ""),
+    "UPI/24041502/VIZAGFURN/PMT": ("Receipt", "Vizag Furnishings", "INV-015", ""),
+    "NEFT/N24041601/MUMBAISUP/PMT": ("Payment", "Mumbai Suppliers", "MS-B1, MS-B2, MS-B3 (part)", "SPLIT 4,50,000 across three bills: B1 2,95,000 + B2 1,41,600 + B3 13,400 partial."),
+    "NEFT/N24041602/TRICHYTX/PMT": ("Payment", "Trichy Textiles", "TT-234", ""),
+    "UPI/24041701/BNGLOCAL/PMT": ("Receipt", "Bengaluru Local Store", "INV-017", ""),
     "BANK CHRG SMS+MAINT": ("Payment", "Bank Charges", None, "Plain bank charge, no GST component on this line."),
-    "UPI/26041801/KAREMP/PMT": ("Receipt", "Karnataka Emporium", "INV-001", "PARTIAL: 1,50,000 against INV-001 (1,94,700 net of CN-001)."),
-    "NEFT/N26041802/KOLKATRD/PMT": ("Payment", "Kolkata Traders", "KT-055", ""),
-    "UPI/26041901/KOCHIMOD/PMT": ("Receipt", "Kochi Modern", "INV-014", ""),
-    "NEFT/N26042001/MEHTA/PMT": ("Payment", "Mehta & Associates", "CA26-101", "Net of 194J TDS: 88,500 − 7,500 = 81,000."),
-    "NEFT/N26042002/CHENSUP2/PMT": ("Payment", "Chennai Suppliers", "CS-093", ""),
-    "UPI/26042101/GUJRETAIL/PMT": ("Receipt", "Gujarat Retail", "INV-006", ""),
-    "UPI/26042102/MYSDECOR/PMT": ("Receipt", "Mysore Decor", "INV-018", ""),
-    "NEFT/N26042201/BALAJI/PMT": ("Payment", "Balaji Interiors", "BI-047", "Net of 194C TDS: 1,77,000 − 3,000 = 1,74,000."),
-    "NEFT/N26042202/BNGCLEAN/PMT": ("Payment", "Bangalore Cleaning", "BC-078", ""),
-    "UPI/26042301/DBAZAAR/PMT": ("Receipt", "Delhi Bazaar", "INV-003", "PARTIAL: 1,00,000 of 1,77,000 against INV-003."),
-    "NEFT/N26042301/SLEGAL/PMT": ("Payment", "Sharma Legal", "SL-018", "Full 35,400 — no TDS was deducted (below threshold)."),
-    "NEFT/N26042401/BHARATMAC/ADV": ("Payment", "Bharat Machinery", "ADV-02", "ADVANCE paid to a creditor (Advance ref ADV-02) — no bill yet."),
-    "NEFT/N26042402/VIZAGV/PMT": ("Payment", "Vizag Vendors", "VV-042", ""),
+    "UPI/24041801/KAREMP/PMT": ("Receipt", "Karnataka Emporium", "INV-001", "PARTIAL: 1,50,000 against INV-001 (1,94,700 net of CN-001)."),
+    "NEFT/N24041802/KOLKATRD/PMT": ("Payment", "Kolkata Traders", "KT-055", ""),
+    "UPI/24041901/KOCHIMOD/PMT": ("Receipt", "Kochi Modern", "INV-014", ""),
+    "NEFT/N24042001/MEHTA/PMT": ("Payment", "Mehta & Associates", "CA26-101", "Net of 194J TDS: 88,500 − 7,500 = 81,000."),
+    "NEFT/N24042002/CHENSUP2/PMT": ("Payment", "Chennai Suppliers", "CS-093", ""),
+    "UPI/24042101/GUJRETAIL/PMT": ("Receipt", "Gujarat Retail", "INV-006", ""),
+    "UPI/24042102/MYSDECOR/PMT": ("Receipt", "Mysore Decor", "INV-018", ""),
+    "NEFT/N24042201/BALAJI/PMT": ("Payment", "Balaji Interiors", "BI-047", "Net of 194C TDS: 1,77,000 − 3,000 = 1,74,000."),
+    "NEFT/N24042202/BNGCLEAN/PMT": ("Payment", "Bangalore Cleaning", "BC-078", ""),
+    "UPI/24042301/DBAZAAR/PMT": ("Receipt", "Delhi Bazaar", "INV-003", "PARTIAL: 1,00,000 of 1,77,000 against INV-003."),
+    "NEFT/N24042301/SLEGAL/PMT": ("Payment", "Sharma Legal", "SL-018", "Full 35,400 — no TDS was deducted (below threshold)."),
+    "NEFT/N24042401/BHARATMAC/ADV": ("Payment", "Bharat Machinery", "ADV-02", "ADVANCE paid to a creditor (Advance ref ADV-02) — no bill yet."),
+    "NEFT/N24042402/VIZAGV/PMT": ("Payment", "Vizag Vendors", "VV-042", ""),
     "BILLPAY BESCOM ELEC APRIL": ("Payment", "Electricity Charges", None, ""),
-    "NEFT/N26042501/SIGNADV/PMT": ("Payment", "Signage Advertising", "SA-101", "TRAP: net payable is 69,600 (70,800 − 1,200 TDS) but bank shows 69,384 — a 216 residual stays on the vendor. Post as per bank."),
-    "UPI/26042601/NAGPURRT/PMT": ("Receipt", "Nagpur Retail", "INV-020", ""),
-    "NEFT/N26042602/HERORENT/PMT": ("Payment", "Hero Rentals", "HR-118", "Net of 194I TDS: 47,200 − 4,000 = 43,200."),
+    "NEFT/N24042501/SIGNADV/PMT": ("Payment", "Signage Advertising", "SA-101", "TRAP: net payable is 69,600 (70,800 − 1,200 TDS) but bank shows 69,384 — a 216 residual stays on the vendor. Post as per bank."),
+    "UPI/24042601/NAGPURRT/PMT": ("Receipt", "Nagpur Retail", "INV-020", ""),
+    "NEFT/N24042602/HERORENT/PMT": ("Payment", "Hero Rentals", "HR-118", "Net of 194I TDS: 47,200 − 4,000 = 43,200."),
     "BANK CHRG MAINT+IMPS+GST": ("Payment", "Bank Charges", None, "TRAP: 850 is GROSS incl. GST — split 720.34 charge + 129.66 Input CGST/SGST (do not book gross)."),
-    "UPI/26042701/CHENHS/PMT": ("Receipt", "Chennai Home Store", "INV-004", ""),
-    "NEFT/N26042702/DELDIR/PMT": ("Payment", "Delivery Direct", "DD-455", ""),
-    "NEFT/N26042801/PRIYAS/SAL": ("Payment", "Salaries", None, "April salary — Priya S."),
-    "UPI/26042803/HYDINTR/PMT": ("Receipt", "Hyderabad Interiors", "INV-008", ""),
-    "UPI/26042901/KAREMP/PMT": ("Receipt", "Karnataka Emporium", "INV-001 (bal), INV-016 (part)", "ALLOCATION: 44,700 clears INV-001's balance, 300 against INV-016."),
-    "UPI/26042902/KOLKEMP/PMT": ("Receipt", "Kolkata Emporium", "INV-021", ""),
-    "NEFT/N26042903/SCLOUD/PMT": ("Payment", "Software Cloud LLC", "SC-909", ""),
-    "NEFT/N26043001/CARESW/PMT": ("Payment", "PREPAID_SOFTWARE", None, "Month-end note 2: 18,000 covers Apr–Sep. Dr Software Subscription 3,000 (April) + Dr Prepaid Software 15,000."),
+    "UPI/24042701/CHENHS/PMT": ("Receipt", "Chennai Home Store", "INV-004", ""),
+    "NEFT/N24042702/DELDIR/PMT": ("Payment", "Delivery Direct", "DD-455", ""),
+    "NEFT/N24042801/PRIYAS/SAL": ("Payment", "Salaries", None, "April salary — Priya S."),
+    "UPI/24042803/HYDINTR/PMT": ("Receipt", "Hyderabad Interiors", "INV-008", ""),
+    "UPI/24042901/KAREMP/PMT": ("Receipt", "Karnataka Emporium", "INV-001 (bal), INV-016 (part)", "ALLOCATION: 44,700 clears INV-001's balance, 300 against INV-016."),
+    "UPI/24042902/KOLKEMP/PMT": ("Receipt", "Kolkata Emporium", "INV-021", ""),
+    "NEFT/N24042903/SCLOUD/PMT": ("Payment", "Software Cloud LLC", "SC-909", ""),
+    "NEFT/N24043001/CARESW/PMT": ("Payment", "PREPAID_SOFTWARE", None, "Month-end note 2: 18,000 covers Apr–Sep. Dr Software Subscription 3,000 (April) + Dr Prepaid Software 15,000."),
     "INT CREDIT SAVINGS Q4": ("Receipt", "Interest Income", None, ""),
-    "UPI/26043002/UNKNOWN/REF": ("Receipt", "Suspense", None, "TRAP: unidentifiable sender — a proper Suspense ledger, NOT a ledger named UNKNOWN."),
-    "UPI/26043003/DBAZAAR2/PMT": ("Receipt", "Delhi Bazaar", "INV-003 (bal)", "ALLOCATION: 55,000 against INV-003's remaining 77,000; 22,000 stays outstanding."),
-    "UPI/26043004/BNGBOUTQ/PMT": ("Receipt", "Bengaluru Boutique", "INV-024", ""),
+    "UPI/24043002/UNKNOWN/REF": ("Receipt", "Suspense", None, "TRAP: unidentifiable sender — a proper Suspense ledger, NOT a ledger named UNKNOWN."),
+    "UPI/24043003/DBAZAAR2/PMT": ("Receipt", "Delhi Bazaar", "INV-003 (bal)", "ALLOCATION: 55,000 against INV-003's remaining 77,000; 22,000 stays outstanding."),
+    "UPI/24043004/BNGBOUTQ/PMT": ("Receipt", "Bengaluru Boutique", "INV-024", ""),
 }
 bank = rows_after_header(load(os.path.join(PACK_DIR, "4. Bank Statement.xlsx")), "Date")
 for (d, desc, debit, credit, _bal) in bank:
@@ -271,7 +274,7 @@ for (d, desc, debit, credit, _bal) in bank:
     V(d, vtype, legs, bill_ref=ref, narration=narration, concepts=concepts, note=note, order=3)
 
 # ---------------------------------------------------------------- cash memo (purchase side; cash sale already booked with sales register)
-V(date(2026, 4, 28), "Payment", [("Packing Materials", "Dr", 2800), ("Cash", "Cr", 2800)],
+V(date(2024, 4, 28), "Payment", [("Packing Materials", "Dr", 2800), ("Cash", "Cr", 2800)],
   narration="Being cash purchase of packaging material from Krishna Packers",
   concepts=["payment_voucher_basics"], note="Cash Memo: cash-only, not in bank statement. Small KA vendor, no GST breakup given.", order=4)
 
@@ -280,11 +283,11 @@ V(date(2026, 4, 28), "Payment", [("Packing Materials", "Dr", 2800), ("Cash", "Cr
 # 18,000 = 3,000) stays in the expense; 15,000 moves to Prepaid. Modeled as
 # its own JV per house practice (pilot KT: "use Journal Dr Prepaid Expense /
 # Cr ...; multiple JVs apportioning"), matching how the pilot trainee posted.
-V(date(2026, 4, 30), "Journal", [("Prepaid Software", "Dr", 15000), ("Software Subscription", "Cr", 15000)],
+V(date(2024, 4, 30), "Journal", [("Prepaid Software", "Dr", 15000), ("Software Subscription", "Cr", 15000)],
   narration="Being 5/6 of the CARESW software subscription (May-Sep) carried to Prepaid",
   concepts=["journal_voucher_basics"], note="Month-end note 2.", order=5)
 # Note 1: rent provision.
-V(date(2026, 4, 30), "Journal", [("Rent", "Dr", 35000), ("Outstanding Expenses", "Cr", 35000)],
+V(date(2024, 4, 30), "Journal", [("Rent", "Dr", 35000), ("Outstanding Expenses", "Cr", 35000)],
   narration="Being April office rent provided as outstanding — unpaid at month-end",
   concepts=["journal_voucher_basics"], note="Month-end note 1.", order=5)
 # Note 3: GST set-off, HEAD-WISE (the learner posts Output/Input CGST, SGST
@@ -313,7 +316,7 @@ if net_payable > 0:
     setoff_legs.append(("GST Payable", "Cr", net_payable))
 else:
     setoff_legs.append(("GST Credit c/f", "Dr", -net_payable))
-V(date(2026, 4, 30), "Journal", setoff_legs,
+V(date(2024, 4, 30), "Journal", setoff_legs,
   narration="Being month-end GST utilisation for April — output set off against input incl. carried-forward credit",
   concepts=["journal_voucher_basics", "gst_classification", "trial_balance_tie_out"],
   note=f"Month-end note 3, head-wise. Output {out_gst:,.2f} vs Input {in_total:,.2f} → net {'payable' if net_payable > 0 else 'credit c/f'} {abs(net_payable):,.2f}. All GST-named ledgers are tie-out-exempt in the engine, so head naming variants do not fail the TB check.", order=5)

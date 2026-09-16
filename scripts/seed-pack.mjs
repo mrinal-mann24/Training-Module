@@ -37,17 +37,19 @@ const FILES = [
 
 // The pilot program's Day-1 message (Shruti's, generalized). {{name}} is
 // replaced per-learner at assignment time (assign-pack-exercise.ts).
+// 2026-09-16: dates moved from 2026 to 2024 with the pack files (timeline
+// shift of 2026-09-09, lib/tutor/timeline.ts; scripts/shift-pack-year.py).
 const DAY1_MESSAGE = `Hi {{name}}.
 
 This is a structured training programme designed to get you client-ready.
 
 Day 1 is a diagnostic. Attached are 4 files: Opening TB (with the company master details), Sales Register, Purchase Register, and Bank Statement. Work through them in Tally independently.
 
-Create the company in Tally using the details in the Opening TB file, and consider Books Begin Date as 1-Apr-2026.
+Create the company in Tally using the details in the Opening TB file, and consider Books Begin Date as 1-Apr-2024.
 
 Submit when you're done:
 - Tally Day Book export (Detailed, XML)
-- Trial Balance as on 30-Apr-2026 (XML)
+- Trial Balance as on 30-Apr-2024 (XML)
 
 Take the time you need and submit when it's ready. If anything on your side is blocked, ask here and I'll help.
 

@@ -21,6 +21,19 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (late night): DIAGNOSTIC PACK MOVED TO 2024 (prepared, not applied)
+
+**Why:** the 2026-09-09 timeline shift (April 2024) never reached the diagnostic pack. The four shared xlsx in `packs/variant-a/` and `packs/variant-a-edu/` and `exercise_packs.day1_message` ("Books Begin Date as 1-Apr-2026", "Trial Balance as on 30-Apr-2026") still said 2026 while `learner_profile.books_begin_date` is 2024-04-01. The educational copy's Month-end Notes also pointed at "30-Apr" bank lines that were re-dated to 02-Apr.
+
+- **`scripts/shift-pack-year.py` (new):** moves every 2026 date token back two years in all sheets (DD-Mon-YYYY, D-Month-YYYY, Month YYYY, "dt 25-Mar-26", bank refs `/N26MMDDnn/` and `/26MMDDnn/` when MMDD is a real date, FY labels, the CIN's incorporation year). Bill numbers (CA26-101), GSTIN/PAN/TAN, amounts and styles untouched. Verifies cell by cell, styles, no 2026 left, running balances. 157 cells changed; idempotent.
+- **`scripts/build-educational-pack.py`:** also re-dates a line-leading day-month pointer of the batch month in a Month-end Notes sheet ("30-Apr" -> "02-Apr"); other months ("7-May-2024") and mid-line dates are left and reported. From the 2024 pack: 94 date cells + 2 notes.
+- **`scripts/apply-pack-year-shift.mjs` (new, not run):** dry run by default; with `--confirm` backs up live objects to `packs/backup-2026/`, replaces `variant-a/*` and `variant-a-edu/*` (sha256-verified), backs up and updates the `exercise_packs` row (day1 dates + 88 narration refs) with shape and concurrency guards. Idempotent.
+- **`scripts/shift-existing-pack-exercises.sql` (new, not run):** preview + rollback-guarded shift of unscored pack exercises' day1 copy and key narrations. All three current pack exercises are scored, so it should update 0 rows.
+- **Repo seeds moved to 2024:** `answer_key.json` narrations, `answer_key_review.md` dates, `seed-pack.mjs` Day-1 message, `derive-blossom-answer-key.py` (BANK_MAP keys, month-end voucher dates). Re-deriving from the shifted files gives the same entries (aliases aside, the known drift) and a byte-identical review doc.
+- **Found, not fixed:** one educational learner still has `books_begin_date` 2026-04-01 (the gate would reject 2024 vouchers); `lib/llm/grounding/rulebook.ts` and `seed/rulebook_extract.txt` examples still use N26/UPI 26 refs; `seed/manager_spec_extract.txt` says 01-Apr-2026 (source extract); the Company Master's "Books beginning from 1-January-2024" disagrees with the Day-1 message's 1-Apr (pre-existing).
+
+**Gates:** `vitest` 753 tests, `tsc` clean. Nothing written to Storage or the database.
+
 ## Session log — 2026-09-16 (late night): EDUCATIONAL MODE DATES ENFORCED IN CODE
 
 **Why:** most learners run TallyPrime Educational Mode. Official Tally help: vouchers save only on the 1st, 2nd and 31st; "for the last day of the month, you can record transactions only on the 31st" and the 28th, 29th and 30th are refused even when they are the month end. So April, June, September, November and February allow only the 1st and 2nd. Until now generated batches relied on a prompt line no code checked (the same prompt also said to spread dates across the month), the GST set-off was dated the real month end (30-Jun, 28-Feb: unpostable), and the diagnostic pack's 99 April vouchers sat on 2nd to 30th.

@@ -13,10 +13,18 @@ lib/tutor/educational-dates.ts:
 
 Monotonic means row order and the bank statement's running balance stay
 valid. Every other cell (amounts, balances, narrations, bank references such
-as "NEFT/N26040201/...", notes), every style, number format, merged range and
+as "NEFT/N24040201/..."), every style, number format, merged range and
 sheet is left exactly as it was. The answer key carries no dates and scoring
 never reads the day of month, so the re-dated copy scores against the same
 key.
+
+2026-09-16 (later): a "Month-end Notes" sheet points at vouchers by day, e.g.
+"30-Apr ₹18,000 software subscription (CARESW bank line)". Once the bank line
+is re-dated to 02-Apr that pointer no longer finds it, so a day-month token at
+the START of a note line that names the batch month (the single month all the
+folder's Date cells share) is re-dated with the same map ("30-Apr" ->
+"02-Apr"). References to other months ("Deposit due by 7-May-2024") and dates
+in the middle of a line are left alone and reported.
 
 Usage:
     python scripts/build-educational-pack.py <input-folder> <output-folder>
@@ -42,6 +50,9 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 TEXT_DATE = re.compile(r"^(\s*)(\d{1,2})-([A-Za-z]{3})-(\d{4})(\s*)$")
 # Only used for the report: date-looking fragments left untouched on purpose.
 EMBEDDED_DATE = re.compile(r"\b\d{1,2}-[A-Za-z]{3,9}(-\d{2,4})?\b")
+NOTES_SHEET = re.compile(r"month-end notes?", re.I)
+# "30-Apr ..." or "30-Apr-2024 ..." at the start of a line.
+NOTE_LEAD_DATE = re.compile(r"^(\s*)(\d{1,2})-([A-Za-z]{3})(?:-(\d{4}))?(?![A-Za-z0-9-])", re.M)
 
 
 def month_has_31(year: int, month: int) -> bool:
@@ -90,12 +101,60 @@ def date_columns(ws):
     return found
 
 
-def rewrite_workbook(src: Path, dst: Path):
+def batch_month(sources: list[Path]):
+    """The one (year, month) every Date cell in the folder shares, else None."""
+    months = set()
+    for src in sources:
+        for ws in openpyxl.load_workbook(src).worksheets:
+            for header_row, column in date_columns(ws):
+                for row_index in range(header_row + 1, ws.max_row + 1):
+                    _same, info = map_value(ws.cell(row=row_index, column=column).value)
+                    if info is not None:
+                        months.add((info[0], info[1]))
+    return months.pop() if len(months) == 1 else None
+
+
+def redate_note_text(text: str, month):
+    """Re-dates line-leading day-month tokens of the batch month. Returns (new_text, left_alone)."""
+    year, month_number = month
+
+    def in_batch(match: re.Match) -> bool:
+        _lead, _day, mon, year_text = match.groups()
+        if mon.title() not in MONTHS or MONTHS.index(mon.title()) + 1 != month_number:
+            return False
+        return year_text is None or int(year_text) == year
+
+    def repl(match: re.Match) -> str:
+        if not in_batch(match):
+            return match.group(0)
+        lead, day_text, mon, year_text = match.groups()
+        new_day = educational_day(year, month_number, int(day_text))
+        suffix = f"-{year_text}" if year_text is not None else ""
+        return f"{lead}{new_day:0{len(day_text)}d}-{mon}{suffix}"
+
+    new_text = NOTE_LEAD_DATE.sub(repl, text)
+    batch_leads = {m.start(2) for m in NOTE_LEAD_DATE.finditer(new_text) if in_batch(m)}
+    left_alone = [m.group(0) for m in EMBEDDED_DATE.finditer(new_text) if m.start() not in batch_leads]
+    return new_text, left_alone
+
+
+def rewrite_workbook(src: Path, dst: Path, month=None):
     wb = openpyxl.load_workbook(src)
     changes = []  # (sheet, coordinate, old, new)
     skipped = []  # non-empty, non-date cells under a Date header
     date_cells = set()  # every date cell, rewritten or already on an allowed day
+    notes_left = []  # (sheet, coordinate, token) dates in notes not re-dated
     for ws in wb.worksheets:
+        if NOTES_SHEET.search(ws.title) and month is not None:
+            for row in ws.iter_rows():
+                for cell in row:
+                    if not isinstance(cell.value, str):
+                        continue
+                    new_value, left_alone = redate_note_text(cell.value, month)
+                    notes_left.extend((ws.title, cell.coordinate, token) for token in left_alone)
+                    if new_value != cell.value:
+                        changes.append((ws.title, cell.coordinate, cell.value, new_value))
+                        cell.value = new_value
         for header_row, column in date_columns(ws):
             for row_index in range(header_row + 1, ws.max_row + 1):
                 cell = ws.cell(row=row_index, column=column)
@@ -111,7 +170,7 @@ def rewrite_workbook(src: Path, dst: Path):
                     cell.value = new_value
     dst.parent.mkdir(parents=True, exist_ok=True)
     wb.save(dst)
-    return changes, skipped, date_cells
+    return changes, skipped, date_cells, notes_left
 
 
 def style_signature(cell):
@@ -126,7 +185,7 @@ def style_signature(cell):
     )
 
 
-def verify(src: Path, dst: Path, expected_changes) -> list[str]:
+def verify(src: Path, dst: Path, expected_changes, batch=None) -> list[str]:
     problems: list[str] = []
     expected = {(sheet, coord): new for sheet, coord, _old, new in expected_changes}
     original = openpyxl.load_workbook(src)
@@ -159,6 +218,19 @@ def verify(src: Path, dst: Path, expected_changes) -> list[str]:
                 year, month, day, _mapped = info
                 if day not in allowed_days(year, month):
                     problems.append(f"{ws_new.title}: {value!r} is not on an allowed day")
+        if NOTES_SHEET.search(ws_new.title) and batch is not None:
+            batch_year, batch_month_number = batch
+            for row in ws_new.iter_rows():
+                for cell in row:
+                    if not isinstance(cell.value, str):
+                        continue
+                    for m in NOTE_LEAD_DATE.finditer(cell.value):
+                        mon = m.group(3).title()
+                        if mon in MONTHS and MONTHS.index(mon) + 1 == batch_month_number and (
+                            m.group(4) is None or int(m.group(4)) == batch_year
+                        ):
+                            if int(m.group(2)) not in allowed_days(batch_year, batch_month_number):
+                                problems.append(f"{ws_new.title}!{cell.coordinate}: note date {m.group(0).strip()!r} not on an allowed day")
     return problems
 
 
@@ -185,18 +257,28 @@ def main() -> int:
         print(f"No .xlsx files in {in_dir}")
         return 2
 
+    month = batch_month(sources)
+    if month is None:
+        print("WARNING: Date cells span more than one month (or none); Month-end Notes are left as they are.")
+    else:
+        print(f"Batch month: {MONTHS[month[1] - 1]}-{month[0]} (Month-end Notes day pointers use this month)")
+
     failed = False
     for src in sources:
         dst = out_dir / src.name
-        changes, skipped, date_cells = rewrite_workbook(src, dst)
-        print(f"\n== {src.name}: {len(changes)} date cell(s) rewritten")
+        changes, skipped, date_cells, notes_left = rewrite_workbook(src, dst, month)
+        print(f"\n== {src.name}: {len(changes)} cell(s) rewritten")
         for sheet, coord, old, new in changes:
             print(f"   {sheet}!{coord}: {old} -> {new}")
         for sheet, coord, value in skipped:
             print(f"   WARNING {sheet}!{coord}: non-date value under a Date header left as is: {value!r}")
         for sheet, coord, value in embedded_dates(src, date_cells):
+            if month is not None and NOTES_SHEET.search(sheet):
+                continue  # reported per token below
             print(f"   note {sheet}!{coord}: date inside text left unchanged: {value!r}")
-        problems = verify(src, dst, changes)
+        for sheet, coord, token in notes_left:
+            print(f"   note {sheet}!{coord}: Month-end Notes date not re-dated (not a line-leading {month and MONTHS[month[1] - 1]} pointer): {token!r}")
+        problems = verify(src, dst, changes, month)
         if problems:
             failed = True
             print(f"   VERIFY FAILED ({len(problems)}):")

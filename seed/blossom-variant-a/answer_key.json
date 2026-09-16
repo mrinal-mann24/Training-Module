@@ -103,7 +103,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DT-99",
-      "narration": "NEFT/N26040201/DECCAN/MARCHPMT — Deccan Traders",
+      "narration": "NEFT/N24040201/DECCAN/MARCHPMT — Deccan Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -129,7 +129,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DT-99",
-      "narration": "NEFT/N26040201/DECCAN/MARCHPMT — Deccan Traders",
+      "narration": "NEFT/N24040201/DECCAN/MARCHPMT — Deccan Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -249,7 +249,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-M-101",
-      "narration": "UPI/26040301/KAREMP/MARCH-INV — Karnataka Emporium",
+      "narration": "UPI/24040301/KAREMP/MARCH-INV — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -271,7 +271,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-M-101",
-      "narration": "UPI/26040301/KAREMP/MARCH-INV — Karnataka Emporium",
+      "narration": "UPI/24040301/KAREMP/MARCH-INV — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -476,7 +476,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "MS-M1",
-      "narration": "NEFT/N26040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
+      "narration": "NEFT/N24040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -502,7 +502,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "MS-M1",
-      "narration": "NEFT/N26040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
+      "narration": "NEFT/N24040501/MUMBAISUP/MARCHPMT — Mumbai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -524,7 +524,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CW-101",
-      "narration": "NEFT/N26040502/COIMWHL/PMT — Coimbatore Wholesale",
+      "narration": "NEFT/N24040502/COIMWHL/PMT — Coimbatore Wholesale",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -550,7 +550,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CW-101",
-      "narration": "NEFT/N26040502/COIMWHL/PMT — Coimbatore Wholesale",
+      "narration": "NEFT/N24040502/COIMWHL/PMT — Coimbatore Wholesale",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -620,7 +620,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-010",
-      "narration": "UPI/26040601/LUDWOODS/PMT — Ludhiana Woodworks",
+      "narration": "UPI/24040601/LUDWOODS/PMT — Ludhiana Woodworks",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -642,7 +642,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-010",
-      "narration": "UPI/26040601/LUDWOODS/PMT — Ludhiana Woodworks",
+      "narration": "UPI/24040601/LUDWOODS/PMT — Ludhiana Woodworks",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -805,7 +805,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-M-102",
-      "narration": "UPI/26040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
+      "narration": "UPI/24040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -827,7 +827,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-M-102",
-      "narration": "UPI/26040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
+      "narration": "UPI/24040701/DBAZAAR/MARCH-INV — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -940,7 +940,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "AI-201",
-      "narration": "NEFT/N26040801/AHMDIMPT/PMT — Ahmedabad Import",
+      "narration": "NEFT/N24040801/AHMDIMPT/PMT — Ahmedabad Import",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -966,7 +966,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "AI-201",
-      "narration": "NEFT/N26040801/AHMDIMPT/PMT — Ahmedabad Import",
+      "narration": "NEFT/N24040801/AHMDIMPT/PMT — Ahmedabad Import",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1079,7 +1079,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CS-092",
-      "narration": "NEFT/N26040901/CHENSUP/PMT — Chennai Suppliers",
+      "narration": "NEFT/N24040901/CHENSUP/PMT — Chennai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1105,7 +1105,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CS-092",
-      "narration": "NEFT/N26040901/CHENSUP/PMT — Chennai Suppliers",
+      "narration": "NEFT/N24040901/CHENSUP/PMT — Chennai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1175,7 +1175,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-011",
-      "narration": "UPI/26041001/RAJHOME/PMT — Rajasthan Home Decor",
+      "narration": "UPI/24041001/RAJHOME/PMT — Rajasthan Home Decor",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1197,7 +1197,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-011",
-      "narration": "UPI/26041001/RAJHOME/PMT — Rajasthan Home Decor",
+      "narration": "UPI/24041001/RAJHOME/PMT — Rajasthan Home Decor",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1267,7 +1267,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-012",
-      "narration": "NEFT/N26041101/COIMINT/PMT — Coimbatore Interiors",
+      "narration": "NEFT/N24041101/COIMINT/PMT — Coimbatore Interiors",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1289,7 +1289,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-012",
-      "narration": "NEFT/N26041101/COIMINT/PMT — Coimbatore Interiors",
+      "narration": "NEFT/N24041101/COIMINT/PMT — Coimbatore Interiors",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1406,7 +1406,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "ADV-01",
-      "narration": "UPI/26041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
+      "narration": "UPI/24041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1428,7 +1428,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "ADV-01",
-      "narration": "UPI/26041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
+      "narration": "UPI/24041201/KHANDICRAFT/ORDR — Kerala Handicrafts",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1498,7 +1498,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-013",
-      "narration": "UPI/26041301/AHMDELITE/PMT — Ahmedabad Elite",
+      "narration": "UPI/24041301/AHMDELITE/PMT — Ahmedabad Elite",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1520,7 +1520,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-013",
-      "narration": "UPI/26041301/AHMDELITE/PMT — Ahmedabad Elite",
+      "narration": "UPI/24041301/AHMDELITE/PMT — Ahmedabad Elite",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1724,7 +1724,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DT-115",
-      "narration": "NEFT/N26041501/DECCAN/APRIL-PMT — Deccan Traders",
+      "narration": "NEFT/N24041501/DECCAN/APRIL-PMT — Deccan Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1750,7 +1750,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DT-115",
-      "narration": "NEFT/N26041501/DECCAN/APRIL-PMT — Deccan Traders",
+      "narration": "NEFT/N24041501/DECCAN/APRIL-PMT — Deccan Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1776,7 +1776,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-015",
-      "narration": "UPI/26041502/VIZAGFURN/PMT — Vizag Furnishings",
+      "narration": "UPI/24041502/VIZAGFURN/PMT — Vizag Furnishings",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1798,7 +1798,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-015",
-      "narration": "UPI/26041502/VIZAGFURN/PMT — Vizag Furnishings",
+      "narration": "UPI/24041502/VIZAGFURN/PMT — Vizag Furnishings",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -1864,7 +1864,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "MS-B1, MS-B2, MS-B3 (part)",
-      "narration": "NEFT/N26041601/MUMBAISUP/PMT — Mumbai Suppliers",
+      "narration": "NEFT/N24041601/MUMBAISUP/PMT — Mumbai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1890,7 +1890,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "MS-B1, MS-B2, MS-B3 (part)",
-      "narration": "NEFT/N26041601/MUMBAISUP/PMT — Mumbai Suppliers",
+      "narration": "NEFT/N24041601/MUMBAISUP/PMT — Mumbai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1912,7 +1912,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "TT-234",
-      "narration": "NEFT/N26041602/TRICHYTX/PMT — Trichy Textiles",
+      "narration": "NEFT/N24041602/TRICHYTX/PMT — Trichy Textiles",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -1938,7 +1938,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "TT-234",
-      "narration": "NEFT/N26041602/TRICHYTX/PMT — Trichy Textiles",
+      "narration": "NEFT/N24041602/TRICHYTX/PMT — Trichy Textiles",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2059,7 +2059,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-017",
-      "narration": "UPI/26041701/BNGLOCAL/PMT — Bengaluru Local Store",
+      "narration": "UPI/24041701/BNGLOCAL/PMT — Bengaluru Local Store",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2081,7 +2081,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-017",
-      "narration": "UPI/26041701/BNGLOCAL/PMT — Bengaluru Local Store",
+      "narration": "UPI/24041701/BNGLOCAL/PMT — Bengaluru Local Store",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2200,7 +2200,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-001",
-      "narration": "UPI/26041801/KAREMP/PMT — Karnataka Emporium",
+      "narration": "UPI/24041801/KAREMP/PMT — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2222,7 +2222,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-001",
-      "narration": "UPI/26041801/KAREMP/PMT — Karnataka Emporium",
+      "narration": "UPI/24041801/KAREMP/PMT — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2244,7 +2244,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "KT-055",
-      "narration": "NEFT/N26041802/KOLKATRD/PMT — Kolkata Traders",
+      "narration": "NEFT/N24041802/KOLKATRD/PMT — Kolkata Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2270,7 +2270,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "KT-055",
-      "narration": "NEFT/N26041802/KOLKATRD/PMT — Kolkata Traders",
+      "narration": "NEFT/N24041802/KOLKATRD/PMT — Kolkata Traders",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2388,7 +2388,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-014",
-      "narration": "UPI/26041901/KOCHIMOD/PMT — Kochi Modern",
+      "narration": "UPI/24041901/KOCHIMOD/PMT — Kochi Modern",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2410,7 +2410,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-014",
-      "narration": "UPI/26041901/KOCHIMOD/PMT — Kochi Modern",
+      "narration": "UPI/24041901/KOCHIMOD/PMT — Kochi Modern",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2521,7 +2521,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CA26-101",
-      "narration": "NEFT/N26042001/MEHTA/PMT — Mehta & Associates",
+      "narration": "NEFT/N24042001/MEHTA/PMT — Mehta & Associates",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2547,7 +2547,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CA26-101",
-      "narration": "NEFT/N26042001/MEHTA/PMT — Mehta & Associates",
+      "narration": "NEFT/N24042001/MEHTA/PMT — Mehta & Associates",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2569,7 +2569,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CS-093",
-      "narration": "NEFT/N26042002/CHENSUP2/PMT — Chennai Suppliers",
+      "narration": "NEFT/N24042002/CHENSUP2/PMT — Chennai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2595,7 +2595,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "CS-093",
-      "narration": "NEFT/N26042002/CHENSUP2/PMT — Chennai Suppliers",
+      "narration": "NEFT/N24042002/CHENSUP2/PMT — Chennai Suppliers",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2710,7 +2710,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-006",
-      "narration": "UPI/26042101/GUJRETAIL/PMT — Gujarat Retail",
+      "narration": "UPI/24042101/GUJRETAIL/PMT — Gujarat Retail",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2732,7 +2732,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-006",
-      "narration": "UPI/26042101/GUJRETAIL/PMT — Gujarat Retail",
+      "narration": "UPI/24042101/GUJRETAIL/PMT — Gujarat Retail",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2758,7 +2758,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-018",
-      "narration": "UPI/26042102/MYSDECOR/PMT — Mysore Decor",
+      "narration": "UPI/24042102/MYSDECOR/PMT — Mysore Decor",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2780,7 +2780,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-018",
-      "narration": "UPI/26042102/MYSDECOR/PMT — Mysore Decor",
+      "narration": "UPI/24042102/MYSDECOR/PMT — Mysore Decor",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -2846,7 +2846,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "BI-047",
-      "narration": "NEFT/N26042201/BALAJI/PMT — Balaji Interiors",
+      "narration": "NEFT/N24042201/BALAJI/PMT — Balaji Interiors",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2872,7 +2872,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "BI-047",
-      "narration": "NEFT/N26042201/BALAJI/PMT — Balaji Interiors",
+      "narration": "NEFT/N24042201/BALAJI/PMT — Balaji Interiors",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2894,7 +2894,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "BC-078",
-      "narration": "NEFT/N26042202/BNGCLEAN/PMT — Bangalore Cleaning",
+      "narration": "NEFT/N24042202/BNGCLEAN/PMT — Bangalore Cleaning",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -2920,7 +2920,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "BC-078",
-      "narration": "NEFT/N26042202/BNGCLEAN/PMT — Bangalore Cleaning",
+      "narration": "NEFT/N24042202/BNGCLEAN/PMT — Bangalore Cleaning",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3036,7 +3036,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-003",
-      "narration": "UPI/26042301/DBAZAAR/PMT — Delhi Bazaar",
+      "narration": "UPI/24042301/DBAZAAR/PMT — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3058,7 +3058,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-003",
-      "narration": "UPI/26042301/DBAZAAR/PMT — Delhi Bazaar",
+      "narration": "UPI/24042301/DBAZAAR/PMT — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3080,7 +3080,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SL-018",
-      "narration": "NEFT/N26042301/SLEGAL/PMT — Sharma Legal",
+      "narration": "NEFT/N24042301/SLEGAL/PMT — Sharma Legal",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3106,7 +3106,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SL-018",
-      "narration": "NEFT/N26042301/SLEGAL/PMT — Sharma Legal",
+      "narration": "NEFT/N24042301/SLEGAL/PMT — Sharma Legal",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3128,7 +3128,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "ADV-02",
-      "narration": "NEFT/N26042401/BHARATMAC/ADV — Bharat Machinery",
+      "narration": "NEFT/N24042401/BHARATMAC/ADV — Bharat Machinery",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3154,7 +3154,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "ADV-02",
-      "narration": "NEFT/N26042401/BHARATMAC/ADV — Bharat Machinery",
+      "narration": "NEFT/N24042401/BHARATMAC/ADV — Bharat Machinery",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3176,7 +3176,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "VV-042",
-      "narration": "NEFT/N26042402/VIZAGV/PMT — Vizag Vendors",
+      "narration": "NEFT/N24042402/VIZAGV/PMT — Vizag Vendors",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3202,7 +3202,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "VV-042",
-      "narration": "NEFT/N26042402/VIZAGV/PMT — Vizag Vendors",
+      "narration": "NEFT/N24042402/VIZAGV/PMT — Vizag Vendors",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3363,7 +3363,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SA-101",
-      "narration": "NEFT/N26042501/SIGNADV/PMT — Signage Advertising",
+      "narration": "NEFT/N24042501/SIGNADV/PMT — Signage Advertising",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3389,7 +3389,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SA-101",
-      "narration": "NEFT/N26042501/SIGNADV/PMT — Signage Advertising",
+      "narration": "NEFT/N24042501/SIGNADV/PMT — Signage Advertising",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3507,7 +3507,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-020",
-      "narration": "UPI/26042601/NAGPURRT/PMT — Nagpur Retail",
+      "narration": "UPI/24042601/NAGPURRT/PMT — Nagpur Retail",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3529,7 +3529,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-020",
-      "narration": "UPI/26042601/NAGPURRT/PMT — Nagpur Retail",
+      "narration": "UPI/24042601/NAGPURRT/PMT — Nagpur Retail",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3551,7 +3551,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "HR-118",
-      "narration": "NEFT/N26042602/HERORENT/PMT — Hero Rentals",
+      "narration": "NEFT/N24042602/HERORENT/PMT — Hero Rentals",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3577,7 +3577,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "HR-118",
-      "narration": "NEFT/N26042602/HERORENT/PMT — Hero Rentals",
+      "narration": "NEFT/N24042602/HERORENT/PMT — Hero Rentals",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3739,7 +3739,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-004",
-      "narration": "UPI/26042701/CHENHS/PMT — Chennai Home Store",
+      "narration": "UPI/24042701/CHENHS/PMT — Chennai Home Store",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3761,7 +3761,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-004",
-      "narration": "UPI/26042701/CHENHS/PMT — Chennai Home Store",
+      "narration": "UPI/24042701/CHENHS/PMT — Chennai Home Store",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3783,7 +3783,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DD-455",
-      "narration": "NEFT/N26042702/DELDIR/PMT — Delivery Direct",
+      "narration": "NEFT/N24042702/DELDIR/PMT — Delivery Direct",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3809,7 +3809,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "DD-455",
-      "narration": "NEFT/N26042702/DELDIR/PMT — Delivery Direct",
+      "narration": "NEFT/N24042702/DELDIR/PMT — Delivery Direct",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -3879,7 +3879,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "NEFT/N26042801/PRIYAS/SAL",
+      "narration": "NEFT/N24042801/PRIYAS/SAL",
       "concept_tags": [
         "payment_voucher_basics",
         "narration_discipline"
@@ -3904,7 +3904,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "NEFT/N26042801/PRIYAS/SAL",
+      "narration": "NEFT/N24042801/PRIYAS/SAL",
       "concept_tags": [
         "payment_voucher_basics",
         "narration_discipline"
@@ -3929,7 +3929,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-008",
-      "narration": "UPI/26042803/HYDINTR/PMT — Hyderabad Interiors",
+      "narration": "UPI/24042803/HYDINTR/PMT — Hyderabad Interiors",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -3951,7 +3951,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-008",
-      "narration": "UPI/26042803/HYDINTR/PMT — Hyderabad Interiors",
+      "narration": "UPI/24042803/HYDINTR/PMT — Hyderabad Interiors",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4067,7 +4067,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-001 (bal), INV-016 (part)",
-      "narration": "UPI/26042901/KAREMP/PMT — Karnataka Emporium",
+      "narration": "UPI/24042901/KAREMP/PMT — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4089,7 +4089,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-001 (bal), INV-016 (part)",
-      "narration": "UPI/26042901/KAREMP/PMT — Karnataka Emporium",
+      "narration": "UPI/24042901/KAREMP/PMT — Karnataka Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4115,7 +4115,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-021",
-      "narration": "UPI/26042902/KOLKEMP/PMT — Kolkata Emporium",
+      "narration": "UPI/24042902/KOLKEMP/PMT — Kolkata Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4137,7 +4137,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-021",
-      "narration": "UPI/26042902/KOLKEMP/PMT — Kolkata Emporium",
+      "narration": "UPI/24042902/KOLKEMP/PMT — Kolkata Emporium",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4159,7 +4159,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SC-909",
-      "narration": "NEFT/N26042903/SCLOUD/PMT — Software Cloud LLC",
+      "narration": "NEFT/N24042903/SCLOUD/PMT — Software Cloud LLC",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -4185,7 +4185,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "SC-909",
-      "narration": "NEFT/N26042903/SCLOUD/PMT — Software Cloud LLC",
+      "narration": "NEFT/N24042903/SCLOUD/PMT — Software Cloud LLC",
       "concept_tags": [
         "payment_voucher_basics",
         "bill_by_bill_referencing",
@@ -4257,7 +4257,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "NEFT/N26043001/CARESW/PMT — 6-month software subscription Apr–Sep",
+      "narration": "NEFT/N24043001/CARESW/PMT — 6-month software subscription Apr–Sep",
       "concept_tags": [
         "payment_voucher_basics",
         "narration_discipline"
@@ -4282,7 +4282,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "NEFT/N26043001/CARESW/PMT — 6-month software subscription Apr–Sep",
+      "narration": "NEFT/N24043001/CARESW/PMT — 6-month software subscription Apr–Sep",
       "concept_tags": [
         "payment_voucher_basics",
         "narration_discipline"
@@ -4358,7 +4358,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "UPI/26043002/UNKNOWN/REF",
+      "narration": "UPI/24043002/UNKNOWN/REF",
       "concept_tags": [
         "receipt_voucher_basics",
         "narration_discipline"
@@ -4382,7 +4382,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": null,
-      "narration": "UPI/26043002/UNKNOWN/REF",
+      "narration": "UPI/24043002/UNKNOWN/REF",
       "concept_tags": [
         "receipt_voucher_basics",
         "narration_discipline"
@@ -4407,7 +4407,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-003 (bal)",
-      "narration": "UPI/26043003/DBAZAAR2/PMT — Delhi Bazaar",
+      "narration": "UPI/24043003/DBAZAAR2/PMT — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4429,7 +4429,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-003 (bal)",
-      "narration": "UPI/26043003/DBAZAAR2/PMT — Delhi Bazaar",
+      "narration": "UPI/24043003/DBAZAAR2/PMT — Delhi Bazaar",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4455,7 +4455,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-024",
-      "narration": "UPI/26043004/BNGBOUTQ/PMT — Bengaluru Boutique",
+      "narration": "UPI/24043004/BNGBOUTQ/PMT — Bengaluru Boutique",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
@@ -4477,7 +4477,7 @@
       "tds_rate": null,
       "tds_base": null,
       "bill_reference": "INV-024",
-      "narration": "UPI/26043004/BNGBOUTQ/PMT — Bengaluru Boutique",
+      "narration": "UPI/24043004/BNGBOUTQ/PMT — Bengaluru Boutique",
       "concept_tags": [
         "receipt_voucher_basics",
         "bill_by_bill_referencing",
