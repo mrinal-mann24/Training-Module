@@ -4,6 +4,13 @@ import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill, 
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
 import { BOOKS_BEGIN_LABEL, BOOKS_BEGIN_YEAR } from '@/lib/tutor/timeline';
+import {
+  daysInMonth,
+  educationalDateLabels,
+  monthName,
+  parseMonthLabel,
+  type CalendarMonth,
+} from '@/lib/tutor/educational-dates';
 
 export type AdaptiveExerciseParams = {
   targetConceptTag: ConceptTag;
@@ -180,8 +187,44 @@ Recent transactions already posted in this company:
 ${transactionLines || '(none yet)'}`;
 }
 
+// Educational Mode date rule (2026-09-16): the allowed dates are computed in
+// code and listed exactly, because "the 1st, 2nd or last day" read as the
+// 30th in a 30-day month, a day Tally Educational Mode never saves. The
+// prompt is only a steer: generate-exercise.ts redates the batch in code
+// (educational-dates.ts) whatever the model writes.
+function buildEducationalDateRule(monthLabel: string, month: CalendarMonth | null): string {
+  if (!month) {
+    return `EDUCATIONAL MODE DATE RULE (hard requirement): this learner's Tally
+Educational Mode only saves vouchers dated the 1st, the 2nd or the 31st of a
+month, never the 28th, 29th or 30th. EVERY transaction in this batch must be
+dated on one of those days WITHIN ${monthLabel}; multiple vouchers on the same
+allowed date are fine and expected.`;
+  }
+  const labels = educationalDateLabels(month);
+  const lastDay = daysInMonth(month.monthIndex, month.year);
+  const reason =
+    lastDay === 31
+      ? ''
+      : ` (${monthName(month.monthIndex)} has no 31st, and Tally Educational Mode never saves the ${lastDay}th)`;
+  return `EDUCATIONAL MODE DATE RULE (hard requirement): this learner uses Tally
+Educational Mode, which only saves vouchers dated the 1st, the 2nd or the 31st
+of a month and never the 28th, 29th or 30th, even when that is the last day.
+Every transaction must be dated exactly one of: ${labels.join(', ')}${reason}.
+Multiple vouchers on the same allowed date are fine and expected; any other
+date WITHIN ${monthLabel} makes the voucher unpostable for this learner. Keep
+the dates in step with the transaction order: a later transaction is never
+dated earlier than the one before it.`;
+}
+
 function buildSystemPrompt(params: AdaptiveExerciseParams): string {
   const companyContext = buildCompanyContextBlock(params);
+  const educationalMonth = params.licenseMode === 'educational' ? parseMonthLabel(params.exerciseMonthLabel) : null;
+  // Pointer examples: licensed keeps its spread-out dates; an educational
+  // learner's examples use allowed dates of this batch's month, since a
+  // "05-May" example invites exactly the date Tally will refuse.
+  const exampleDates = educationalMonth
+    ? [educationalDateLabels(educationalMonth)[0], educationalDateLabels(educationalMonth)[1]]
+    : [`05-May-${BOOKS_BEGIN_YEAR}`, `12-May-${BOOKS_BEGIN_YEAR}`];
 
   const escalationInstruction = params.escalationActive
     ? `ESCALATION MODE IS ACTIVE for this concept: the learner has failed it repeatedly
@@ -328,8 +371,12 @@ Ledgers and parties: use ONLY accounts that exist in the company registry
 below, or genuinely new realistic parties introduced by this batch's own
 transactions. Never reference a vague holding account that isn't a real Tally
 ledger ("Wallet", "Money Account") — cash movements go through the company's
-actual Cash and bank ledgers. Spread the transactions across DIFFERENT dates
-in the month (a real batch isn't all posted on one day).
+actual Cash and bank ledgers.${
+    params.licenseMode === 'educational'
+      ? ''
+      : ` Spread the transactions across DIFFERENT dates
+in the month (a real batch isn't all posted on one day).`
+  }
 
 Dates (HARD REQUIREMENT): EVERY transaction in this batch is dated inside
 ${params.exerciseMonthLabel} — no other month, no other year, ever. The
@@ -342,12 +389,7 @@ Indian Rupees.${
     params.licenseMode === 'educational'
       ? `
 
-EDUCATIONAL MODE DATE RULE (hard requirement): this learner's Tally
-Educational Mode only saves vouchers dated the 1st, 2nd, or LAST day of a
-month. EVERY transaction in this batch must be dated on one of those three
-days WITHIN ${params.exerciseMonthLabel} — multiple vouchers on the same
-allowed day are fine and expected. Any other day of the month makes the
-voucher unpostable for this learner.`
+${buildEducationalDateRule(params.exerciseMonthLabel, educationalMonth)}`
       : ''
   }
 
@@ -383,9 +425,9 @@ DOCUMENT-BACKED TRANSACTION TEXT (hard requirement): when a transaction has
 requires_source_document true, its numbered line is a short POINTER, not a
 spelled-out entry — the learner must pull the figures from the document, like
 real work. The pointer states the date, the party, and what happened, then
-directs to the document: "On 05-May-${BOOKS_BEGIN_YEAR}, an invoice arrived from Signage
+directs to the document: "On ${exampleDates[0]}, an invoice arrived from Signage
 Advertising for marketing collaterals: post it from the attached invoice", or
-"On 12-May-${BOOKS_BEGIN_YEAR}, a receipt from Delhi Bazaar landed in the bank: post it from
+"On ${exampleDates[1]}, a receipt from Delhi Bazaar landed in the bank: post it from
 the bank statement". NEVER state the amount, the GST amount or rate, or the
 tax split in a document-backed transaction's text — restating them makes the
 document pointless. (The hidden answer key still carries the exact figures as

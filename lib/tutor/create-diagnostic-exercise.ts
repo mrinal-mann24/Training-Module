@@ -25,11 +25,21 @@ export async function createDiagnosticExercise({
   learnerId,
 }: CreateDiagnosticExerciseParams): Promise<DiagnosticSource> {
   const profile = await getLearnerProfile(supabase, learnerId);
-  const assigned = await assignPackDiagnostic(serviceRoleClient, learnerId, profile?.full_name ?? null);
+  // License mode picks the pack's re-dated Educational Mode files once they
+  // are uploaded (2026-09-16, see resolvePackFilesForLicense).
+  const assigned = await assignPackDiagnostic(
+    serviceRoleClient,
+    learnerId,
+    profile?.full_name ?? null,
+    profile?.license_mode ?? null,
+  );
   if (assigned) {
     return 'pack';
   }
 
-  await generateDiagnosticExercise(serviceRoleClient, learnerId);
+  // The license mode decides the dates (2026-09-16): an Educational Mode
+  // learner can only post on the 1st, 2nd or 31st. No profile row means no
+  // onboarding answer, so the licensed default applies.
+  await generateDiagnosticExercise(serviceRoleClient, learnerId, profile?.license_mode ?? 'licensed');
   return 'generated';
 }

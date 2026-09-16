@@ -1,5 +1,6 @@
 import type { AnswerKey, AnswerKeyEntry, ConceptTag, GeneratedExercise } from '@/lib/schemas/exercise';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
+import { educationalDaysFor } from '@/lib/tutor/educational-dates';
 
 // Month-end GST journals with figures taken from the ledger (2026-09-10
 // meeting: "GST set-off figures were invented, not taken from the books";
@@ -150,6 +151,20 @@ function lastDayOf(monthIndex: number, year: number): number {
   return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
 }
 
+// The set-off's date (2026-09-16): licensed Tally takes the real month end,
+// but Educational Mode never saves the 28th, 29th or 30th, so 30-Jun or
+// 28-Feb made the set-off unpostable. Educational learners get the last
+// ALLOWED day instead: the 31st where the month has one, else the 2nd. The
+// payment (day 2) is appended first, so on a shared 2nd it still carries
+// the lower sequence and precedes the set-off.
+function setOffDay(licenseMode: LicenseMode, monthIndex: number, year: number): number {
+  if (licenseMode === 'educational') {
+    const allowed = educationalDaysFor(monthIndex, year);
+    return allowed[allowed.length - 1];
+  }
+  return lastDayOf(monthIndex, year);
+}
+
 function dateLabel(day: number, monthIndex: number, year: number): string {
   return `${String(day).padStart(2, '0')}-${MONTH_ABBREVS[monthIndex]}-${year}`;
 }
@@ -270,7 +285,7 @@ export function appendMonthEndJournals(generated: GeneratedExercise, params: Mon
         ...transactions,
         {
           sequence,
-          description: `On ${dateLabel(lastDayOf(monthIndex, year), monthIndex, year)}, pass the month-end GST set-off journal: utilise the input tax credit against the output GST balance in the statutory order (IGST first, then CGST, then SGST) and transfer the net amount payable to GST Payable. Take every figure from your own GST ledger balances at month end.`,
+          description: `On ${dateLabel(setOffDay(params.licenseMode, monthIndex, year), monthIndex, year)}, pass the month-end GST set-off journal: utilise the input tax credit against the output GST balance in the statutory order (IGST first, then CGST, then SGST) and transfer the net amount payable to GST Payable. Take every figure from your own GST ledger balances at month end.`,
         },
       ];
       entries = [

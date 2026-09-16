@@ -69,8 +69,8 @@ export function OnboardingForm() {
 
         {licenseMode === 'educational' && (
           <p className="text-sm leading-relaxed text-day-muted">
-            In Educational Mode, Tally restricts voucher entry to the 1st, 2nd, and last day of
-            any month.
+            In Educational Mode, Tally only saves vouchers dated the 1st, 2nd or 31st of a month,
+            so a month without a 31st allows only the 1st and 2nd.
           </p>
         )}
 

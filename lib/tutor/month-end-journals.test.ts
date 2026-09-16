@@ -171,6 +171,63 @@ describe('appendMonthEndJournals', () => {
     expect(nothingPayable.appended.payment).toBe(false);
   });
 
+  it('dates the set-off on the 31st for educational learners in a 31-day month (2026-09-16)', () => {
+    const result = appendMonthEndJournals(batch, {
+      priorKeys,
+      concepts: ['gst_set_off', 'gst_payment'],
+      month: { monthIndex: 4, year: 2025 },
+      licenseMode: 'educational',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 500000,
+    });
+    expect(result.generated.transactions[1].description).toContain('On 02-May-2025');
+    expect(result.generated.transactions[2].description).toContain('On 31-May-2025');
+  });
+
+  it('dates the set-off on the 2nd, after the payment, for educational learners in a 30-day month and February', () => {
+    for (const month of [
+      { monthIndex: 5, year: 2025, label: 'Jun-2025' },
+      { monthIndex: 1, year: 2025, label: 'Feb-2025' },
+      { monthIndex: 1, year: 2028, label: 'Feb-2028' },
+    ]) {
+      const result = appendMonthEndJournals(batch, {
+        priorKeys,
+        concepts: ['gst_set_off', 'gst_payment'],
+        month,
+        licenseMode: 'educational',
+        bankAccount: 'HDFC Bank — 1234',
+        bankAfterBatch: 500000,
+      });
+      const [, payment, setOff] = result.generated.transactions;
+      expect(payment.description).toContain(`On 02-${month.label}`);
+      expect(payment.description).toContain('pay the GST liability');
+      expect(setOff.description).toContain(`On 02-${month.label}`);
+      expect(setOff.description).toContain('set-off');
+      expect(payment.sequence).toBeLessThan(setOff.sequence);
+    }
+  });
+
+  it('keeps the real month end for licensed learners in a 30-day month and a leap February', () => {
+    const june = appendMonthEndJournals(batch, {
+      priorKeys,
+      concepts: ['gst_set_off'],
+      month: { monthIndex: 5, year: 2025 },
+      licenseMode: 'licensed',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 500000,
+    });
+    expect(june.generated.transactions[1].description).toContain('On 30-Jun-2025');
+    const leapFebruary = appendMonthEndJournals(batch, {
+      priorKeys,
+      concepts: ['gst_set_off'],
+      month: { monthIndex: 1, year: 2024 },
+      licenseMode: 'licensed',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 500000,
+    });
+    expect(leapFebruary.generated.transactions[1].description).toContain('On 29-Feb-2024');
+  });
+
   it('keeps a reverse-charge journal, which touches both GST sides but is a transaction of the month, not the set-off', () => {
     const withRcm: GeneratedExercise = {
       ...batch,

@@ -31,8 +31,17 @@ describe('createDiagnosticExercise', () => {
     await expect(createDiagnosticExercise(PARAMS)).resolves.toBe('pack');
 
     expect(getLearnerProfile).toHaveBeenCalledWith(userClient, 'learner-1');
-    expect(assignPackDiagnostic).toHaveBeenCalledWith(serviceClient, 'learner-1', 'Asha Rao');
+    expect(assignPackDiagnostic).toHaveBeenCalledWith(serviceClient, 'learner-1', 'Asha Rao', null);
     expect(generateDiagnosticExercise).not.toHaveBeenCalled();
+  });
+
+  it("passes an educational learner's license mode to the pack assignment (2026-09-16)", async () => {
+    vi.mocked(getLearnerProfile).mockResolvedValue({ full_name: 'Asha Rao', license_mode: 'educational' } as LearnerProfile);
+    vi.mocked(assignPackDiagnostic).mockResolvedValue({ id: 'exercise-pack' });
+
+    await expect(createDiagnosticExercise(PARAMS)).resolves.toBe('pack');
+
+    expect(assignPackDiagnostic).toHaveBeenCalledWith(serviceClient, 'learner-1', 'Asha Rao', 'educational');
   });
 
   it('passes a null name when the learner has no profile row', async () => {
@@ -41,7 +50,7 @@ describe('createDiagnosticExercise', () => {
 
     await createDiagnosticExercise(PARAMS);
 
-    expect(assignPackDiagnostic).toHaveBeenCalledWith(serviceClient, 'learner-1', null);
+    expect(assignPackDiagnostic).toHaveBeenCalledWith(serviceClient, 'learner-1', null, null);
   });
 
   it('falls back to the generated diagnostic on the service-role client when no pack is seeded', async () => {
@@ -51,7 +60,27 @@ describe('createDiagnosticExercise', () => {
 
     await expect(createDiagnosticExercise(PARAMS)).resolves.toBe('generated');
 
-    expect(generateDiagnosticExercise).toHaveBeenCalledWith(serviceClient, 'learner-1');
+    expect(generateDiagnosticExercise).toHaveBeenCalledWith(serviceClient, 'learner-1', 'licensed');
+  });
+
+  it("passes an educational learner's license mode to the generated diagnostic so its dates are postable (2026-09-16)", async () => {
+    vi.mocked(getLearnerProfile).mockResolvedValue({ full_name: 'Asha Rao', license_mode: 'educational' } as LearnerProfile);
+    vi.mocked(assignPackDiagnostic).mockResolvedValue(null);
+    vi.mocked(generateDiagnosticExercise).mockResolvedValue({ id: 'exercise-generated' });
+
+    await createDiagnosticExercise(PARAMS);
+
+    expect(generateDiagnosticExercise).toHaveBeenCalledWith(serviceClient, 'learner-1', 'educational');
+  });
+
+  it('defaults to licensed when the learner has no profile row', async () => {
+    vi.mocked(getLearnerProfile).mockResolvedValue(null);
+    vi.mocked(assignPackDiagnostic).mockResolvedValue(null);
+    vi.mocked(generateDiagnosticExercise).mockResolvedValue({ id: 'exercise-generated' });
+
+    await createDiagnosticExercise(PARAMS);
+
+    expect(generateDiagnosticExercise).toHaveBeenCalledWith(serviceClient, 'learner-1', 'licensed');
   });
 
   it('lets a failed profile read propagate before anything is assigned', async () => {

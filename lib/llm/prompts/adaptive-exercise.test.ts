@@ -65,6 +65,42 @@ describe('buildAdaptivePrompt company and month pinning (5-point review, 2026-09
   });
 });
 
+describe('Educational Mode dates in the prompt (2026-09-16)', () => {
+  it('lists the exact allowed dates of a 31-day month', () => {
+    const prompt = systemPrompt(params({ licenseMode: 'educational' }));
+    expect(prompt).toContain('Every transaction must be dated exactly one of: 01-May-2026, 02-May-2026, 31-May-2026.');
+  });
+
+  it('lists only the 1st and 2nd for a 30-day month, and says why', () => {
+    const prompt = systemPrompt(params({ licenseMode: 'educational', exerciseMonthLabel: 'June 2024' }));
+    expect(prompt).toContain(
+      'Every transaction must be dated exactly one of: 01-Jun-2024, 02-Jun-2024 (June has no 31st, and Tally Educational Mode never saves the 30th).',
+    );
+    expect(prompt).not.toContain('30-Jun-2024');
+  });
+
+  it('names the 29th for a leap February', () => {
+    const prompt = systemPrompt(params({ licenseMode: 'educational', exerciseMonthLabel: 'February 2028' }));
+    expect(prompt).toContain('01-Feb-2028, 02-Feb-2028 (February has no 31st, and Tally Educational Mode never saves the 29th)');
+  });
+
+  it('drops the spread-the-dates sentence and the 05-/12- pointer examples for educational learners', () => {
+    const prompt = systemPrompt(params({ licenseMode: 'educational', exerciseMonthLabel: 'June 2024' }));
+    expect(prompt).not.toContain('DIFFERENT dates');
+    expect(prompt).not.toMatch(/On (05|12)-May-/);
+    expect(prompt).toContain('"On 01-Jun-2024, an invoice arrived from Signage');
+    expect(prompt).toContain('"On 02-Jun-2024, a receipt from Delhi Bazaar');
+  });
+
+  it('leaves the licensed prompt as it was', () => {
+    const prompt = systemPrompt(params());
+    expect(prompt).toContain('Spread the transactions across DIFFERENT dates\nin the month');
+    expect(prompt).toMatch(/"On 05-May-\d{4}, an invoice arrived/);
+    expect(prompt).toMatch(/"On 12-May-\d{4}, a receipt from Delhi Bazaar/);
+    expect(prompt).not.toContain('EDUCATIONAL MODE DATE RULE');
+  });
+});
+
 describe('overdrawn till instruction (2026-09-02)', () => {
   it('orders a replenishing withdrawal first when opening cash is negative', () => {
     const prompt = systemPrompt(params({ cashPosition: { cash: -70100, bank: 900000 } }));

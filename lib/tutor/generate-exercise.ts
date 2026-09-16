@@ -49,6 +49,7 @@ import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/
 import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
 import { checkBillNumberUniqueness, checkGstArithmetic, checkGstHeadMetadata, checkTdsArithmetic, checkTdsThresholds, priorBillReferences, tdsHistoryFromKeys } from "@/lib/tutor/generation-checks";
 import { appendMonthEndJournals } from "@/lib/tutor/month-end-journals";
+import { checkDatesExist, enforceEducationalDates } from "@/lib/tutor/educational-dates";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -259,6 +260,10 @@ export function selectDiagnosticVariant(learnerId: string): ExerciseVariant {
 export async function generateDiagnosticExercise(
   supabase: SupabaseClient,
   learnerId: string,
+  // Educational Mode dates (2026-09-16): this fallback runs when no pack is
+  // seeded, and its batch has no assigned month, so each date token is
+  // redated within its own month (educational-dates.ts).
+  licenseMode: LicenseMode = "licensed",
 ): Promise<{ id: string }> {
   const variant = selectDiagnosticVariant(learnerId);
 
@@ -281,25 +286,29 @@ export async function generateDiagnosticExercise(
     const parsed = GeneratedExerciseSchema.safeParse(raw);
 
     if (parsed.success) {
+      // Redated before the statement is built, since the statement's rows
+      // and references read their dates from the transaction text.
+      const dated =
+        licenseMode === "educational" ? enforceEducationalDates(parsed.data, null) : parsed.data;
       // Documents first, exercise row last — see prepareSourceDocuments'
       // race note. The legacy generated diagnostic has no company registry
       // yet, so the product's one live company is pinned directly.
       // Statement built by code from the key; the legacy diagnostic's bank
       // opening is whatever its own opening_balances say (0 if none).
-      const openingBank = (parsed.data.answer_key.opening_balances ?? [])
+      const openingBank = (dated.answer_key.opening_balances ?? [])
         .filter((opening) => isBankLedger(opening.account))
         .reduce((sum, opening) => sum + (opening.dr_cr === "Dr" ? opening.amount : -opening.amount), 0);
       const diagnosticStatement =
-        planSourceDocuments(parsed.data).bankLines.length > 0
+        planSourceDocuments(dated).bankLines.length > 0
           ? buildBankStatementContent({
               companyName: "Blossom Retail Pvt Ltd",
               openingBankBalance: openingBank,
-              generated: parsed.data,
+              generated: dated,
             })
           : null;
       const diagnosticExercise = diagnosticStatement
-        ? applyBankReferences(parsed.data, diagnosticStatement.referenceBySequence)
-        : parsed.data;
+        ? applyBankReferences(dated, diagnosticStatement.referenceBySequence)
+        : dated;
       const documents = await prepareSourceDocuments(
         supabase,
         learnerId,
@@ -969,6 +978,14 @@ export function checkCashFeasibility(
   let cash = opening.cash;
   let bank = opening.bank;
 
+  // Walks SEQUENCE order, never date order (2026-09-16). Educational Mode
+  // redating runs after this check and collapses days monotonically onto
+  // 1, 2 and 31, so it cannot reorder transactions whose dates already
+  // rose with their sequence; where the model's dates did not, same-day
+  // ties on the statement fall back to sequence order, which is the order
+  // this walk proved feasible. Sequences are never renumbered to match
+  // dates: the answer key, scoring and coaching all refer to them.
+
   for (const [sequence, legs] of [...bySequence.entries()].sort((a, b) => a[0] - b[0])) {
     for (const leg of legs) {
       const signed = leg.dr_cr === "Dr" ? leg.amount : -leg.amount;
@@ -1049,7 +1066,8 @@ export async function generateAdaptiveExercise(
     weaknesses: ConceptTag[];
   } | null = null,
   // Phase 3 (spec 15): educational-mode learners can only post on the 1st,
-  // 2nd, or last day of a month — the generation prompt enforces the dates.
+  // 2nd, or 31st of a month. The prompt lists the dates and, since
+  // 2026-09-16, the batch is redated in code after generation.
   licenseMode: LicenseMode = "licensed",
   // Month-per-batch (2026-09-01): this exercise's ordinal in the learner's
   // journey — 1 is the diagnostic pack (April 2026), 2 the first adaptive
@@ -1157,6 +1175,9 @@ export async function generateAdaptiveExercise(
         target.escalationActive,
       );
       const monthError = checkBatchMonth(parsed.data, exerciseMonth);
+      // 31-Jun or 30-Feb (2026-09-16): no Tally edition saves a date that
+      // does not exist, for any learner. Hard.
+      const datesExistError = checkDatesExist(parsed.data);
       const documentTextError = checkDocumentBackedDescriptions(parsed.data);
       // Double-entry runs BEFORE cash feasibility in the message order
       // because a single-leg key makes the cash walk blind — fixing the legs
@@ -1183,12 +1204,13 @@ export async function generateAdaptiveExercise(
       const gstHeadError = checkGstHeadMetadata(parsed.data);
       const tdsArithmeticError = checkTdsArithmetic(parsed.data);
       const salesInvoiceError = documentsMode ? checkSalesInvoicesBuildable(parsed.data, companyName ?? "Blossom Retail Pvt Ltd") : null;
-      const hardError = [monthError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError, gstHeadError, tdsArithmeticError, salesInvoiceError]
+      const hardError = [monthError, datesExistError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError, gstHeadError, tdsArithmeticError, salesInvoiceError]
         .filter(Boolean)
         .join(" ");
       const batchError = [
         compositionError,
         monthError,
+        datesExistError,
         documentTextError,
         doubleEntryError,
         cashError,
@@ -1252,6 +1274,19 @@ export async function generateAdaptiveExercise(
     bankAccount,
     bankAfterBatch,
   }).generated;
+
+  // Educational Mode dates, guaranteed in code (2026-09-16): the prompt
+  // lists the allowed dates, but nothing checked them, and a batch dated
+  // the 15th could not be posted by an educational learner at all. Every
+  // date token of this month is mapped to 1, 2 or 31 (educationalDayFor)
+  // HERE, before the cleanups, documents mode, the bank statement and the
+  // sales documents, because each of those reads its dates from the
+  // transaction text. The assertion inside enforceEducationalDates throws
+  // if anything unpostable is left; it should be unreachable. Licensed
+  // learners are untouched.
+  if (licenseMode === "educational") {
+    generated = enforceEducationalDates(generated, exerciseMonth);
+  }
 
   generated = stampOpeningPosition(
     scrubOpeningFigureSentences(stripDuplicateTransactionList(generated), cashPosition),

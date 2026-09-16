@@ -21,6 +21,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (late night): EDUCATIONAL MODE DATES ENFORCED IN CODE
+
+**Why:** most learners run TallyPrime Educational Mode. Official Tally help: vouchers save only on the 1st, 2nd and 31st; "for the last day of the month, you can record transactions only on the 31st" and the 28th, 29th and 30th are refused even when they are the month end. So April, June, September, November and February allow only the 1st and 2nd. Until now generated batches relied on a prompt line no code checked (the same prompt also said to spread dates across the month), the GST set-off was dated the real month end (30-Jun, 28-Feb: unpostable), and the diagnostic pack's 99 April vouchers sat on 2nd to 30th.
+
+- **`lib/tutor/educational-dates.ts` (new, pure):** allowed days per month, a monotonic day map (1 stays 1; 2 to 16 become 2; 17 to 31 become 31 when the month has one, else 2), `redateDescription` for both date styles (formatting kept), `enforceEducationalDates` (re-date, then assert), and `checkDatesExist` (31-Jun, 30-Feb) as a hard check for every learner.
+- **Generated batches:** for educational learners the batch is re-dated right after `appendMonthEndJournals` and before documents mode, the bank statement and every document, so invoices, cash memos, bank rows, reference date stamps, notes and the sales register all carry allowed dates. Tested end to end on a June batch. The prompt now lists the exact allowed dates and drops the spread-the-dates sentence and mid-month examples for these learners; the licensed prompt is byte-identical.
+- **GST journals:** set-off on the last allowed day (31st, or the 2nd in a short month), payment stays on the 2nd with the lower sequence.
+- **Generated diagnostic fallback** takes `licenseMode` and is re-dated the same way.
+- **Diagnostic pack:** `scripts/build-educational-pack.py` writes educational copies of the four shared xlsx (94 date cells moved to 01/02-Apr; every other cell, style and row identical; running balances verified). `assignPackDiagnostic` serves `variant-a-edu/` to educational learners only when all four copies exist in Storage, otherwise the original files, so the code is safe before upload. `scripts/upload-educational-pack.mjs` (needs `--confirm`) and `scripts/repoint-educational-pack-exercises.sql` (preview, then a rollback-guarded update) are written but NOT run.
+- **Copy:** onboarding now states the 1st/2nd/31st rule correctly. The walkthrough's educational step is rewritten but held back until the educational pack is uploaded, because it promises correctly dated files.
+- **Found, not fixed:** the Storage pack files and `exercise_packs.day1_message` still say 2026 while `timeline.ts` and the walkthrough use 2024. The pack's Month-end Notes sheet still mentions "30-Apr" for two bank lines now dated 02-Apr.
+
+**Gates:** `tsc`, `eslint`, `vitest` 753 tests.
+
 ## Session log — 2026-09-16 (late night): LANDING NAV SCROLL SQUEEZE
 
 `app/components/site/SiteNav.tsx` only. The dark pill is a `motion.div` that narrows to 48rem and loses 0.5rem of height while the page scrolls down, and expands back on any scroll up or within 80px of the top (8px direction threshold). Uses `useScroll` + `useMotionValueEvent` like `site-motion.ts`, `SITE_DURATION.settle` / `SITE_EASE`, starts expanded on server and client, and stays full size under `useReducedMotion()`. Nav content, Learn dropdown and the mobile panel are unchanged; the mobile panel keeps aligning with the pill. Verified in the browser pane at 1024px and 375px by measuring the pill (945x68 to 768x60 desktop, 343x56 to 343x48 mobile) and with the mobile menu open while squeezed; `tsc`, `eslint`, `next build` clean.

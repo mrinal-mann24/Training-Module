@@ -62,6 +62,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     score-submission.ts, score-qualitative.ts, ledger-findings.ts, adjudicate-findings.ts, rectification.ts,
       submission-gate.ts, books-reconciliation.ts, month-end-journals.ts
                               → Scoring, findings and the pre-scoring validity gate
+    educational-dates.ts      → Tally Educational Mode dating (1st, 2nd, 31st only), enforced on generated batches (2026-09-16)
     generate-coaching.ts, generate-hint.ts, hint-ladder.ts
                               → Coaching and the hint ladder (includes findReusableDeepHint, 2026-09-15)
     correction-round.ts       → Correction-loop rules (2026-09-16): pure decision of whether a scored
