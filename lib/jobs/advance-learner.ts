@@ -1,6 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { countExercisesForLearner } from '@/lib/db/queries/exercises';
-import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
+import { countExercisesForLearner, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
+import {
+  getHintDepthByConceptForExercise,
+  hintDepthForConcept,
+  insertHintRequest,
+} from '@/lib/db/queries/hint-requests';
+import { determineNextRung } from '@/lib/tutor/hint-ladder';
+import { generateHint } from '@/lib/tutor/generate-hint';
+import { decideCorrection } from '@/lib/tutor/correction-round';
+import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { insertConceptAttempts, getConceptAttempts, getConceptMasteryMap, applyStatePatch } from '@/lib/db/queries/mastery';
 import { recomputeMastery, selectWeakConcept } from '@/lib/tutor/mastery';
 import { generateAdaptiveExercise } from '@/lib/tutor/generate-exercise';
@@ -24,12 +32,19 @@ import type { AnswerKey } from '@/lib/schemas/exercise';
 // (2026-09-09), shared by both scoring jobs. Null on the first scored
 // posting, or when the earlier file cannot be read — the tie-out then falls
 // back to the closing comparison rather than failing the submission.
+//
+// currentExerciseId is excluded from the search (2026-09-16). On a correction
+// round the most recent scored submission is the FAILED round of this same
+// exercise, so without excluding it the tie-out would measure this month's
+// movement against the learner's own wrong version of this month and report
+// mismatches that are pure artefact.
 export async function loadPreviousTrialBalance(
   supabase: SupabaseClient,
   learnerId: string,
   beforeCreatedAt: string,
+  currentExerciseId?: string,
 ): Promise<ParsedTrialBalance | null> {
-  const storagePath = await getPreviousScoredTrialBalancePath(supabase, learnerId, beforeCreatedAt);
+  const storagePath = await getPreviousScoredTrialBalancePath(supabase, learnerId, beforeCreatedAt, currentExerciseId);
   if (!storagePath) {
     return null;
   }
@@ -110,16 +125,22 @@ export async function logAttemptsAndClassifyRectifications(
   supabase: SupabaseClient,
   learnerId: string,
   exerciseId: string,
+  submissionId: string,
   scoringResult: ScoringResult,
 ): Promise<RectificationResult[]> {
-  const hintRungsUsed = await getHintDepthForExercise(supabase, learnerId, exerciseId);
+  // Per concept, not per exercise (2026-09-16): a concept is charged for the
+  // help given ON it, plus any exercise-level "I'm stuck" clicks. Charging
+  // every concept for help on one of them would, with the correction loop
+  // pushing a hint on every failing batch, deny the clean-pass streak to
+  // everything and stall mastery permanently.
+  const hintDepth = await getHintDepthByConceptForExercise(supabase, learnerId, exerciseId);
 
   const attemptsThisExercise = scoringResult.concept_results.map((conceptResult) => ({
     conceptTag: conceptResult.concept_tag,
     result: conceptResult.result,
-    hintRungsUsed,
+    hintRungsUsed: hintDepthForConcept(hintDepth, conceptResult.concept_tag),
   }));
-  await insertConceptAttempts(supabase, learnerId, exerciseId, attemptsThisExercise);
+  await insertConceptAttempts(supabase, learnerId, exerciseId, submissionId, attemptsThisExercise);
 
   const allAttempts = await getConceptAttempts(supabase, learnerId);
   const conceptTagsThisExercise = scoringResult.concept_results.map((result) => result.concept_tag);
@@ -152,11 +173,19 @@ export type NextExerciseOutcome = 'generated' | 'already-exists' | 'all-mastered
 export const REVIEW_EXERCISES_ENABLED = false;
 
 // Generates the learner's next batch, targeting whatever they are now
-// weakest at. Idempotent on `afterIso` (the scored submission's created_at):
-// if any exercise already exists for the learner newer than that, nothing
-// is generated — so an Inngest rerun, or a manual re-trigger for a learner
-// left stranded by the pre-fix multi-part job, can never hand out two
-// batches for one submission.
+// weakest at. Idempotent on `afterIso` — the SCORED EXERCISE's created_at,
+// not the submission's: if any exercise already exists for the learner newer
+// than the one just scored, nothing is generated. One batch per exercise,
+// however many times that exercise is scored.
+//
+// It was keyed on the submission's created_at until 2026-09-16, which was
+// correct while an exercise could only ever be submitted once. Correction
+// rounds break that: round 1's re-upload is NEWER than the next exercise
+// round 0 generated, so the guard would see nothing after it and generate a
+// second batch, with a second difficulty bump. That is precisely the
+// production incident hasScoredSubmissionForExercise was added to stop
+// ("Yeshas re-uploaded December and got two January batches"), which the
+// correction loop deliberately reopens the door to.
 export async function generateNextExercise(
   supabase: SupabaseClient,
   params: {
@@ -244,6 +273,101 @@ export async function generateNextExercise(
     isDocumentsModeUnlocked(currentMastery.values()),
   );
   return 'generated';
+}
+
+export type CorrectionOutcome =
+  | { opened: false }
+  | { opened: true; round: number; conceptTag: string };
+
+// Injected so the decision can be tested without a Supabase double or a live
+// LLM call (code-standards rule 6a). Production passes nothing.
+export type CorrectionDeps = {
+  nextRung: typeof determineNextRung;
+  loadAnswerKey: typeof getExerciseAnswerKeyForScoring;
+  makeHint: typeof generateHint;
+  saveHint: typeof insertHintRequest;
+  advance: typeof generateNextExercise;
+};
+
+// What happens once a submission is scored (2026-09-16): either another
+// correction round opens, or the learner moves on to a new batch. Shared by
+// both scoring jobs for the same reason every other step body here is.
+//
+// Opening a round means pushing the NEXT step of the existing 3-step help
+// ladder for the concept that failed, and NOT generating a new exercise: the
+// learner fixes it in Tally and sends the corrected exports, which are
+// scored against the same answer key (invariant 6).
+//
+// The rung comes from determineNextRung, the same count-based rule the manual
+// help button uses, so a learner who already clicked for help does not get a
+// step they have seen repeated. This is the resubmission signal
+// hint-ladder.ts's own comment asked for: "Revisit if a per-exercise
+// resubmission signal ever gates this."
+export async function openCorrectionRoundOrAdvance(
+  supabase: SupabaseClient,
+  params: {
+    learnerId: string;
+    exercise: ExerciseForLearner;
+    submissionCorrectionRound: number;
+    conceptResults: ScoringResult['concept_results'];
+    licenseMode: LicenseMode;
+  },
+  deps?: Partial<CorrectionDeps>,
+): Promise<CorrectionOutcome> {
+  const nextRung = deps?.nextRung ?? determineNextRung;
+  const loadAnswerKey = deps?.loadAnswerKey ?? getExerciseAnswerKeyForScoring;
+  const makeHint = deps?.makeHint ?? generateHint;
+  const saveHint = deps?.saveHint ?? insertHintRequest;
+  const advance = deps?.advance ?? generateNextExercise;
+
+  const decision = decideCorrection({
+    requiredParts: params.exercise.requiredParts,
+    conceptResults: params.conceptResults,
+    currentRound: params.submissionCorrectionRound,
+  });
+
+  if (decision.kind === 'open') {
+    try {
+      const [rung, answerKey] = await Promise.all([
+        nextRung(supabase, params.learnerId, params.exercise.id),
+        loadAnswerKey(supabase, params.exercise.id, params.learnerId),
+      ]);
+      if (!answerKey) {
+        throw new Error(`Answer key missing for exercise ${params.exercise.id}.`);
+      }
+
+      const hint = await makeHint(params.learnerId, {
+        rung,
+        scenario: params.exercise.scenario,
+        transactions: params.exercise.transactions,
+        answerKey,
+        packMode: params.exercise.packFiles.length > 0,
+        focusConceptTag: decision.focusConceptTag,
+      });
+
+      await saveHint(supabase, params.learnerId, params.exercise.id, hint, decision.focusConceptTag);
+
+      return { opened: true, round: decision.round, conceptTag: decision.focusConceptTag };
+    } catch {
+      // A help step that cannot be generated must not strand the learner with
+      // no hint AND no next batch. Fall through to advancing: the concept is
+      // already logged as failing, so it comes back as the next batch's
+      // target anyway. Never leave a learner permanently stuck
+      // (project-overview.md goal 5) outranks finishing the loop.
+    }
+  }
+
+  await advance(supabase, {
+    learnerId: params.learnerId,
+    previousDifficultyLevel: params.exercise.difficulty_level,
+    licenseMode: params.licenseMode,
+    // The EXERCISE's created_at, never the submission's: see
+    // generateNextExercise's comment. A correction round is newer than the
+    // batch it would otherwise generate.
+    afterIso: params.exercise.created_at,
+  });
+
+  return { opened: false };
 }
 
 // The next exercise's starting difficulty before any reinforcement drop is

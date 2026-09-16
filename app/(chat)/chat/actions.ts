@@ -15,6 +15,7 @@ import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { getExerciseAnswerKey, getLatestDiagnosticExercise, getLatestExercise } from '@/lib/db/queries/exercises';
 import {
   insertSubmission,
+  getLatestScoredSubmissionForExercise,
   getOpenSubmissionForExercise,
   hasScoredSubmissionForExercise,
   updateSubmissionFilePaths,
@@ -23,9 +24,14 @@ import {
 import type { Submission, SubmissionStatus } from '@/lib/db/queries/submissions';
 import type { ValidityError } from '@/lib/tutor/submission-gate';
 import { getFeedbackForLearner } from '@/lib/db/queries/scoring-results';
-import { insertHintRequest, getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
-import { getConceptMasteryMap } from '@/lib/db/queries/mastery';
+import {
+  insertHintRequest,
+  getHintDepthForExercise,
+  getLatestHintForExerciseAfter,
+} from '@/lib/db/queries/hint-requests';
+import { getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
 import { currentMajorModule } from '@/lib/tutor/major-modules';
+import { correctionInviteLine, isCorrectionOpen } from '@/lib/tutor/correction-round';
 import { inngest } from '@/lib/jobs/client';
 import type { Coaching } from '@/lib/schemas/coaching';
 import type { Hint } from '@/lib/schemas/hint';
@@ -254,8 +260,23 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
         : 'This one is answered in writing, not with file uploads. Type your answer in the message box and send it.',
     };
   }
-  if (await hasScoredSubmissionForExercise(supabase, user.id, exercise.id)) {
-    return { status: 'error', error: ALREADY_SCORED_MESSAGE };
+  // A scored exercise takes another submission only while a correction round
+  // is open (2026-09-16): the learner was shown a help step and asked for
+  // corrected exports, and this is them. Outside that, the old refusal
+  // stands, because the next batch is already on its way.
+  const latestScored = await getLatestScoredSubmissionForExercise(supabase, user.id, exercise.id);
+  let correctionRound = 0;
+  if (latestScored) {
+    const anyConceptFailed = await hasFailedConceptForSubmission(supabase, user.id, latestScored.id);
+    const open = isCorrectionOpen({
+      requiredParts: exercise.requiredParts,
+      latestRound: latestScored.correction_round,
+      anyConceptFailed,
+    });
+    if (!open) {
+      return { status: 'error', error: ALREADY_SCORED_MESSAGE };
+    }
+    correctionRound = latestScored.correction_round + 1;
   }
 
   const daybookBuffer = daybookUpload.buffer;
@@ -287,10 +308,16 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
   if (existingSubmission) {
     await updateSubmissionFilePaths(supabase, submissionId, daybookPath, trialbalancePath);
   } else {
-    await insertSubmission(supabase, submissionId, user.id, exercise.id, daybookPath, trialbalancePath, {
-      daybook: daybookFile.name,
-      trialbalance: trialbalanceFile.name,
-    });
+    await insertSubmission(
+      supabase,
+      submissionId,
+      user.id,
+      exercise.id,
+      daybookPath,
+      trialbalancePath,
+      { daybook: daybookFile.name, trialbalance: trialbalanceFile.name },
+      correctionRound,
+    );
   }
 
   await insertSubmissionPart(supabase, submissionId, 'daybook_xml', { storage_path: daybookPath });
@@ -310,6 +337,7 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
     trialbalance_filename: trialbalanceFile.name,
     status: 'validating',
     validity_errors: null,
+    correction_round: correctionRound,
     created_at: new Date().toISOString(),
   };
 
@@ -395,6 +423,9 @@ export async function submitTextPart(text: string, expectedExerciseId?: string):
     id: submissionId,
     learner_id: user.id,
     exercise_id: exercise.id,
+    // Text parts never open a correction round: explain and review batches
+    // are outside the loop (see supportsCorrectionRounds).
+    correction_round: 0,
     daybook_path: null,
     trialbalance_path: null,
     daybook_filename: null,
@@ -584,6 +615,11 @@ export type GetNextExerciseResult =
       moduleTitle: string;
       sourceDocuments: ExerciseSourceDocument[];
     }
+  // A correction round opened instead of a new batch (2026-09-16): the
+  // learner keeps the exercise they have, reads this help step, and sends
+  // corrected exports. Carried on this result rather than a second poll,
+  // because the client is already polling here after every scoring.
+  | { status: 'correction'; hint: Hint; inviteLine: string; round: number }
   | { status: 'not-found' };
 
 // Called by PendingSubmission once its Realtime subscription observes a
@@ -608,8 +644,38 @@ export async function getNextExercise(previousExerciseId: string): Promise<GetNe
   }
 
   const exercise = await getLatestExercise(supabase, user.id);
-  if (!exercise || exercise.id === previousExerciseId) {
+  if (!exercise) {
     return { status: 'not-found' };
+  }
+
+  // Still on the same exercise: either the next batch is still generating
+  // (keep polling) or a correction round opened and this is its help step.
+  if (exercise.id === previousExerciseId) {
+    const latestScored = await getLatestScoredSubmissionForExercise(supabase, user.id, exercise.id);
+    if (!latestScored) {
+      return { status: 'not-found' };
+    }
+
+    const anyConceptFailed = await hasFailedConceptForSubmission(supabase, user.id, latestScored.id);
+    if (
+      !isCorrectionOpen({
+        requiredParts: exercise.requiredParts,
+        latestRound: latestScored.correction_round,
+        anyConceptFailed,
+      })
+    ) {
+      return { status: 'not-found' };
+    }
+
+    // The job writes the hint a moment after scoring flips the status, so a
+    // miss here just means "not yet": the caller keeps polling.
+    const hint = await getLatestHintForExerciseAfter(supabase, user.id, exercise.id, latestScored.created_at);
+    if (!hint) {
+      return { status: 'not-found' };
+    }
+
+    const round = latestScored.correction_round + 1;
+    return { status: 'correction', hint, inviteLine: correctionInviteLine(round), round };
   }
 
   const [hintDepth, masteryMap, sourceDocuments] = await Promise.all([

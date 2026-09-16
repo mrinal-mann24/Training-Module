@@ -1,14 +1,43 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getLearnerProfile, isLearnerOnboarded } from '@/lib/db/queries/learner-profile';
-import { getLatestExercise } from '@/lib/db/queries/exercises';
+import { getLatestExercise, type ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
 import { getLearnerIssues } from '@/lib/db/queries/learner-issues';
-import { getConceptMasteryMap } from '@/lib/db/queries/mastery';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
+import { getLatestScoredSubmissionForExercise } from '@/lib/db/queries/submissions';
 import { currentMajorModule } from '@/lib/tutor/major-modules';
+import { correctionInviteLine, isCorrectionOpen } from '@/lib/tutor/correction-round';
 import { buildChatTimeline } from '@/lib/chat/build-timeline';
 import { isAiaOnboardingDue } from '@/lib/tutor/documents-mode';
 import { ChatShell } from './ChatShell';
+
+// Whether the latest exercise is still open for a corrected re-upload, and
+// the line that says so. Null when it is not.
+async function loadCorrectionInvite(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exercise: ExerciseForLearner,
+): Promise<string | null> {
+  const latestScored = await getLatestScoredSubmissionForExercise(supabase, learnerId, exercise.id);
+  if (!latestScored) {
+    return null;
+  }
+
+  const anyConceptFailed = await hasFailedConceptForSubmission(supabase, learnerId, latestScored.id);
+  if (
+    !isCorrectionOpen({
+      requiredParts: exercise.requiredParts,
+      latestRound: latestScored.correction_round,
+      anyConceptFailed,
+    })
+  ) {
+    return null;
+  }
+
+  return correctionInviteLine(latestScored.correction_round + 1);
+}
 
 export default async function ChatPage() {
   const supabase = await createClient();
@@ -56,8 +85,15 @@ export default async function ChatPage() {
   // server-side on every load, so a refresh never loses the thread.
   const initialModuleTitle = currentMajorModule(masteryMap).title;
 
+  // Correction round (2026-09-16): a learner who left for Tally and came
+  // back must still be told the exercise is waiting for corrected exports.
+  // Derived from rows on every load, never stored, so it cannot go stale.
+  const correctionInvite = initialExercise
+    ? await loadCorrectionInvite(supabase, user.id, initialExercise)
+    : null;
+
   const initialMessages = walkthroughCompleted
-    ? await buildChatTimeline(supabase, user.id, initialModuleTitle)
+    ? await buildChatTimeline(supabase, user.id, initialModuleTitle, correctionInvite)
     : [];
 
   return (

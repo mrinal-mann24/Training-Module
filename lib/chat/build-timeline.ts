@@ -33,6 +33,13 @@ export function assembleTimeline(rows: {
   qaMessages: QaMessage[];
   sourceDocumentsByExercise: Map<string, SourceDocumentCard[]>;
   currentModuleTitle: string;
+  // Set when a correction round is open on the latest exercise (2026-09-16):
+  // the line asking for corrected exports, appended last. The help step
+  // itself is a hint_requests row and comes back with the rest of history;
+  // this line is derived, so it has to be re-derived rather than stored.
+  // Without it a learner who goes off to Tally and comes back reads a hint
+  // with no idea that the exercise is still waiting for them.
+  correctionInvite?: string | null;
 }): ChatMessage[] {
   type TimelineEvent = { at: string; order: number; message: ChatMessage };
   const events: TimelineEvent[] = [];
@@ -148,7 +155,18 @@ export function assembleTimeline(rows: {
     return byTime !== 0 ? byTime : a.order - b.order;
   });
 
-  return events.map((event) => event.message);
+  const messages = events.map((event) => event.message);
+
+  if (rows.correctionInvite) {
+    messages.push({
+      id: 'correction-invite',
+      role: 'assistant',
+      kind: 'walkthrough',
+      content: rows.correctionInvite,
+    });
+  }
+
+  return messages;
 }
 
 // Server-side load-everything wrapper used by the chat page. Uses the
@@ -159,6 +177,7 @@ export async function buildChatTimeline(
   supabase: SupabaseClient,
   learnerId: string,
   currentModuleTitle: string,
+  correctionInvite: string | null = null,
 ): Promise<ChatMessage[]> {
   const [exercises, submissions, feedbacks, hints, qaMessages] = await Promise.all([
     getExercisesForLearner(supabase, learnerId),
@@ -190,5 +209,6 @@ export async function buildChatTimeline(
     qaMessages,
     sourceDocumentsByExercise,
     currentModuleTitle,
+    correctionInvite,
   });
 }

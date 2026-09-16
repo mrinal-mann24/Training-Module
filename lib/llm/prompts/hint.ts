@@ -109,6 +109,12 @@ export type HintPromptContext = {
   // answer key is summarized instead of passed, and steps 2-3 shift to
   // area-naming and method-teaching. See PACK_MODE_INSTRUCTIONS.
   packMode: boolean;
+  // Set when the help is PUSHED by a correction round (2026-09-16) rather
+  // than requested from the help button: scoring already knows which concept
+  // went wrong, so the step is aimed at it instead of the model picking.
+  // Absent for a manual request, where nothing says what the learner is
+  // stuck on. Note this is the concept NAME, never an answer-key value.
+  focusConceptTag?: string;
 };
 
 function buildSystemPrompt(rung: HintStep, packMode: boolean): string {
@@ -125,7 +131,12 @@ function buildUserMessage(context: HintPromptContext): string {
     ? `What this practice set covers (summary only; the answer key itself is withheld in pack mode):\n${JSON.stringify(summarizePackAnswerKey(context.answerKey), null, 2)}`
     : `Hidden answer key (grounding only, never repeat verbatim):\n${buildAnswerKeyContext(context.answerKey)}`;
 
-  return `Exercise scenario:\n${context.scenario}\n\nTransactions:\n${transactionLines}\n\n${registryBlock}\n\n${groundingBlock}\n\nGenerate step ${context.rung} for this exercise.`;
+  const focusBlock =
+    context.focusConceptTag === undefined
+      ? ""
+      : `\n\nThe learner's submission has just been scored and this concept came out wrong: ${context.focusConceptTag.replace(/_/g, " ")}. Aim this step at THAT concept and the transactions it applies to, and set concept_tag to it. Do not help with anything else in the batch.`;
+
+  return `Exercise scenario:\n${context.scenario}\n\nTransactions:\n${transactionLines}\n\n${registryBlock}\n\n${groundingBlock}${focusBlock}\n\nGenerate step ${context.rung} for this exercise.`;
 }
 
 export function buildHintPrompt(context: HintPromptContext): {

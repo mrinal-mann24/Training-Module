@@ -6,6 +6,10 @@ export type ConceptAttempt = {
   id: string;
   learner_id: string;
   exercise_id: string;
+  // Which submission produced this attempt (2026-09-16). Null only on rows
+  // written before correction rounds existed whose scoring_results row has
+  // since been deleted; every new row carries one.
+  submission_id: string | null;
   concept_tag: ConceptTag;
   result: 'pass' | 'fail';
   hint_rungs_used: number;
@@ -26,16 +30,24 @@ export type ConceptMastery = {
 // Never updated or deleted afterward — concept_mastery is derived from this
 // log, this log is never derived from concept_mastery.
 //
-// Idempotent on (learner_id, exercise_id, concept_tag) — see the
-// 2026-09-15 migration's comment: an Inngest step retry after this call
-// already succeeded once must not duplicate the exercise's attempt rows
-// (computeConceptResults already rolls up to one row per concept tag per
-// exercise, so a legitimate call never collides with itself; only a retry
-// of the same call does, and ignoreDuplicates makes that a no-op).
+// Idempotent on (learner_id, exercise_id, concept_tag, submission_id) — an
+// Inngest step retry after this call already succeeded once must not
+// duplicate the submission's attempt rows (computeConceptResults already
+// rolls up to one row per concept tag per submission, so a legitimate call
+// never collides with itself; only a retry of the same call does, and
+// ignoreDuplicates makes that a no-op).
+//
+// submission_id joined that key on 2026-09-16, when correction rounds made a
+// second scoring of the SAME exercise a real event. Without it the guard was
+// swallowing the correction: the upsert matched the round-0 row, ignored the
+// new one, and the learner's fix was recorded nowhere. Keying on the
+// submission keeps the retry guard and keeps concept_attempts the complete
+// append-only trail invariant 5 requires.
 export async function insertConceptAttempts(
   supabase: SupabaseClient,
   learnerId: string,
   exerciseId: string,
+  submissionId: string,
   attempts: { conceptTag: ConceptTag; result: 'pass' | 'fail'; hintRungsUsed: number }[],
 ): Promise<void> {
   if (attempts.length === 0) {
@@ -46,11 +58,12 @@ export async function insertConceptAttempts(
     attempts.map((attempt) => ({
       learner_id: learnerId,
       exercise_id: exerciseId,
+      submission_id: submissionId,
       concept_tag: attempt.conceptTag,
       result: attempt.result,
       hint_rungs_used: attempt.hintRungsUsed,
     })),
-    { onConflict: 'learner_id,exercise_id,concept_tag', ignoreDuplicates: true },
+    { onConflict: 'learner_id,exercise_id,concept_tag,submission_id', ignoreDuplicates: true },
   );
 
   if (error) {
@@ -68,7 +81,7 @@ export async function getConceptAttempts(
 ): Promise<ConceptAttempt[]> {
   const { data, error } = await supabase
     .from('concept_attempts')
-    .select('id, learner_id, exercise_id, concept_tag, result, hint_rungs_used, created_at')
+    .select('id, learner_id, exercise_id, submission_id, concept_tag, result, hint_rungs_used, created_at')
     .eq('learner_id', learnerId)
     .order('created_at', { ascending: true });
 
@@ -77,6 +90,27 @@ export async function getConceptAttempts(
   }
 
   return data ?? [];
+}
+
+// Whether any concept failed on one specific submission (2026-09-16). The
+// chat asks this to decide whether a corrected re-upload is still on offer.
+export async function hasFailedConceptForSubmission(
+  supabase: SupabaseClient,
+  learnerId: string,
+  submissionId: string,
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('concept_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('learner_id', learnerId)
+    .eq('submission_id', submissionId)
+    .eq('result', 'fail');
+
+  if (error) {
+    throw error;
+  }
+
+  return (count ?? 0) > 0;
 }
 
 export async function getConceptMasteryMap(

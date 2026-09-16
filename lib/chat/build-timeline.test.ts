@@ -29,6 +29,7 @@ function submission(id: string, createdAt: string, overrides: Partial<Submission
     trialbalance_path: 'p/trialbalance.xml',
     daybook_filename: 'My Daybook.xml',
     trialbalance_filename: 'My TB.xml',
+    correction_round: 0,
     status: 'scored',
     validity_errors: null,
     created_at: createdAt,

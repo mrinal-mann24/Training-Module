@@ -5,6 +5,7 @@ import { formatExerciseContent } from '@/lib/chat/exercise-content';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
+import type { Hint } from '@/lib/schemas/hint';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { Composer } from './Composer';
@@ -184,6 +185,30 @@ export function ChatShell({
     // An open Smart Send card for the previous exercise turns stale by itself
     // (draftIsStale). Deliberately not handled here: PendingSubmission keeps
     // the onNextExercise it mounted with, so this closure can hold old state.
+  }
+
+  // A correction round opened instead of the next batch (2026-09-16): show
+  // the pushed help step and the line asking for corrected exports. The
+  // exercise deliberately does not change, and hasRequestedHint is set so
+  // the help button reads "Still stuck?" rather than offering step 1 again.
+  function handleCorrectionRound(hint: Hint, inviteLine: string) {
+    setSubmissionMessages((current) => [
+      ...current,
+      {
+        id: `hint-correction-${crypto.randomUUID()}`,
+        role: 'assistant',
+        kind: 'hint',
+        content: '',
+        hint,
+      },
+      {
+        id: `tutor-note-${crypto.randomUUID()}`,
+        role: 'assistant',
+        kind: 'walkthrough',
+        content: inviteLine,
+      },
+    ]);
+    setHasRequestedHint(true);
   }
 
   function appendTutorNote(content: string) {
@@ -595,6 +620,7 @@ export function ChatShell({
               requiredParts={exercise.requiredParts}
               onResult={handleSubmissionResult}
               onNextExercise={handleNextExercise}
+              onCorrectionRound={handleCorrectionRound}
             />
           ))}
 

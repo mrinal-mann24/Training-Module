@@ -17,7 +17,7 @@ import { recordSubmissionScore } from '@/lib/llm/tracing';
 import {
   logAttemptsAndClassifyRectifications,
   recomputeMasteryAndModuleProgress,
-  generateNextExercise,
+  openCorrectionRoundOrAdvance,
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
@@ -183,7 +183,12 @@ export const waitForSubmission = inngest.createFunction(
             }
             // Movement-based tie-out (2026-09-09): measured against the
             // learner's previous scored Trial Balance.
-            const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
+            const previousTrialBalance = await loadPreviousTrialBalance(
+              supabase,
+              submission.learner_id,
+              submission.created_at,
+              exercise.id,
+            );
             const ordinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
             const scored = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, {
               previousTrialBalance,
@@ -266,7 +271,7 @@ export const waitForSubmission = inngest.createFunction(
     const scoredResult = scoringResult;
     const rectifications = scoredResult
       ? await step.run('log-attempts-and-classify-rectification', async () => {
-          return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, scoredResult);
+          return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, submissionId, scoredResult);
         })
       : [];
 
@@ -315,12 +320,18 @@ export const waitForSubmission = inngest.createFunction(
       await recomputeMasteryAndModuleProgress(supabase, submission.learner_id);
     });
 
-    await step.run('generate-next-exercise', async () => {
-      await generateNextExercise(supabase, {
+    // Correction round, or the next batch (2026-09-16), shared with
+    // run-scoring.ts. In practice this job only ever runs for explain and
+    // review batches, which decideCorrection declines, so this advances as
+    // it always did. It goes through the same call anyway so the two jobs
+    // cannot drift, which is the whole reason these step bodies are shared.
+    await step.run('open-correction-or-advance', async () => {
+      return openCorrectionRoundOrAdvance(supabase, {
         learnerId: submission.learner_id,
-        previousDifficultyLevel: exercise.difficulty_level,
+        exercise,
+        submissionCorrectionRound: submission.correction_round,
+        conceptResults: scoringResult?.concept_results ?? [],
         licenseMode: profile.license_mode,
-        afterIso: submission.created_at,
       });
     });
 

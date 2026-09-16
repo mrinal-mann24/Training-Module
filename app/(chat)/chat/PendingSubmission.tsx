@@ -10,6 +10,7 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { SubmissionPartsChecklist } from './SubmissionPartsChecklist';
 import type { ChatMessage } from '@/lib/chat/message';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
+import type { Hint } from '@/lib/schemas/hint';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
 
@@ -33,6 +34,10 @@ type PendingSubmissionProps = {
     moduleTitle: string,
     sourceDocuments: ExerciseSourceDocument[],
   ) => void;
+  // Called instead of onNextExercise when the batch had a concept wrong and
+  // a correction round opened (2026-09-16): the learner keeps this exercise,
+  // reads the help step, and sends corrected exports.
+  onCorrectionRound: (hint: Hint, inviteLine: string) => void;
 };
 
 // One instance per in-flight submission. Owns the Realtime subscription for
@@ -43,6 +48,7 @@ export function PendingSubmission({
   exerciseId,
   requiredParts,
   onResult,
+  onCorrectionRound,
   onNextExercise,
 }: PendingSubmissionProps) {
   const resolvedRef = useRef(false);
@@ -127,6 +133,12 @@ export function PendingSubmission({
                   nextExerciseResult.moduleTitle,
                   nextExerciseResult.sourceDocuments,
                 );
+                return;
+              }
+              // No new batch: this exercise stays open for a correction.
+              // Same terminal condition as 'found' — stop polling.
+              if (nextExerciseResult.status === 'correction') {
+                onCorrectionRound(nextExerciseResult.hint, nextExerciseResult.inviteLine);
                 return;
               }
               if (attempt < NEXT_EXERCISE_POLL_LIMIT) {

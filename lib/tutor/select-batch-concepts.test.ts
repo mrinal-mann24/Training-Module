@@ -13,6 +13,7 @@ function attempt(conceptTag: ConceptTag, result: 'pass' | 'fail', createdAt: str
     id: `${conceptTag}-${createdAt}`,
     learner_id: 'learner-1',
     exercise_id: 'ex-1',
+    submission_id: `sub-${createdAt}`,
     concept_tag: conceptTag,
     result,
     hint_rungs_used: 0,

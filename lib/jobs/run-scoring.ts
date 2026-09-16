@@ -6,7 +6,7 @@ import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissi
 import {
   logAttemptsAndClassifyRectifications,
   recomputeMasteryAndModuleProgress,
-  generateNextExercise,
+  openCorrectionRoundOrAdvance,
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
@@ -122,7 +122,12 @@ export const runScoring = inngest.createFunction(
       }
       // Movement-based tie-out (2026-09-09): measured against the learner's
       // previous scored Trial Balance.
-      const previousTrialBalance = await loadPreviousTrialBalance(supabase, submission.learner_id, submission.created_at);
+      const previousTrialBalance = await loadPreviousTrialBalance(
+        supabase,
+        submission.learner_id,
+        submission.created_at,
+        exercise.id,
+      );
       // April of a new financial year (2026-09-11): Tally restarts the
       // profit-and-loss ledgers, so their movement is measured from zero.
       const ordinal = await loadExerciseOrdinal(supabase, submission.learner_id, exercise.id);
@@ -155,7 +160,7 @@ export const runScoring = inngest.createFunction(
     // classification as input, so this step must precede generate-coaching,
     // ahead of where Unit 09 originally placed the equivalent logging.
     const rectifications = await step.run('log-attempts-and-classify-rectification', async () => {
-      return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, scoringResult);
+      return logAttemptsAndClassifyRectifications(supabase, submission.learner_id, exercise.id, submissionId, scoringResult);
     });
 
     const feedback = await step.run('generate-coaching', async () => {
@@ -211,21 +216,23 @@ export const runScoring = inngest.createFunction(
       await recomputeMasteryAndModuleProgress(supabase, submission.learner_id);
     });
 
-    // Next-exercise generation (Unit 09): triggers automatically once
-    // feedback is delivered, same auto-delivery pattern as the diagnostic in
-    // Unit 04 — the learner doesn't have to ask. Targets whatever the
-    // learner is now actually weakest at, factoring in the reinforcement/
-    // escalation state the recompute step above just wrote.
-    await step.run('generate-next-exercise', async () => {
-      await generateNextExercise(supabase, {
+    // Correction round, or the next batch (2026-09-16). A batch with a
+    // failing concept does not hand out a new exercise: it pushes the next
+    // help step and waits for corrected exports. Only when nothing failed,
+    // or the three rounds are used up, does the next batch generate — the
+    // same auto-delivery as before, targeting whatever the learner is now
+    // weakest at given the recompute step above.
+    const correction = await step.run('open-correction-or-advance', async () => {
+      return openCorrectionRoundOrAdvance(supabase, {
         learnerId: submission.learner_id,
-        previousDifficultyLevel: exercise.difficulty_level,
+        exercise,
+        submissionCorrectionRound: submission.correction_round,
+        conceptResults: scoringResult.concept_results,
         licenseMode: profile.license_mode,
-        afterIso: submission.created_at,
       });
     });
 
-    return { status: 'scored', submissionId };
+    return { status: 'scored', submissionId, correction };
   },
 );
 

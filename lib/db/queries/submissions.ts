@@ -16,8 +16,14 @@ export type Submission = {
   trialbalance_filename: string | null;
   status: SubmissionStatus;
   validity_errors: ValidityError[] | null;
+  // Which round of this exercise this submission is (2026-09-16): 0 = the
+  // first attempt, 1..3 = corrections sent after help steps 1, 2 and 3.
+  correction_round: number;
   created_at: string;
 };
+
+const SUBMISSION_SELECT =
+  'id, learner_id, exercise_id, daybook_path, trialbalance_path, daybook_filename, trialbalance_filename, status, validity_errors, correction_round, created_at';
 
 // Unit 11: daybook_path/trialbalance_path are nullable — a 'review' exercise's
 // submission has no file parts at all (required_parts is just review_text),
@@ -39,6 +45,7 @@ export async function insertSubmission(
   daybookPath: string | null,
   trialbalancePath: string | null,
   filenames?: { daybook: string | null; trialbalance: string | null },
+  correctionRound = 0,
 ): Promise<{ id: string }> {
   const { data, error } = await supabase
     .from('submissions')
@@ -51,6 +58,7 @@ export async function insertSubmission(
       daybook_filename: filenames?.daybook ?? null,
       trialbalance_filename: filenames?.trialbalance ?? null,
       status: 'validating',
+      correction_round: correctionRound,
     })
     .select('id')
     .single();
@@ -76,7 +84,7 @@ export async function getOpenSubmissionForExercise(
 ): Promise<Submission | null> {
   const { data, error } = await supabase
     .from('submissions')
-    .select('id, learner_id, exercise_id, daybook_path, trialbalance_path, daybook_filename, trialbalance_filename, status, validity_errors, created_at')
+    .select(SUBMISSION_SELECT)
     .eq('learner_id', learnerId)
     .eq('exercise_id', exerciseId)
     .in('status', ['validating', 'scoring'])
@@ -91,12 +99,43 @@ export async function getOpenSubmissionForExercise(
   return data;
 }
 
-// A scored exercise must not accept another submission: the scoring job
-// generates the next exercise a few minutes after the status flips to
-// 'scored', and during that window getLatestExercise still returns the old
-// one. Yeshas re-uploaded December inside that window (2026-09-07) and got
-// two January batches plus duplicated concept attempts. 'invalid' rows do
-// not count — a gate-rejected upload must stay re-submittable.
+// The most recent SCORED submission for an exercise (2026-09-16), which is
+// the round the correction loop counts from. Null before the first scoring.
+export async function getLatestScoredSubmissionForExercise(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exerciseId: string,
+): Promise<{ id: string; correction_round: number; created_at: string } | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('id, correction_round, created_at')
+    .eq('learner_id', learnerId)
+    .eq('exercise_id', exerciseId)
+    .eq('status', 'scored')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+// A scored exercise must not accept another submission UNLESS a correction
+// round is open for it (2026-09-16): the scoring job generates the next
+// exercise a few minutes after the status flips to 'scored', and during that
+// window getLatestExercise still returns the old one. Yeshas re-uploaded
+// December inside that window (2026-09-07) and got two January batches plus
+// duplicated concept attempts. 'invalid' rows do not count — a gate-rejected
+// upload must stay re-submittable.
+//
+// The correction loop reopens that door deliberately, and closes the hole it
+// left: generateNextExercise is now keyed on the exercise rather than the
+// submission, so no number of correction rounds can produce a second batch,
+// and concept_attempts keys on the submission, so the rounds append instead
+// of colliding.
 export async function hasScoredSubmissionForExercise(
   supabase: SupabaseClient,
   learnerId: string,
@@ -162,7 +201,7 @@ export async function getSubmission(
 ): Promise<Submission | null> {
   const { data, error } = await supabase
     .from('submissions')
-    .select('id, learner_id, exercise_id, daybook_path, trialbalance_path, daybook_filename, trialbalance_filename, status, validity_errors, created_at')
+    .select(SUBMISSION_SELECT)
     .eq('id', submissionId)
     .maybeSingle();
 
@@ -196,17 +235,31 @@ export async function updateSubmissionStatus(
 // submissions.trialbalance_path first and falls back to the
 // trialbalance_xml submission part, since the multi-part path records the
 // file there. Null when this is the learner's first scored posting.
+//
+// excludeExerciseId (2026-09-16) keeps a correction round from measuring
+// movement against the learner's OWN earlier, wrong books: on a re-upload
+// the most recent scored submission is the failed round of the same
+// exercise, so without this the tie-out would compare this month against a
+// broken version of this month and report nonsense. The baseline must be the
+// last scored submission of a DIFFERENT, earlier exercise.
 export async function getPreviousScoredTrialBalancePath(
   supabase: SupabaseClient,
   learnerId: string,
   beforeCreatedAt: string,
+  excludeExerciseId?: string,
 ): Promise<string | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('submissions')
     .select('id, trialbalance_path')
     .eq('learner_id', learnerId)
     .eq('status', 'scored')
-    .lt('created_at', beforeCreatedAt)
+    .lt('created_at', beforeCreatedAt);
+
+  if (excludeExerciseId !== undefined) {
+    query = query.neq('exercise_id', excludeExerciseId);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(5);
 

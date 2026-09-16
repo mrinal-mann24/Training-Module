@@ -12,6 +12,7 @@ function attempt(
     id: `attempt-${overrides.created_at}`,
     learner_id: 'learner-1',
     exercise_id: `exercise-${overrides.created_at}`,
+    submission_id: `submission-${overrides.created_at}`,
     concept_tag: CONCEPT,
     hint_rungs_used: 0,
     ...overrides,
