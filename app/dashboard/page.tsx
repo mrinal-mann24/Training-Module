@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isLearnerOnboarded } from "@/lib/db/queries/learner-profile";
 import { buttonVariants } from "@/app/components/ui/button";
-import { logOut } from "./actions";
+import { logOut } from "@/app/(auth)/login/actions";
 
 export default async function DashboardPage() {
   const supabase = await createClient();

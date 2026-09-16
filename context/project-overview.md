@@ -54,6 +54,7 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 - In-chat guided walkthrough before the first exercise (Educational Mode disclosure, submission instructions), stepped through via Next → Next → "I understand"
 - Exercise generation on demand for adaptive drills (scenario + hidden answer key generated together); diagnostic and capstone use authored packs with authored answer keys
 - **Free-form Q&A**: the learner can ask the tutor questions at any time ("which ledger does a background-check payment go to?", "how do I invoice two GST rates on one bill?"), answered grounded in the House Practices Rulebook, the training module reference docs, and the current exercise context — never revealing the active exercise's answer key (Decision 2026-08-19; this was the most-used interaction in the live pilot program)
+- **Smart Send (2026-09-15)**: on explain/review exercises, one Send button with intelligent routing. Questions are answered immediately. Answers are shown for confirmation before being filed and scored. Only a tapped "Submit answer" scores and locks the exercise
 - Graduated 5-rung hint ladder with anti-gaming (probes for explanation before crediting mastery on suspiciously clean answers)
 - Two-lane tone: sharp/Socratic for work coaching, warmer for reflection prompts — never collapsed
 - Reference-video pointers by concept tag and timestamp

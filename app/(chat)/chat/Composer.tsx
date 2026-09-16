@@ -9,9 +9,12 @@ import type { SubmissionPartType } from '@/lib/schemas/exercise';
 // Balance by CONTENT, and wrong counts are handled conversationally by
 // ChatShell (attach 1 → the tutor asks for the second; attach 3+ → it asks
 // whether to proceed with the pair it detects).
+// Smart Send (2026-09-15): the same Send takes a question or the typed
+// explanation/review. The server works out which, and an answer is only filed
+// after the learner confirms it in the chat.
 const TEXT_PART_PLACEHOLDER: Record<'explain_text' | 'review_text', string> = {
-  explain_text: 'Explain why you posted these entries the way you did, then send.',
-  review_text: 'Review the packet above and describe what looks right or wrong, then send.',
+  explain_text: 'Type your explanation, or ask me a question, then send.',
+  review_text: 'Type your review of the packet, or ask me a question, then send.',
 };
 
 type ComposerProps = {
@@ -21,13 +24,9 @@ type ComposerProps = {
   // file count).
   onSend: (files: File[], text: string) => void;
   isSending: boolean;
-  // Which parts the active exercise still needs (Unit 11) — drives the
-  // placeholder and the explain/review "Ask instead" affordance.
+  // Which parts the active exercise still needs (Unit 11); drives the
+  // placeholder.
   requiredParts: SubmissionPartType[];
-  // Explicit question path when the text box doubles as a SUBMISSION part
-  // (explain/review exercises) — everywhere else, plain text IS a question.
-  onAskQuestion: (text: string) => void;
-  isAsking: boolean;
   // Incremented by ChatShell when a send was fully dispatched — clears the
   // attached files. (Files deliberately survive a send that ChatShell turned
   // into a "you're missing the second file" nudge, so the learner just adds
@@ -43,8 +42,6 @@ export function Composer({
   onSend,
   isSending,
   requiredParts,
-  onAskQuestion,
-  isAsking,
   resetSignal,
   hasRequestedHint,
   isRequestingHint,
@@ -70,7 +67,7 @@ export function Composer({
       ? 'review_text'
       : null;
 
-  const busy = isSending || isAsking;
+  const busy = isSending;
   const canSend = !disabled && !busy && (files.length > 0 || textValue.trim().length > 0);
 
   function handleAttach(event: React.ChangeEvent<HTMLInputElement>) {
@@ -92,15 +89,6 @@ export function Composer({
     const text = textValue.trim();
     setTextValue('');
     onSend(files, text);
-  }
-
-  function handleAskInstead() {
-    const text = textValue.trim();
-    if (text.length === 0 || busy) {
-      return;
-    }
-    setTextValue('');
-    onAskQuestion(text);
   }
 
   return (
@@ -169,16 +157,6 @@ export function Composer({
           }
           className="w-full rounded-xl border border-border-default bg-bg-surface px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         />
-        {!disabled && textPartType && (
-          <button
-            type="button"
-            onClick={handleAskInstead}
-            disabled={textValue.trim().length === 0 || busy}
-            className="shrink-0 rounded-md border border-border-default px-3 py-3 text-sm text-text-secondary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isAsking ? 'Asking…' : 'Ask instead'}
-          </button>
-        )}
         {!disabled && (
           <button
             type="button"

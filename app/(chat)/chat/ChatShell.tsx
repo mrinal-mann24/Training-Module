@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useTransition } from 'react';
+import { useReducer, useRef, useState, useTransition } from 'react';
 import { formatExerciseContent } from '@/lib/chat/exercise-content';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
@@ -10,12 +10,25 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { Composer } from './Composer';
 import { PendingSubmission } from './PendingSubmission';
 import { getWalkthroughSteps } from './walkthrough-config';
-import { askQuestion, confirmAiaOnboarding, confirmWalkthrough, requestHint, submitFiles, submitTextPart } from './actions';
+import {
+  askQuestion,
+  confirmAiaOnboarding,
+  confirmWalkthrough,
+  requestHint,
+  sendTypedMessage,
+  submitFiles,
+  submitTextPart,
+} from './actions';
+import type { SendTypedMessageResult } from './actions';
+import { AnswerConfirmation } from './AnswerConfirmation';
+import { NO_CONFIRMATION, answerConfirmationReducer } from './answer-confirmation';
+import { TEXT_PART_LABEL } from '@/lib/chat/text-part-labels';
+import { textPartTypeFor } from '@/lib/tutor/submission-routing';
 import { AiaOnboarding } from './AiaOnboarding';
 import { ReportIssue } from './ReportIssue';
 import type { LearnerIssue } from '@/lib/db/queries/learner-issues';
-import { logOut } from '@/app/dashboard/actions';
-import type { ChatMessage } from './message';
+import { logOut } from '@/app/(auth)/login/actions';
+import type { ChatMessage } from '@/lib/chat/message';
 
 type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documentName: string; url: string };
 
@@ -100,7 +113,13 @@ export function ChatShell({
   const [hasRequestedHint, setHasRequestedHint] = useState(initialHintDepth > 0);
   const [isPending, startTransition] = useTransition();
   const [isSubmittingFiles, startFileSubmit] = useTransition();
-  const [isSubmittingTextPart, startTextPartSubmit] = useTransition();
+  const [isRoutingMessage, startRouting] = useTransition();
+  const [isResolvingAnswer, startResolveAnswer] = useTransition();
+  // Smart Send's "Submit answer / It's a question" card (answer-confirmation.ts).
+  const [confirmation, dispatchConfirmation] = useReducer(answerConfirmationReducer, NO_CONFIRMATION);
+  // Set synchronously on the first tap, so a double-click can't send twice
+  // before the reducer's new phase reaches the next render.
+  const resolvingAnswerRef = useRef(false);
   const [isRequestingHint, startHintRequest] = useTransition();
   const [isAskingQuestion, startAskQuestion] = useTransition();
   // GPT-style composer support: bumping the signal clears attached files
@@ -124,6 +143,11 @@ export function ChatShell({
   const messages: ChatMessage[] = showWalkthrough
     ? walkthroughMessages
     : [...initialMessages, ...submissionMessages];
+
+  // Smart Send: an open card whose exercise is no longer the current one can
+  // only be dismissed, never filed (the server refuses it too).
+  const draftIsStale =
+    confirmation.phase !== 'none' && (exercise === null || confirmation.draft.exerciseId !== exercise.id);
 
   const isLastStep = stepIndex === walkthroughSteps.length - 1;
   const currentStep = walkthroughSteps[stepIndex];
@@ -156,32 +180,36 @@ export function ChatShell({
     setExercise(nextExercise);
     setModuleNumber(nextModuleNumber);
     setHasRequestedHint(hintDepth > 0);
+    // An open Smart Send card for the previous exercise turns stale by itself
+    // (draftIsStale). Deliberately not handled here: PendingSubmission keeps
+    // the onNextExercise it mounted with, so this closure can hold old state.
   }
 
   function appendTutorNote(content: string) {
     setSubmissionMessages((current) => [
       ...current,
-      { id: `tutor-note-${Date.now()}`, role: 'assistant', kind: 'qa-answer', content },
+      { id: `tutor-note-${crypto.randomUUID()}`, role: 'assistant', kind: 'qa-answer', content },
     ]);
   }
 
-  // GPT-style unified send (2026-08-24): one composer, one Send. Routing:
-  // no files → the text is a question (or an explain/review answer, which
-  // Composer's textPartType placeholder covers via handleSubmitTextPart);
-  // 1 file → conversational nudge for the second (files stay attached);
-  // 3+ files → asks once, a second Send proceeds and the server picks the
-  // Day Book + Trial Balance pair by content; 2 files → submit. Text sent
-  // alongside files is treated as a question after the submission goes in.
+  // GPT-style unified send (2026-08-24) + Smart Send (2026-09-15): one
+  // composer, one Send. Routing: no files → on an explain/review exercise the
+  // server decides whether the text is a question or the typed part
+  // (handleTypedMessage), anywhere else it is a question; 1 file →
+  // conversational nudge for the second (files stay attached); 3+ files →
+  // asks once, a second Send proceeds and the server picks the Day Book +
+  // Trial Balance pair by content; 2 files → submit, and text sent alongside
+  // is routed the same way once the upload is in.
   function handleSend(files: File[], text: string) {
-    const textPartType =
-      exercise?.requiredParts.includes('explain_text') || exercise?.requiredParts.includes('review_text');
+    const textPartType = exercise ? textPartTypeFor(exercise.requiredParts) : null;
 
     if (files.length === 0) {
       if (text.length === 0) {
         return;
       }
+      supersedeWaitingAnswer();
       if (textPartType) {
-        handleSubmitTextPart(text);
+        handleTypedMessage(text);
       } else {
         handleAskQuestion(text);
       }
@@ -224,8 +252,9 @@ export function ChatShell({
       return;
     }
 
+    supersedeWaitingAnswer();
     const learnerMessage: ChatMessage = {
-      id: `submission-${Date.now()}`,
+      id: `submission-${crypto.randomUUID()}`,
       role: 'learner',
       kind: 'submission',
       content: text.length > 0 ? text : 'Submitted for review.',
@@ -258,51 +287,128 @@ export function ChatShell({
         current.includes(result.submission.id) ? current : [...current, result.submission.id],
       );
 
-      // Text sent alongside the files: on an explain/review exercise it IS
-      // the typed part (Garima typed her Level 3 explanation in the same
-      // message as the two XMLs and the job waited 45 minutes for a part
-      // that had already been sent — 2026-09-03), so file it against the
-      // submission the upload just opened; otherwise it's a genuine
-      // question — answer it, GPT-style, rather than silently dropping it.
+      // Text sent alongside the files (Garima typed her Level 3 explanation in
+      // the same message as the two XMLs, 2026-09-03): on an explain/review
+      // exercise it goes through Smart Send routing like any typed message,
+      // so a real answer gets the one-tap confirmation and a question is
+      // answered; otherwise it's a genuine question, never silently dropped.
       if (text.length > 0 && textPartType) {
-        const textResult = await submitTextPart(text);
-        if (textResult.status === 'error') {
-          appendTutorNote(
-            `Your files are in, but I couldn't record the explanation: ${textResult.error} Please send the explanation again as its own message.`,
-          );
-        }
+        applyRoutedMessage(await sendTypedMessage(text), true);
       } else if (text.length > 0) {
         handleAskQuestion(text);
       }
     });
   }
 
-  function handleSubmitTextPart(text: string) {
-    const learnerMessage: ChatMessage = {
-      id: `submission-text-${Date.now()}`,
-      role: 'learner',
-      kind: 'submission',
-      content: text,
-    };
-    setSubmissionMessages((current) => [...current, learnerMessage]);
+  // Smart Send: a card still waiting for a choice is dropped, and says so,
+  // when the learner sends something new instead.
+  function supersedeWaitingAnswer() {
+    if (confirmation.phase !== 'pending') {
+      return;
+    }
+    dispatchConfirmation({ type: 'dismiss' });
+    // A stale card already says it was not sent.
+    if (!draftIsStale) {
+      appendTutorNote('Not sent. You sent a new message instead.');
+    }
+  }
+
+  // Typed text on an explain/review exercise: the server answers a question
+  // or hands back an answer for confirmation (lib/chat/route-typed-message.ts).
+  function handleTypedMessage(text: string) {
+    setSubmissionMessages((current) => [
+      ...current,
+      { id: `typed-${crypto.randomUUID()}`, role: 'learner', kind: 'qa-question', content: text },
+    ]);
+    setErrorMessage(null);
+    startRouting(async () => {
+      try {
+        applyRoutedMessage(await sendTypedMessage(text), false);
+      } catch {
+        setErrorMessage("I couldn't read that just now. Please send it again.");
+      }
+    });
+  }
+
+  function applyRoutedMessage(result: SendTypedMessageResult, filesAlreadyIn: boolean) {
+    if (result.status === 'answered') {
+      appendTutorNote(result.answer);
+      return;
+    }
+    if (result.status === 'needs-confirmation') {
+      dispatchConfirmation({
+        type: 'offer',
+        draft: { exerciseId: result.exerciseId, partType: result.partType, text: result.text, filesAlreadyIn },
+      });
+      return;
+    }
+    if (filesAlreadyIn) {
+      appendTutorNote(`Your files are in, but I couldn't read your message: ${result.error}`);
+      return;
+    }
+    setErrorMessage(result.error);
+  }
+
+  // "Submit answer": files the confirmed text exactly as before Smart Send.
+  function handleSubmitAnswer() {
+    if (confirmation.phase !== 'pending' || resolvingAnswerRef.current || draftIsStale) {
+      return;
+    }
+    const { draft } = confirmation;
+    resolvingAnswerRef.current = true;
+    dispatchConfirmation({ type: 'submit' });
     setErrorMessage(null);
 
-    startTextPartSubmit(async () => {
-      const result = await submitTextPart(text);
-
-      if (result.status === 'error') {
-        setErrorMessage(result.error);
-        return;
+    startResolveAnswer(async () => {
+      try {
+        const result = await submitTextPart(draft.text, draft.exerciseId);
+        dispatchConfirmation({ type: 'resolved' });
+        if (result.status === 'error') {
+          // Server-decided (already scored, already received, no exercise):
+          // retrying the same card would only repeat it.
+          appendTutorNote(result.error);
+          return;
+        }
+        appendTutorNote(`Sent as your ${TEXT_PART_LABEL[draft.partType]}.`);
+        // A text part and a file part for the same exercise can resolve to
+        // the same submissionId, so track it once (one PendingSubmission).
+        setPendingSubmissionIds((current) =>
+          current.includes(result.submission.id) ? current : [...current, result.submission.id],
+        );
+      } catch {
+        dispatchConfirmation({ type: 'failed' });
+        setErrorMessage("I couldn't send that just now. Tap Submit answer again.");
+      } finally {
+        resolvingAnswerRef.current = false;
       }
+    });
+  }
 
-      // A text part and a file part for the same exercise can resolve to the
-      // same submissionId (getOpenSubmissionForExercise joins whichever part
-      // arrives second onto the submission the first part created) — only
-      // track it once so PendingSubmission doesn't render twice for one
-      // in-flight submission.
-      setPendingSubmissionIds((current) =>
-        current.includes(result.submission.id) ? current : [...current, result.submission.id],
-      );
+  // "It's a question": answers the same text instead, with no second bubble.
+  function handleAnswerIsQuestion() {
+    if (confirmation.phase !== 'pending' || resolvingAnswerRef.current) {
+      return;
+    }
+    const { draft } = confirmation;
+    resolvingAnswerRef.current = true;
+    dispatchConfirmation({ type: 'ask' });
+    setErrorMessage(null);
+
+    startResolveAnswer(async () => {
+      try {
+        const result = await askQuestion(draft.text);
+        dispatchConfirmation({ type: 'resolved' });
+        if (result.status === 'error') {
+          setErrorMessage(result.error);
+          return;
+        }
+        appendTutorNote(result.answer);
+      } catch {
+        dispatchConfirmation({ type: 'failed' });
+        setErrorMessage("I couldn't reach the tutor just now. Tap It's a question again.");
+      } finally {
+        resolvingAnswerRef.current = false;
+      }
     });
   }
 
@@ -435,6 +541,17 @@ export function ChatShell({
           <MessageBubble key={message.id} message={message} />
         ))}
 
+        {confirmation.phase !== 'none' && (
+          <AnswerConfirmation
+            partType={confirmation.draft.partType}
+            filesAlreadyIn={confirmation.draft.filesAlreadyIn}
+            phase={confirmation.phase}
+            stale={draftIsStale}
+            onSubmit={handleSubmitAnswer}
+            onAsk={handleAnswerIsQuestion}
+          />
+        )}
+
         {!showWalkthrough && !exercise && messages.length === 0 && (
           <div className="flex flex-col items-start gap-2">
             <p className="text-base text-text-secondary">
@@ -464,7 +581,9 @@ export function ChatShell({
           </div>
         )}
 
-        {(isPending || isSubmittingFiles || isSubmittingTextPart || isRequestingHint) && <ThinkingIndicator />}
+        {(isPending || isSubmittingFiles || isRoutingMessage || isResolvingAnswer || isRequestingHint) && (
+          <ThinkingIndicator />
+        )}
 
         {exercise &&
           pendingSubmissionIds.map((submissionId) => (
@@ -487,10 +606,8 @@ export function ChatShell({
       <Composer
         disabled={showWalkthrough || showAiaOnboarding || exercise === null}
         onSend={handleSend}
-        isSending={isSubmittingFiles || isSubmittingTextPart}
+        isSending={isSubmittingFiles || isRoutingMessage || isResolvingAnswer || isAskingQuestion}
         requiredParts={exercise?.requiredParts ?? []}
-        onAskQuestion={handleAskQuestion}
-        isAsking={isAskingQuestion}
         resetSignal={composerResetSignal}
         hasRequestedHint={hasRequestedHint}
         isRequestingHint={isRequestingHint}

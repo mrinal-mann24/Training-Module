@@ -3,20 +3,17 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { CredentialsInputSchema, type CredentialsInput } from '@/lib/schemas/auth';
 import type { AuthFormState } from './auth-form-state';
 
-function readCredentials(formData: FormData): { email: string; password: string } | null {
-  const email = formData.get('email');
-  const password = formData.get('password');
-
-  if (typeof email !== 'string' || email.trim() === '') {
-    return null;
-  }
-  if (typeof password !== 'string' || password === '') {
-    return null;
-  }
-
-  return { email, password };
+// Parsed before any Supabase call; both actions answer a null here with the
+// same "Enter your email and password." message.
+function readCredentials(formData: FormData): CredentialsInput | null {
+  const parsed = CredentialsInputSchema.safeParse({
+    email: formData.get('email'),
+    password: formData.get('password'),
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 export async function logIn(
@@ -74,4 +71,12 @@ export async function signUp(
   // Supabase dashboard, signUp returns a user with no session and the
   // learner must click the emailed link instead.
   return { error: null, confirmEmailSent: true, accountCreated: false };
+}
+
+// Used by the dashboard and chat headers. Lives beside logIn/signUp so the
+// whole session lifecycle is in one place.
+export async function logOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect('/login');
 }

@@ -21,6 +21,49 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-15 (night): CODEBASE PLACEMENT FIXES + SMART SEND
+
+**Placement audit cleanup (2026-09-15):**
+- Moved `app/(chat)/chat/message.ts` → `lib/chat/message.ts` (lib no longer imports /app, reducing build-time and test-time coupling)
+- Removed unused night-surface components (commit e5fafdf: `Hero.tsx`, `Navbar.tsx`, `Stats.tsx`, `VideoBackdrop.tsx`, `landing-motion.ts`, `.night*` CSS block in globals.css)
+- Removed boilerplate `/public` SVGs (next.svg, vercel.svg, window.svg, globe.svg, file.svg) and empty `.gitkeep` files
+- Updated `architecture.md` folder map to reflect current file structure and added loading/error states convention
+
+**Smart Send (2026-09-15) — one Send button, intelligent routing:**
+
+Why: on explain/review exercises Send filed ANY typed text as the scored explain/review part, chosen purely by exercise state, and "Ask instead" was the escape hatch for questions. A question sent with Send was scored and locked the exercise ("already scored"); an answer sent with "Ask instead" was never filed and the wait job timed out. Smart Send resolves this: **one Send. Server action `sendTypedMessage` → `routeTypedMessage` → either `answerLearnerQuestion` (if no part owed, or the text is a question) or a needs-confirmation card → Submit answer → `submitTextPart`.**
+
+Invariants: (1) no answer key in the classifier prompt; (2) nothing filed without the Submit tap; (3) classifier output Zod-validated, invalid → question; (4) mastery untouched until Submit.
+
+Files:
+- **Message routing:** `lib/chat/route-typed-message.ts` (server-side router; tests: valid/empty/pending parts, injected deps), `lib/tutor/submission-routing.ts` (which text part a typed answer fills; which Inngest events)
+- **Intent classification:** `lib/tutor/classify-message-intent.ts` (LLM call wrapper; 2 attempts, 4s timeout via Promise.race, any failure → question, model falls back to OPENROUTER_MODEL; accepts optional deps for testing), `lib/llm/prompts/message-intent.ts` (prompt: learner text clipped to 1500+500 chars, pending part, scenario max 1500 chars; never Rulebook or answer key)
+- **Intent schema:** `lib/schemas/message-intent.ts` ({ intent: question|answer, reason }; Zod-validated)
+- **Rule-based pre-filter:** `lib/chat/message-intent-rules.ts` (15 cases: if a part is pending and the rules are conclusive, skip the LLM call; saves tokens and latency)
+- **Confirmation UI:** `app/(chat)/chat/AnswerConfirmation.tsx` (tutor bubble with "Send this as your explanation? It will be scored." and buttons "Submit answer" / "It's a question"), `app/(chat)/chat/answer-confirmation.ts` (pure reducer: none/pending/submitting/asking; one resolution per draft; failed returns to pending)
+- **Free-text Q&A:** `lib/chat/answer-learner-question.ts` (answers learner questions straight away; grounded in Rulebook/docs/context; answers + persists to qa_messages; shared with askQuestion)
+- **Submission:** `lib/tutor/pair-tally-uploads.ts` (sorts XML files into Day Book / Trial Balance pair), `lib/db/queries/submission-files.ts` (learner-scoped Storage paths + ordered uploads)
+- **Input schemas:** `lib/schemas/chat-actions.ts` (Zod for every chat Server Action + invalid-input wording), `lib/schemas/auth.ts` (credentials for logIn/signUp)
+- **Environment:** new optional key `OPENROUTER_INTENT_MODEL` in `.env.example` (must be set on VPS .env if a faster model is wanted; falls back to OPENROUTER_MODEL)
+
+Testing pattern (now in code-standards.md rule 6a): functions accepting LLM or DB calls take an optional last `deps` argument. Tests inject `vi.fn()` doubles; production passes nothing. No module mocking.
+
+Tests: 19 rule cases + schemas + prompt + classifier (valid, retry, invalid x2, throw, timeout, env model) + router + answerLearnerQuestion + reducer + inputSchema validation.
+
+Code review (ECC code-reviewer, same day) found no CRITICAL issues; fixed before hand-off:
+- HIGH: a card left open while the next exercise auto-delivered could be filed against the new exercise (PendingSubmission keeps the `onNextExercise` it mounted with, so a dismiss inside `handleNextExercise` read stale state). Now the card turns stale by itself in render (`draftIsStale`: note only, no buttons), Submit refuses a stale draft, and `submitTextPart(text, expectedExerciseId?)` refuses server-side with `TEXT_PART_STALE_MESSAGE` when the latest exercise differs.
+- HIGH: one- or two-word answers ("Looks fine", "All correct") were routed straight to Q&A and never filed. Only greetings and help words short-circuit to question now; other short text goes to the LLM tie-break, and review wording ("all correct", "no errors", "looks good") counts as an answer signal.
+- MEDIUM: text over the 2000-character Q&A cap now goes straight to the confirmation card instead of paying for an LLM call that could only end in "too long".
+- LOW: tutor-note, typed-message and submission ids use `crypto.randomUUID()` (no same-millisecond key collisions).
+- Left as is (MEDIUM): the already-received guard in `submitTextPart` is read-then-insert; a true two-tab race still hits the unique constraint, and the client's catch recovers with a retry prompt.
+
+**Open items:**
+- Browser check: the chat flow needs a signed-in learner with an explain or review exercise pending (not yet tested in a real browser)
+- VPS setup: set `OPENROUTER_INTENT_MODEL` in production .env if a faster model is available
+- Remaining audit items deferred: trainee XMLs in xmls/pilot-submission committed; one-off scripts incl. scripts/backfill-tie-out.ts; proxy.ts builds its own Supabase client; Realtime subscriptions in chat hooks
+
+**Gates:** tsc clean, eslint clean, vitest 58 files / 576 tests, `next build` compiled successfully. Not yet committed.
+
 ## Session log — 2026-09-15 (evening): LANDING + AUTH REBUILT ON THE "DAY" SURFACE
 
 User request: rebuild the site's UI/UX in the same style, layout and motion as finance-able.com, with AIA Academy's own content. Confirmed with the user: product-true content (no invented prices, salaries, counts, logos or testimonials), restyle the landing page **and** login/onboarding, finance-able blue `#1c76ff` as the accent.
@@ -28,7 +71,7 @@ User request: rebuild the site's UI/UX in the same style, layout and motion as f
 - **Reference teardown:** Webflow + IX2/GSAP + a Spline hero. Section order, colours, radii and fonts (Nunito / Urbanist) read from computed styles; every scroll and hover keyframe read from the Webflow interaction store, so timings match rather than approximate. No reference copy, logos, images or the Spline scene were reused.
 - **Built:** `app/components/site/` (SiteNav, Hero + three.js HeroScene, Tracks, Journey, WhySection, ConceptGrid, BuiltDifferent, Categories, TutorVoices, FinalCta, SiteFooter, TrainingCard, CardCarousel, Bubbles, site-motion, site-content, site-icons); `.day` tokens and classes in `globals.css`; `day-*` colours, `card/panel/footer` radii and `nunito/urbanist` fonts in `tailwind.config.ts`; fonts added in `app/layout.tsx`. `app/page.tsx` renders the new sections; `app/(auth)/layout.tsx` and the login/onboarding pages and forms restyled with their logic untouched. Full description in `ui-context.md` ("Day surface").
 - **Verified in a real browser** (headless Chrome at 1280x720 and phone width): hero scatter, gathered shell and payoff scale-out; tracks pinned with the journey arching over them; journey beam and its three states; why + stats; a concept tile opened; a built-different block opened; both category rails; voices header travel and masonry; final CTA + footer; login card; no horizontal overflow on phones; no console errors (one benign ANGLE shader-precision warning from three.js). Fixes made during verification: carousel scroll-padding, stat alignment, voices timing, hero scatter and phone fit. Gates: tsc clean, eslint clean, vitest 450/450.
-- **Open:** the retired night-surface files (`app/components/Hero.tsx`, `Navbar.tsx`, `Stats.tsx`, `VideoBackdrop.tsx`, `landing-motion.ts`) and the `.night*` CSS block are unused but still on disk (deletion was blocked by the session permission policy; user to delete). Onboarding not screenshotted (needs a signed-in, un-onboarded account). Not committed.
+- **Open:** Onboarding not screenshotted (needs a signed-in, un-onboarded account). Not committed. (Update 2026-09-15 night: retired night-surface files removed in commit e5fafdf; `.night*` CSS block removed in the same cleanup.)
 
 ## Session log — 2026-09-15 (later): REPORT AN ISSUE, v1
 

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 import type { OverallResult } from '@/lib/schemas/scoring';
-import type { ChatMessage } from './message';
+import type { ChatMessage } from '@/lib/chat/message';
 import { DocumentCard } from './DocumentCard';
 
 type MessageBubbleProps = {

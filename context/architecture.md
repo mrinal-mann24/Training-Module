@@ -28,44 +28,93 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
   /(auth)                    → Sign-up, login, onboarding screens. No business logic — calls /lib.
   /(chat)                    → The tutor chat UI: message thread, file upload, hint requests.
   /(progress)                → Progress view, mastery map display, certificate page.
+  /dashboard                 → Learner dashboard (page.tsx + actions.ts) — the landing surface after login.
+  /auth/callback             → Supabase Auth callback route (session exchange after the email link redirect).
   /api
-    /submissions             → Receives uploads, hands off to jobs. Never scores inline.
-    /webhooks                → Inngest/Trigger.dev callback endpoints.
+    /health                  → Liveness route, wired to the Docker Compose healthcheck.
+    /inngest                 → Inngest sync endpoint and job callback receiver.
+  /components
+    ui/                      → Generic shadcn-style primitives (button.tsx).
+    site/                    → Landing page + auth-shell "day surface" components (SiteNav, Hero, HeroScene,
+                               Tracks, Journey, WhySection, ConceptGrid, BuiltDifferent, Categories,
+                               TutorVoices, FinalCta, SiteFooter, TrainingCard, CardCarousel, Bubbles,
+                               MotionPreference, plus site-content.ts copy and site-motion.ts timings).
+    Wordmark.tsx             → Shared mark + name, used by the day surface and the auth shell.
 
 /lib
   /llm
     client.ts                → OpenRouter client wrapper, model pinning per call type
-    prompts/                 → System prompts per call type (exercise-gen, scoring, coaching, hints)
+    tracing.ts               → Langfuse call tracing (input, output, latency, cost per call)
+    prompts/                 → System prompts per call type (exercise-gen, scoring, coaching, hints, qa, adjudication)
+    grounding/                → Rulebook, module-doc and video-module reference text, extracted for prompt grounding
   /schemas
     exercise.ts, scoring.ts, coaching.ts, state-patch.ts
                               → Zod schemas — the single contract between LLM output and app code
+    message-intent.ts         → Message intent schema (2026-09-15): classifies typed text as question|answer
+    chat-actions.ts           → Input schemas + invalid-input wording for chat Server Actions (2026-09-15)
+    auth.ts                   → Credentials schema for logIn / signUp Server Actions (2026-09-15)
   /parsing
     daybook.ts, trialbalance.ts
                               → XML → normalized voucher/ledger structures. No scoring logic here.
-  /tutor
-    generate-exercise.ts      → Builds exercise + hidden answer key together, persists both
-    score-submission.ts       → Diffs parsed submission against answer key, applies error weighting
-    hint-ladder.ts            → Rung selection and progression logic
-    mastery.ts                → Mastery, reinforcement, escalation state transitions
+  /tutor                      → Grading/generation engine, grouped by concern:
+    generate-exercise.ts, generate-review-exercise.ts, assign-pack-exercise.ts, select-exercise-kind.ts,
+      select-batch-concepts.ts, generation-checks.ts, documents-mode.ts
+                              → Exercise generation and assignment
+    score-submission.ts, score-qualitative.ts, ledger-findings.ts, adjudicate-findings.ts, rectification.ts,
+      submission-gate.ts, books-reconciliation.ts, month-end-journals.ts
+                              → Scoring, findings and the pre-scoring validity gate
+    generate-coaching.ts, generate-hint.ts, hint-ladder.ts
+                              → Coaching and the hint ladder (includes findReusableDeepHint, 2026-09-15)
+    pair-tally-uploads.ts     → Sorts uploaded files into Day Book / Trial Balance pair (2026-09-15)
+    submission-routing.ts     → Which text part a typed answer fills; which Inngest events to emit (2026-09-15)
+    create-diagnostic-exercise.ts → Assigns authored-pack diagnostic or generates one (2026-09-15)
+    mastery.ts, module-progress.ts
+                              → Mastery, reinforcement, escalation state transitions and module advancement
+    account-names.ts, answer-key-aliases.ts, timeline.ts
+                              → Shared lookup/reference helpers used by the modules above
   /chat
     build-timeline.ts         → Chat-history rebuild: reassembles the full conversation from persisted rows (2026-08-24)
+    message.ts                → Chat message types (moved 2026-09-15 from app/(chat)/chat/message.ts; lib no longer imports /app)
+    exercise-content.ts       → Shared exercise-message copy, used by both the server timeline and the client live append
+    issue-limits.ts           → Shared constant mirrored by the learner-issue schema and its DB check constraint
     report-issue.ts           → Learner issue reports (2026-09-15): validation, duplicate + hourly limits, batch-context snapshot, service-role insert. Never calls an LLM
+    answer-learner-question.ts → Free-text Q&A (2026-09-15): answers learner questions grounded in Rulebook/docs/context, persists to qa_messages
+    message-intent-rules.ts   → Rule-based intent classification (2026-09-15): decides question/answer/unclear on typed text during explain/review
+    route-typed-message.ts    → Smart Send router (2026-09-15): dispatches typed text to question or answer flow based on textPartTypeFor / message-intent
+    text-part-labels.ts       → Client-safe labels for submit button and confirmation states (2026-09-15)
   /db
     queries/                  → All Supabase reads/writes go through here — no ad-hoc queries in /app
+      submission-files.ts     → Learner-scoped Storage paths and ordered uploads of submission's Day Book / Trial Balance (2026-09-15)
   /jobs
+    client.ts                 → Inngest client instance
     wait-for-submission.ts    → Aggregates multi-part submissions within the wait window
     run-scoring.ts            → Triggered once validity gate passes
-    recompute-mastery.ts      → Runs after scoring, updates state
+    advance-learner.ts        → Runs after scoring: logs concept attempts, recomputes mastery/module progress, triggers next-exercise generation (mastery recompute logic lives here, not in a separate recompute-mastery.ts)
   /documents
     generate-source-document.ts → LLM call producing validated structured document content (never a PDF/layout)
     render-source-document.ts   → Deterministic content → PDF buffer, no LLM involvement
-    templates/                  → @react-pdf/renderer templates, one per doc_type (vendor-invoice.tsx, bank-statement.tsx)
+    pick-template.ts, build-bank-statement.ts, build-sales-register.ts
+                                 → Deterministic document assembly, no LLM involvement
+    company-details.ts, party-directory.ts, bank-account-details.ts
+                                 → Fixed reference/seed data used to populate generated documents
+    templates/                   → @react-pdf/renderer templates, one per doc_type (vendor-invoice variants, bank-statement variants, sales-invoice.tsx, month-end-notes.tsx)
+  /supabase
+    client.ts, server.ts, service-role.ts → Browser, Server Component and service-role Supabase clients
+  cn.ts                         → clsx + tailwind-merge class-name helper, used across /app
 
 /supabase
   /migrations                → Schema, RLS policies — source of truth for DB structure
+
+/scripts                     → One-off/admin scripts (migrations, backfills, seeding, PDF regeneration) — not part of the app runtime, run manually or via CI
+
+/seed                        → Seed content: authored exercise-pack answer keys, and extracted rulebook/manager-spec reference text used at seed time
+
+/xmls                        → Test fixtures: sample Daybook/Trial Balance XML for parsing/scoring tests and manual pilot submissions
 ```
 
 **Rule of thumb:** `/app` renders and routes; it never talks to Supabase, OpenRouter, or the file system directly — everything goes through `/lib`. This keeps the scoring/mastery logic testable in isolation from the UI.
+
+**Loading and error states (2026-09-15):** Every product route (`/chat`, `/progress`, `/dashboard`) and `/onboarding` has its own `loading.tsx` and `error.tsx`. `loading.tsx` is a Server Component skeleton copying the page's layout with `aria-busy="true"` and pulsing placeholders. `error.tsx` is a Client Component that never shows `error.message`, logs in `useEffect`, and shows `error.digest` as a "Reference code" only when one exists, with a "Try again" button and a safe-route link.
 
 ## 3. Storage Model
 
@@ -110,6 +159,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
 | Coaching / feedback  | After scoring completes                                                                                                                                    | `coaching.ts` (result line, praise, flagged areas, next-step note)                                                                                                                                                                                                                                                                                                                                                                            |
 | Hint response        | Learner requests help                                                                                                                                      | `hint-ladder.ts` output (rung number, hint content)                                                                                                                                                                                                                                                                                                                                                                                           |
 | Mastery/state patch  | After scoring                                                                                                                                              | `state-patch.ts` (mastery map delta, escalation flags)                                                                                                                                                                                                                                                                                                                                                                                        |
+| Message intent       | Typed text sent during explain/review and rules are inconclusive (2026-09-15)                                                                             | `message-intent.ts` ({ intent: question|answer, reason }); never the answer key; on invalid or timeout -> question                                                                                                                                                                                                                                                                                                                                |
 
 Every LLM response is validated against its Zod schema before it is persisted or shown to the learner. On validation failure, the call is retried with the validation error fed back into the prompt (bounded retry count) — the app never falls back to unvalidated model output.
 

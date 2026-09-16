@@ -8,7 +8,7 @@ import type { SubmissionStatus } from '@/lib/db/queries/submissions';
 import type { ValidityError } from '@/lib/tutor/submission-gate';
 import { ThinkingIndicator } from './ThinkingIndicator';
 import { SubmissionPartsChecklist } from './SubmissionPartsChecklist';
-import type { ChatMessage } from './message';
+import type { ChatMessage } from '@/lib/chat/message';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';

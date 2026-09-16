@@ -9,8 +9,7 @@ import {
   getLearnerProfile,
   hasCompletedWalkthrough,
 } from '@/lib/db/queries/learner-profile';
-import { generateDiagnosticExercise } from '@/lib/tutor/generate-exercise';
-import { assignPackDiagnostic } from '@/lib/tutor/assign-pack-exercise';
+import { createDiagnosticExercise } from '@/lib/tutor/create-diagnostic-exercise';
 import { getSignedPackFileCards, freshSignedUrlForPackFile } from '@/lib/db/queries/exercise-packs';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { getExerciseAnswerKey, getLatestDiagnosticExercise, getLatestExercise } from '@/lib/db/queries/exercises';
@@ -24,7 +23,7 @@ import {
 import type { Submission, SubmissionStatus } from '@/lib/db/queries/submissions';
 import type { ValidityError } from '@/lib/tutor/submission-gate';
 import { getFeedbackForLearner } from '@/lib/db/queries/scoring-results';
-import { insertHintRequest, getHintDepthForExercise, getLatestDeepHintForExercise } from '@/lib/db/queries/hint-requests';
+import { insertHintRequest, getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
 import { getModuleNumber } from '@/lib/db/queries/mastery';
 import { inngest } from '@/lib/jobs/client';
 import type { Coaching } from '@/lib/schemas/coaching';
@@ -32,18 +31,38 @@ import type { OverallResult } from '@/lib/schemas/scoring';
 import type { Hint } from '@/lib/schemas/hint';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
-import { determineNextRung } from '@/lib/tutor/hint-ladder';
+import { determineNextRung, findReusableDeepHint } from '@/lib/tutor/hint-ladder';
 import { generateHint } from '@/lib/tutor/generate-hint';
-import { answerQuestion } from '@/lib/tutor/answer-question';
+import { answerLearnerQuestion } from '@/lib/chat/answer-learner-question';
+import { routeTypedMessage, type RouteTypedMessageResult } from '@/lib/chat/route-typed-message';
+import { TEXT_PART_LABEL } from '@/lib/chat/text-part-labels';
 import {
   getSourceDocumentsForExercise,
   getSignedSourceDocumentUrls,
   freshSignedUrlForDocument,
 } from '@/lib/db/queries/source-documents';
 import { insertSubmissionPart, getSubmissionParts } from '@/lib/db/queries/submission-parts';
-import { identifyTallyFile } from '@/lib/parsing/identify-tally-file';
-import { insertQaMessage } from '@/lib/db/queries/qa-messages';
+import { submissionXmlPaths, uploadSubmissionXmlFiles } from '@/lib/db/queries/submission-files';
+import { pairTallyUploads } from '@/lib/tutor/pair-tally-uploads';
+import { fileSubmissionEvents, textPartTypeFor } from '@/lib/tutor/submission-routing';
 import { reportLearnerIssue, type ReportIssueOutcome } from '@/lib/chat/report-issue';
+import {
+  ASK_QUESTION_INVALID_MESSAGE,
+  AskQuestionInputSchema,
+  GetNextExerciseInputSchema,
+  REPORT_ISSUE_INVALID_MESSAGE,
+  RefreshDocumentUrlInputSchema,
+  ReportIssueActionInputSchema,
+  RequestHintInputSchema,
+  SEND_TYPED_MESSAGE_EMPTY_MESSAGE,
+  SendTypedMessageInputSchema,
+  SUBMIT_FILES_NEED_BOTH_MESSAGE,
+  SUBMIT_TEXT_PART_INVALID_MESSAGE,
+  SubmissionIdInputSchema,
+  SubmitFilesInputSchema,
+  SubmitTextPartInputSchema,
+  TEXT_PART_STALE_MESSAGE,
+} from '@/lib/schemas/chat-actions';
 
 type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documentName: string; url: string };
 
@@ -71,6 +90,10 @@ export async function refreshDocumentUrl(
   documentId: string,
   kind: 'source-document' | 'pack-file',
 ): Promise<string | null> {
+  if (!RefreshDocumentUrlInputSchema.safeParse({ documentId, kind }).success) {
+    return null;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -142,15 +165,9 @@ export async function confirmWalkthrough(): Promise<ConfirmWalkthroughResult> {
   if (!exercise) {
     const serviceRoleClient = createServiceRoleClient();
     try {
-      // Unit 14R: the diagnostic is the authored pack (pilot program's Day-1
-      // file set + personalized message), assigned with no LLM call. Falls
-      // back to the original generated diagnostic only if no pack is seeded
-      // for the learner's variant, so an unseeded environment still works.
-      const profile = await getLearnerProfile(supabase, user.id);
-      const assigned = await assignPackDiagnostic(serviceRoleClient, user.id, profile?.full_name ?? null);
-      if (!assigned) {
-        await generateDiagnosticExercise(serviceRoleClient, user.id);
-      }
+      // Authored pack first, generated diagnostic only as the fallback (see
+      // lib/tutor/create-diagnostic-exercise.ts).
+      await createDiagnosticExercise({ supabase, serviceRoleClient, learnerId: user.id });
     } catch (error) {
       return {
         status: 'error',
@@ -176,28 +193,26 @@ export type SubmitFilesResult =
   | { status: 'accepted'; submission: Submission }
   | { status: 'error'; error: string };
 
-// Server Action: authenticates, uploads both XML files to learner-scoped
-// Storage paths, creates (or joins, for a multi-part exercise where a
-// text part already arrived first) the submissions row, records both file
-// parts in submission_parts, then sends the appropriate Inngest event and
-// returns immediately. It does not await parsing, the gate, scoring, or
-// coaching — those run in a background job, and the client picks up the
-// result via a Supabase Realtime subscription on this row.
-//
-// Unit 11: exercises with exactly the original two required parts
-// (diagnostic/adaptive — daybook_xml + trialbalance_xml) keep sending
 // Shown when the displayed exercise already has a scored submission: the next
 // batch is generated a few minutes after scoring, and in that window the old
 // exercise is still the latest one (see hasScoredSubmissionForExercise).
 const ALREADY_SCORED_MESSAGE =
   "This exercise has already been scored, so I won't take a second submission for it. Your next batch is being prepared and will appear here in a minute or two. Refresh the page if it hasn't shown up.";
 
-// submission/uploaded, routing through Unit 07's original run-scoring job
-// unchanged, per the spec's explicit "don't route simple submissions through
-// the more complex waiting logic unnecessarily." An 'explain' exercise has
-// more than two required parts (also needs explain_text), so it routes
-// through submission/part-received into wait-for-submission.ts instead.
+// Server Action: authenticates, uploads both XML files to learner-scoped
+// Storage paths, creates (or joins, for a multi-part exercise where a
+// text part already arrived first) the submissions row, records both file
+// parts in submission_parts, then sends the Inngest event chosen by
+// lib/tutor/submission-routing.ts and returns immediately. It does not await
+// parsing, the gate, scoring, or coaching — those run in a background job,
+// and the client picks up the result via a Supabase Realtime subscription on
+// this row.
 export async function submitFiles(formData: FormData): Promise<SubmitFilesResult> {
+  const parsed = SubmitFilesInputSchema.safeParse({ files: formData.getAll('files') });
+  if (!parsed.success) {
+    return { status: 'error', error: parsed.error.issues[0]?.message ?? SUBMIT_FILES_NEED_BOTH_MESSAGE };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -207,47 +222,14 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
     redirect('/login');
   }
 
-  // GPT-style composer (2026-08-24): files arrive through one generic upload
-  // control, unlabeled — which one is the Day Book and which the Trial
-  // Balance is decided by CONTENT (identifyTallyFile), never by filename or
-  // by which button was clicked. Extra files beyond the recognized pair are
-  // ignored (the client has already confirmed proceeding with the pair).
-  const uploaded = formData.getAll('files').filter((entry): entry is File => entry instanceof File);
-
-  if (uploaded.length < 2) {
-    return {
-      status: 'error',
-      error: "I need both exports to score your work: the Day Book and the Trial Balance. Attach the two files together and hit Send, and I'll take it from there.",
-    };
+  // Which file is the Day Book and which the Trial Balance is decided by
+  // content, never by filename (lib/tutor/pair-tally-uploads.ts).
+  const pairing = await pairTallyUploads(parsed.data.files);
+  if (pairing.status === 'unpaired') {
+    return { status: 'error', error: pairing.error };
   }
-
-  if (uploaded.some((file) => !file.name.toLowerCase().endsWith('.xml'))) {
-    return { status: 'error', error: "One of those files isn't a Tally XML export, so I can't read it. In Tally, export the Day Book (Detailed) and the Trial Balance as XML, then send me both." };
-  }
-
-  const classified = await Promise.all(
-    uploaded.map(async (file) => {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      return { file, buffer, kind: identifyTallyFile(buffer) };
-    }),
-  );
-
-  const daybookUpload = classified.find((entry) => entry.kind === 'daybook');
-  const trialbalanceUpload = classified.find((entry) => entry.kind === 'trialbalance');
-
-  if (!daybookUpload || !trialbalanceUpload) {
-    const readableKinds = classified
-      .map((entry) => {
-        const label =
-          entry.kind === 'daybook' ? 'a Day Book' : entry.kind === 'trialbalance' ? 'a Trial Balance' : 'not a Tally export I recognize';
-        return `"${entry.file.name}" looks like ${label}`;
-      })
-      .join('; ');
-    return {
-      status: 'error',
-      error: `I couldn't find both files in what you attached: ${readableKinds}. I need one Detailed Day Book export and one Trial Balance export. Check the exports in Tally and send both again.`,
-    };
-  }
+  const daybookUpload = pairing.daybook;
+  const trialbalanceUpload = pairing.trialbalance;
 
   const daybookFile = daybookUpload.file;
   const trialbalanceFile = trialbalanceUpload.file;
@@ -285,23 +267,20 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);
   const submissionId = existingSubmission?.id ?? crypto.randomUUID();
 
-  const daybookPath = `${user.id}/${submissionId}/daybook.xml`;
-  const trialbalancePath = `${user.id}/${submissionId}/trialbalance.xml`;
+  const paths = submissionXmlPaths(user.id, submissionId);
+  const { daybookPath, trialbalancePath } = paths;
 
-  const { error: daybookUploadError } = await supabase.storage
-    .from('submissions')
-    .upload(daybookPath, daybookBuffer, { contentType: 'application/xml' });
-  if (daybookUploadError) {
-    return { status: 'error', error: "Something went wrong on my side while saving your Day Book file. Nothing you did wrong, just send both files again." };
-  }
-
-  const { error: trialbalanceUploadError } = await supabase.storage
-    .from('submissions')
-    .upload(trialbalancePath, trialbalanceBuffer, { contentType: 'application/xml' });
-  if (trialbalanceUploadError) {
+  const upload = await uploadSubmissionXmlFiles(supabase, paths, {
+    daybook: daybookBuffer,
+    trialbalance: trialbalanceBuffer,
+  });
+  if (upload.status === 'failed') {
     return {
       status: 'error',
-      error: "Something went wrong on my side while saving your Trial Balance file. Nothing you did wrong, just send both files again.",
+      error:
+        upload.file === 'daybook'
+          ? "Something went wrong on my side while saving your Day Book file. Nothing you did wrong, just send both files again."
+          : "Something went wrong on my side while saving your Trial Balance file. Nothing you did wrong, just send both files again.",
     };
   }
 
@@ -317,20 +296,9 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
   await insertSubmissionPart(supabase, submissionId, 'daybook_xml', { storage_path: daybookPath });
   await insertSubmissionPart(supabase, submissionId, 'trialbalance_xml', { storage_path: trialbalancePath });
 
-  const isSimpleTwoFileExercise = exercise.requiredParts.length === 2;
-
-  if (isSimpleTwoFileExercise) {
-    await inngest.send({ name: 'submission/uploaded', data: { submissionId } });
-  } else {
-    // Two events, one per part type — wait-for-submission.ts's per-part
-    // waitForEvent calls match on partType, so whichever specific part the
-    // job is actually parked waiting on (if either) needs its own event to
-    // be woken correctly, not one event carrying an arbitrary part type.
-    await inngest.send([
-      { name: 'submission/part-received', data: { submissionId, partType: 'daybook_xml' as SubmissionPartType } },
-      { name: 'submission/part-received', data: { submissionId, partType: 'trialbalance_xml' as SubmissionPartType } },
-    ]);
-  }
+  // Plain two-file exercises go straight to run-scoring; multi-part ones wake
+  // wait-for-submission once per file.
+  await inngest.send(fileSubmissionEvents(submissionId, exercise.requiredParts));
 
   const submission: Submission = {
     id: submissionId,
@@ -359,7 +327,11 @@ export type SubmitTextPartResult =
 // file parts already arrived first, or creates a new submissions row if this
 // text part is the first thing to arrive (out-of-order arrival is the whole
 // point of this unit's job).
-export async function submitTextPart(text: string): Promise<SubmitTextPartResult> {
+export async function submitTextPart(text: string, expectedExerciseId?: string): Promise<SubmitTextPartResult> {
+  if (!SubmitTextPartInputSchema.safeParse({ text, expectedExerciseId }).success) {
+    return { status: 'error', error: SUBMIT_TEXT_PART_INVALID_MESSAGE };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -374,11 +346,13 @@ export async function submitTextPart(text: string): Promise<SubmitTextPartResult
     return { status: 'error', error: "I don't see an active exercise to score this against. Refresh the page, and if there's still nothing, use the Start my training button and I'll set you up." };
   }
 
-  const partType: SubmissionPartType | null = exercise.requiredParts.includes('explain_text')
-    ? 'explain_text'
-    : exercise.requiredParts.includes('review_text')
-      ? 'review_text'
-      : null;
+  // Smart Send: a confirmed draft carries the exercise it was written for. If
+  // the next exercise has arrived since, never file it against that one.
+  if (expectedExerciseId !== undefined && exercise.id !== expectedExerciseId) {
+    return { status: 'error', error: TEXT_PART_STALE_MESSAGE };
+  }
+
+  const partType = textPartTypeFor(exercise.requiredParts);
 
   if (!partType) {
     return { status: 'error', error: "This exercise is scored from your Tally exports, so I can't take a typed answer for it. If that was a question for me, just ask it again and I'll answer. When you're ready to submit, attach the Day Book and Trial Balance XMLs." };
@@ -388,6 +362,19 @@ export async function submitTextPart(text: string): Promise<SubmitTextPartResult
   }
 
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);
+
+  // Smart Send (2026-09-15): the part may already be in (a second tap, another
+  // tab). The unique (submission_id, part_type) constraint would otherwise
+  // throw out of this action instead of answering the learner.
+  if (existingSubmission) {
+    const parts = await getSubmissionParts(supabase, existingSubmission.id);
+    if (parts.some((part) => part.part_type === partType)) {
+      return {
+        status: 'error',
+        error: `I already have your ${TEXT_PART_LABEL[partType]} for this exercise, so there's nothing more to send. Your result will show here once it's scored.`,
+      };
+    }
+  }
 
   // A text-only part has no Storage upload, so unlike submitFiles the id
   // isn't needed before the insert — but it's generated the same way for
@@ -432,6 +419,10 @@ export type GetSubmissionStatusResult =
 // missed permanently and the UI spins forever. The subscription still handles
 // the normal case where the job finishes after the client is listening.
 export async function getSubmissionStatus(submissionId: string): Promise<GetSubmissionStatusResult> {
+  if (!SubmissionIdInputSchema.safeParse({ submissionId }).success) {
+    return { status: 'not-found' };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -465,6 +456,12 @@ export type GetSubmissionPartsStatusResult = {
 // subscription that keeps it current as parts arrive (see
 // useSubmissionParts.ts).
 export async function getSubmissionPartsStatus(submissionId: string): Promise<GetSubmissionPartsStatusResult> {
+  // No error variant in this result: an invalid id reads as nothing required
+  // and nothing received.
+  if (!SubmissionIdInputSchema.safeParse({ submissionId }).success) {
+    return { requiredParts: [], receivedParts: [] };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -491,6 +488,10 @@ export type GetScoringFeedbackResult =
 // status flip to 'scored' — fetches only the composed feedback fields
 // (getFeedbackForLearner already excludes error_codes at the query level).
 export async function getScoringFeedback(submissionId: string): Promise<GetScoringFeedbackResult> {
+  if (!SubmissionIdInputSchema.safeParse({ submissionId }).success) {
+    return { status: 'not-found' };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -510,12 +511,18 @@ export async function getScoringFeedback(submissionId: string): Promise<GetScori
 
 export type RequestHintResult = { status: 'given'; hint: Hint } | { status: 'error'; error: string };
 
+const NO_EXERCISE_TO_HELP_WITH_MESSAGE = "I couldn't find an active exercise to help with. Refresh the page and try again.";
+
 // Server Action: determines the learner's next rung for this exercise (rung
 // selection is derived from prior hint_requests rows, never trusted from the
 // client), calls generate-hint.ts grounded in the exercise's answer_key, and
 // persists the hint_requests row. Only the composed Hint (rung, hint_text,
 // concept_tag) is returned — the answer_key itself never leaves this function.
 export async function requestHint(exerciseId: string): Promise<RequestHintResult> {
+  if (!RequestHintInputSchema.safeParse({ exerciseId }).success) {
+    return { status: 'error', error: NO_EXERCISE_TO_HELP_WITH_MESSAGE };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -534,19 +541,15 @@ export async function requestHint(exerciseId: string): Promise<RequestHintResult
   ]);
 
   if (!exercise || exercise.id !== exerciseId || !answerKey) {
-    return { status: 'error', error: "I couldn't find an active exercise to help with. Refresh the page and try again." };
+    return { status: 'error', error: NO_EXERCISE_TO_HELP_WITH_MESSAGE };
   }
 
-  // Step-3 reuse (2026-08-27): once the full answer exists for this
-  // exercise, every later click repeats THAT stored answer instead of
-  // generating a fresh one. Regeneration picked a different random
-  // transaction per click on pack exercises, leaking the authored key one
-  // entry at a time. No new hint_requests row: depth is already at step 3.
-  if (rung === 3) {
-    const existingDeepHint = await getLatestDeepHintForExercise(supabase, user.id, exerciseId);
-    if (existingDeepHint) {
-      return { status: 'given', hint: { ...existingDeepHint.hint_content, rung: 3 } };
-    }
+  // Step-3 reuse (2026-08-27): a later click repeats the stored full answer
+  // instead of generating a fresh one (see findReusableDeepHint). No new
+  // hint_requests row: depth is already at step 3.
+  const reusedHint = await findReusableDeepHint(supabase, user.id, exerciseId, rung);
+  if (reusedHint) {
+    return { status: 'given', hint: reusedHint };
   }
 
   let hint: Hint;
@@ -593,6 +596,10 @@ export type GetNextExerciseResult =
 // the auto-delivery path: the learner never has to ask for the next
 // exercise, per the spec.
 export async function getNextExercise(previousExerciseId: string): Promise<GetNextExerciseResult> {
+  if (!GetNextExerciseInputSchema.safeParse({ previousExerciseId }).success) {
+    return { status: 'not-found' };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -624,6 +631,12 @@ export type AskQuestionResult =
 // exercise's learner-facing scenario only — the answer key never enters the
 // prompt context (answer-question.ts's QaContext has no field for it).
 export async function askQuestion(question: string): Promise<AskQuestionResult> {
+  const parsed = AskQuestionInputSchema.safeParse({ question });
+  if (!parsed.success) {
+    return { status: 'error', error: ASK_QUESTION_INVALID_MESSAGE };
+  }
+  const trimmed = parsed.data.question;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -633,32 +646,44 @@ export async function askQuestion(question: string): Promise<AskQuestionResult> 
     redirect('/login');
   }
 
-  const trimmed = question.trim();
-  if (trimmed.length === 0 || trimmed.length > 2000) {
-    return { status: 'error', error: "That message is a bit too long for me to take in one go. Keep it under 2000 characters and I'm happy to help." };
-  }
-
   const exercise = await getLatestExercise(supabase, user.id);
 
+  // Answer + persist the exchange (lib/chat/answer-learner-question.ts, shared
+  // with Smart Send routing).
+  return answerLearnerQuestion({
+    supabase,
+    learnerId: user.id,
+    question: trimmed,
+    exerciseScenario: exercise?.scenario ?? null,
+  });
+}
+
+export type SendTypedMessageResult = RouteTypedMessageResult;
+
+// Smart Send (2026-09-15): everything the learner types with no files
+// attached. A question comes back answered. On an explain/review exercise an
+// answer comes back as needs-confirmation and is filed only when the learner
+// taps Submit answer (which calls submitTextPart). Routing, the rules and the
+// LLM tie-break live in lib/chat/route-typed-message.ts.
+export async function sendTypedMessage(text: string): Promise<SendTypedMessageResult> {
+  const parsed = SendTypedMessageInputSchema.safeParse({ text });
+  if (!parsed.success) {
+    return { status: 'error', error: parsed.error.issues[0]?.message ?? SEND_TYPED_MESSAGE_EMPTY_MESSAGE };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect('/login');
+  }
+
   try {
-    const response = await answerQuestion(user.id, {
-      question: trimmed,
-      exerciseScenario: exercise?.scenario ?? null,
-    });
-    // Persisted so the exchange survives a refresh (chat-history rebuild,
-    // 2026-08-24). A failed insert must not eat the answer the learner is
-    // waiting on — history just won't carry this one exchange.
-    try {
-      await insertQaMessage(supabase, user.id, trimmed, response.answer);
-    } catch {
-      // non-fatal
-    }
-    return { status: 'answered', answer: response.answer };
-  } catch (error) {
-    return {
-      status: 'error',
-      error: error instanceof Error ? error.message : 'Could not answer right now. Please try again.',
-    };
+    return await routeTypedMessage({ supabase, learnerId: user.id, text: parsed.data.text });
+  } catch {
+    return { status: 'error', error: "I couldn't read that just now. Please send it again." };
   }
 }
 
@@ -668,8 +693,13 @@ export type ReportIssueResult = ReportIssueOutcome;
 // issue is stored for the owner with a snapshot of the learner's current
 // batch and is never sent to the tutor or any LLM. Validation, the duplicate
 // and hourly limits, and the service-role write all live in
-// lib/chat/report-issue.ts; this action only authenticates.
+// lib/chat/report-issue.ts; this action only checks the message is text and
+// authenticates.
 export async function reportIssue(message: string): Promise<ReportIssueResult> {
+  if (!ReportIssueActionInputSchema.safeParse({ message }).success) {
+    return { status: 'error', error: REPORT_ISSUE_INVALID_MESSAGE };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

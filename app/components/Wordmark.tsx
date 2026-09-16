@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
  * The AIA Academy mark: the four-point spark the product has always used as
  * its ✦ glyph, drawn as an SVG so it keeps its weight and optical centre at
  * every size instead of inheriting whatever the system emoji font decides.
- * `fill="currentColor"` so it takes the surface's ink (white on the night
+ * `fill="currentColor"` so it takes the surface's ink (white on the day
  * surface, charcoal in the app).
  */
 export function SparkMark({ className }: { className?: string }) {

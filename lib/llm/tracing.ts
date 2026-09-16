@@ -23,7 +23,8 @@ export type CallType =
   | 'qualitative-scoring'
   | 'review-exercise-generation'
   | 'qa-response'
-  | 'finding-adjudication';
+  | 'finding-adjudication'
+  | 'message-intent';
 
 export type TracedCompletionParams = StructuredCompletionParams & {
   traceName: string;

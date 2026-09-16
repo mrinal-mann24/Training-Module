@@ -14,6 +14,8 @@ export type ExerciseKind = (typeof EXERCISE_KINDS)[number];
 
 export const SUBMISSION_PART_TYPES = ['daybook_xml', 'trialbalance_xml', 'explain_text', 'review_text'] as const;
 export type SubmissionPartType = (typeof SUBMISSION_PART_TYPES)[number];
+// The two parts a learner types rather than uploads.
+export type TextPartType = Extract<SubmissionPartType, 'explain_text' | 'review_text'>;
 
 // Which submission_parts a submission for each exercise kind must have
 // before it's "complete" (submission-parts.ts). Set on exercises.required_parts

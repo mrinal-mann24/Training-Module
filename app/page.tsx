@@ -1,4 +1,4 @@
-import { MotionPreference } from "@/app/components/MotionPreference";
+import { MotionPreference } from "@/app/components/site/MotionPreference";
 import { BuiltDifferent } from "@/app/components/site/BuiltDifferent";
 import { Categories } from "@/app/components/site/Categories";
 import { ConceptGrid } from "@/app/components/site/ConceptGrid";

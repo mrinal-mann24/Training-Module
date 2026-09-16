@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatExerciseContent } from '@/lib/chat/exercise-content';
-import type { ChatMessage } from '@/app/(chat)/chat/message';
+import type { ChatMessage } from '@/lib/chat/message';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { Submission } from '@/lib/db/queries/submissions';
 import type { FeedbackHistoryRow } from '@/lib/db/queries/scoring-results';

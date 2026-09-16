@@ -37,7 +37,7 @@ This document exists so unit 5 and unit 20 look like they were written by the sa
 
 19. Follow the folder ownership defined in `architecture.md` Section 2 exactly. Do not create new top-level folders under `/lib` or `/app` without updating `architecture.md` in the same change.
 20. One export's primary concern per file. `score-submission.ts` scores; it does not also define the scoring Zod schema (`schemas/scoring.ts`) or the DB query that saves the result (`db/queries/scoring.ts`).
-21. Colocate a component with its route if it is used only there (`/app/(chat)/components/MessageBubble.tsx`). Promote it to `/components` only once a second route needs it — do not pre-emptively generalize.
+21. Colocate a component with its route if it is used only there (`/app/(chat)/components/MessageBubble.tsx`). Promote it to `app/components/` only once a second route needs it — do not pre-emptively generalize.
 22. Test files sit beside the file they test: `mastery.ts` → `mastery.test.ts`, in the same folder. No separate parallel `/tests` tree mirroring `/lib`.
 23. Barrel files (`index.ts` re-exporting a folder) are allowed only in `/lib/schemas` and `/lib/db/queries`, where consumers need a stable single import point. Do not add barrel files elsewhere — they hide real dependency structure.
 
@@ -58,6 +58,10 @@ This document exists so unit 5 and unit 20 look like they were written by the sa
 32. Presentational components (pure rendering, no data fetching) are separated from container components (fetch/mutate + compose). A component that calls a Server Action and a component that renders a bubble of text are not the same file.
 33. Lists render with stable, meaningful keys (submission ID, exercise ID) — never array index, since chat/history lists reorder and update.
 34. Every interactive element (hint button, upload control, submit) has a visible loading/disabled state while its action is in flight — no dead-click windows where a second click could double-submit.
+
+## 6a. Testing Patterns
+
+**Injected dependencies for LLM and database calls (2026-09-15):** Functions that call the LLM or the database take an optional last `deps` argument (e.g. `{ complete, timeoutMs }` for LLM calls; `{ loadExercise, findPendingPart, classify, answer }` for business logic) so tests inject `vi.fn()` doubles. Production code passes nothing (undefined deps). Example: `export async function classifyMessageIntent(text: string, deps?: ClassifyDeps) { const classify = deps?.classify ?? openRouterClassify; ... }`. No `vi.mock()` of modules — dependencies are passed explicitly.
 
 ## 7. Cross-Cutting Rule
 
