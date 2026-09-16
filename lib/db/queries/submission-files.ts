@@ -26,6 +26,19 @@ export type UploadSubmissionXmlResult = { status: 'uploaded' } | { status: 'fail
 // Trial Balance is attempted. A Storage error comes back as 'failed' naming
 // the file, so the caller can say which one did not save; anything the
 // client throws propagates unchanged.
+//
+// upsert (2026-09-16): a re-send OVERWRITES rather than failing. The path is
+// derived from the submission id alone, and submitFiles rejoins an open
+// submission rather than starting a new one (getOpenSubmissionForExercise
+// matches 'validating' and 'scoring'), so a second send of the same exercise
+// lands on the paths the first send already wrote. Without upsert, Storage
+// answered "resource already exists" and the learner was told to send both
+// files again, which could never work: every retry rejoined the same
+// submission and collided with the same two objects. That is a permanent
+// dead end for the exercise, and it is exactly what a half-finished first
+// attempt leaves behind (files and rows written, then the Inngest send
+// fails). Overwriting makes the retry a genuine self-heal. It needs the
+// bucket's UPDATE policy as well as INSERT — see the 2026-09-16 migration.
 export async function uploadSubmissionXmlFiles(
   supabase: SupabaseClient,
   paths: SubmissionXmlPaths,
@@ -33,14 +46,14 @@ export async function uploadSubmissionXmlFiles(
 ): Promise<UploadSubmissionXmlResult> {
   const { error: daybookError } = await supabase.storage
     .from('submissions')
-    .upload(paths.daybookPath, buffers.daybook, { contentType: 'application/xml' });
+    .upload(paths.daybookPath, buffers.daybook, { contentType: 'application/xml', upsert: true });
   if (daybookError) {
     return { status: 'failed', file: 'daybook' };
   }
 
   const { error: trialbalanceError } = await supabase.storage
     .from('submissions')
-    .upload(paths.trialbalancePath, buffers.trialbalance, { contentType: 'application/xml' });
+    .upload(paths.trialbalancePath, buffers.trialbalance, { contentType: 'application/xml', upsert: true });
   if (trialbalanceError) {
     return { status: 'failed', file: 'trialbalance' };
   }

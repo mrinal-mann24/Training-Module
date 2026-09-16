@@ -40,14 +40,35 @@ describe('uploadSubmissionXmlFiles', () => {
     await expect(uploadSubmissionXmlFiles(client, PATHS, BUFFERS)).resolves.toEqual({ status: 'uploaded' });
 
     expect(calls).toEqual([
-      { bucket: 'submissions', path: PATHS.daybookPath, body: BUFFERS.daybook, options: { contentType: 'application/xml' } },
+      {
+        bucket: 'submissions',
+        path: PATHS.daybookPath,
+        body: BUFFERS.daybook,
+        options: { contentType: 'application/xml', upsert: true },
+      },
       {
         bucket: 'submissions',
         path: PATHS.trialbalancePath,
         body: BUFFERS.trialbalance,
-        options: { contentType: 'application/xml' },
+        options: { contentType: 'application/xml', upsert: true },
       },
     ]);
+  });
+
+  // The permanent dead end this closes (2026-09-16): the path is derived from
+  // the submission id, and submitFiles rejoins an open submission instead of
+  // starting a new one, so a second send lands on the objects the first send
+  // wrote. Without upsert, Storage answered "resource already exists" and the
+  // learner was told to send both files again, which collided identically
+  // every time. Overwriting is what makes the retry a self-heal.
+  it('overwrites on a re-send rather than failing because the object exists', async () => {
+    const { client, calls } = fakeStorageClient();
+
+    await uploadSubmissionXmlFiles(client, PATHS, BUFFERS);
+    await expect(uploadSubmissionXmlFiles(client, PATHS, BUFFERS)).resolves.toEqual({ status: 'uploaded' });
+
+    expect(calls).toHaveLength(4);
+    expect(calls.every((call) => (call.options as { upsert?: boolean }).upsert === true)).toBe(true);
   });
 
   it('stops after a failed Day Book upload without trying the Trial Balance', async () => {

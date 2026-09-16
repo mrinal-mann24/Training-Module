@@ -21,6 +21,61 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (later): RE-SENDING FILES WAS A PERMANENT DEAD END
+
+Found while testing the correction loop live. Not caused by it: this is the
+older "rejoin an open submission" path, which the loop merely exercises more
+often.
+
+**What happened.** The local Inngest dev server was not running, because
+`package.json`'s dev script chained `next dev && npx inngest-cli dev` with
+`&&` — sequential, so the second command could never start while the first was
+still serving. Every `inngest.send` then failed with `ECONNREFUSED :8288`.
+`submitFiles` had by that point already uploaded both XMLs, inserted the
+`submissions` row at `'validating'` and written both `submission_parts` rows,
+so the failure left a half-finished submission behind. Nothing in the codebase
+ever clears a stranded `'validating'` row: there is no timeout and no reaper.
+
+**Why every retry then failed.** `getOpenSubmissionForExercise` matches
+`'validating'` and `'scoring'`, so the next upload rejoined that same
+submission and reused its id. `submissionXmlPaths` is derived from the id
+alone, so the paths were identical, and `.upload()` had no `upsert` — Storage
+answered "resource already exists" and the learner was told "just send both
+files again", which collided identically every time. The exercise was bricked
+for that learner.
+
+**Three collision points, fixed together** — fixing only the visible one moves
+the failure down a line each time:
+
+- `lib/db/queries/submission-files.ts` — both `.upload()` calls now pass
+  `upsert: true`, so a re-send overwrites.
+- `supabase/migrations/20260916140000_submissions_storage_update.sql` — the
+  `submissions` bucket had only select-own and insert-own policies on
+  `storage.objects`. Supabase implements upsert as INSERT ... ON CONFLICT DO
+  UPDATE, so overwriting is checked against the UPDATE policy; without it the
+  upsert would have been refused by RLS and produced the same message. Added
+  `submissions_storage_update_own` with the same own-folder predicate, scoped
+  on both USING and WITH CHECK so a learner cannot move an object into another
+  learner's folder.
+- `lib/db/queries/submission-parts.ts` — `insertSubmissionPart` was a plain
+  insert against `unique (submission_id, part_type)`, so re-recording the same
+  part threw and reached the learner as a 500. Now upserts on that conflict
+  target, stamping `received_at` so the parts checklist shows the latest
+  arrival rather than the first.
+
+Together the retry becomes a genuine self-heal: files overwritten, parts
+replaced, and `submitFiles` re-sends `submission/uploaded` at the end as it
+already did unconditionally, so the stranded submission finally gets scored.
+
+The dev script is now just `next dev`; the Inngest dev server runs in its own
+terminal (`npx inngest-cli@latest dev -u http://localhost:3000/api/inngest`).
+
+**Gates:** `tsc` clean, `eslint` clean, `vitest run` 62 files / 637 tests,
+`next build` compiled successfully.
+
+**Open item:** `20260916140000_submissions_storage_update.sql` must be applied
+alongside the two earlier 2026-09-16 migrations, none of which are applied yet.
+
 ## Session log — 2026-09-16: LEARNING-FIRST BATCHES — no scores, a correction loop, five modules, one progress bar
 
 Four changes in three commits (e00487f, 0383a67, ff4c454) plus a follow-up landing-copy pass. A batch becomes a learning step rather than a mark: percentages and pass/fail leave the learner's view, a wrong batch opens a correction round instead of moving on, the backend module numbers become five named areas, and the dashboard carries one position bar.
