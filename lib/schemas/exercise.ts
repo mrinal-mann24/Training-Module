@@ -116,6 +116,77 @@ export const CONCEPT_TO_MODULE: Record<ConceptTag, number> = Object.fromEntries(
   CONCEPT_TAGS.map((tag, index) => [tag, index + 1]),
 ) as Record<ConceptTag, number>;
 
+// Learner-facing modules (2026-09-16). CONCEPT_TO_MODULE above is unchanged
+// and stays the stored backend structure: one concept per module, which
+// module_progress advancement gates on. Regrouping THAT would quietly make
+// progression far harder, since leaving a five-concept module would require
+// mastering all five rather than one. This is a display grouping layered on
+// top, so a learner sees five recognizable areas instead of twenty numbers.
+//
+// The grouping is not invented for the UI: it follows CONCEPT_TO_MODULE_DOC
+// in lib/llm/grounding/module-docs.ts, the content team's own mapping of
+// concepts to the nine training documents, collapsed to five headline areas.
+// Advanced material (RCM, GST set-off, multi-bill settlement) therefore sits
+// inside a major module rather than appearing as a module of its own.
+//
+// Retired concepts are deliberately absent: narration_discipline is never
+// assessed or displayed, so it belongs to no module.
+export const MAJOR_MODULES = [
+  {
+    id: 'sales_receivables',
+    title: 'Sales and Receivables',
+    blurb: 'Raising sales, and what happens to the money owed to you.',
+    concepts: ['sales_voucher_basics', 'customer_advance'],
+  },
+  {
+    id: 'purchases_payables',
+    title: 'Purchases and Payables',
+    blurb: 'Recording what you buy, and tracking each bill until it is settled.',
+    concepts: [
+      'purchase_voucher_basics',
+      'bill_by_bill_referencing',
+      'supplier_advance',
+      'on_account_reference',
+      'multi_bill_settlement',
+    ],
+  },
+  {
+    id: 'banking',
+    title: 'Banking',
+    blurb: 'Payments, receipts and transfers between your own accounts.',
+    concepts: ['payment_voucher_basics', 'receipt_voucher_basics', 'contra_voucher_basics'],
+  },
+  {
+    id: 'tax',
+    title: 'GST and TDS',
+    blurb: 'Getting the tax head, the rate and the threshold right, then settling them.',
+    concepts: [
+      'gst_classification',
+      'gst_set_off',
+      'gst_payment',
+      'rcm_and_late_fee',
+      'tds_classification',
+      'tds_on_receipt',
+    ],
+  },
+  {
+    id: 'month_end',
+    title: 'Month End and Assets',
+    blurb: 'Journals, depreciation, and proving the books tie out.',
+    concepts: ['journal_voucher_basics', 'trial_balance_tie_out', 'fixed_assets_depreciation'],
+  },
+] as const satisfies readonly { id: string; title: string; blurb: string; concepts: readonly ConceptTag[] }[];
+
+export type MajorModule = (typeof MAJOR_MODULES)[number];
+export type MajorModuleId = MajorModule['id'];
+
+// Reverse lookup, built once. A concept with no major module would be a
+// concept the learner can be tested on but never see progress for, so
+// major-modules.test.ts asserts every active tag is placed exactly once.
+export const MAJOR_MODULE_BY_CONCEPT: Record<string, MajorModuleId> = Object.fromEntries(
+  MAJOR_MODULES.flatMap((module) => module.concepts.map((tag) => [tag, module.id])),
+);
+
 // Learner-facing: a single posted transaction, prose only, no correct-answer hints.
 const TransactionSchema = z.object({
   sequence: z.number().int().positive(),

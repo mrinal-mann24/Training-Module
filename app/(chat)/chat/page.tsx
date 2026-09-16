@@ -4,7 +4,8 @@ import { getLearnerProfile, isLearnerOnboarded } from '@/lib/db/queries/learner-
 import { getLatestExercise } from '@/lib/db/queries/exercises';
 import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
 import { getLearnerIssues } from '@/lib/db/queries/learner-issues';
-import { getConceptMasteryMap, getModuleNumber } from '@/lib/db/queries/mastery';
+import { getConceptMasteryMap } from '@/lib/db/queries/mastery';
+import { currentMajorModule } from '@/lib/tutor/major-modules';
 import { buildChatTimeline } from '@/lib/chat/build-timeline';
 import { isAiaOnboardingDue } from '@/lib/tutor/documents-mode';
 import { ChatShell } from './ChatShell';
@@ -33,9 +34,8 @@ export default async function ChatPage() {
     ? await getLatestExercise(supabase, user.id)
     : null;
 
-  const [initialHintDepth, initialModuleNumber, masteryMap, initialIssues] = await Promise.all([
+  const [initialHintDepth, masteryMap, initialIssues] = await Promise.all([
     initialExercise ? getHintDepthForExercise(supabase, user.id, initialExercise.id) : Promise.resolve(0),
-    getModuleNumber(supabase, user.id),
     getConceptMasteryMap(supabase, user.id),
     // Issue reports (2026-09-15): the list is a convenience, so a failed read
     // (or the learner_issues migration not applied yet) shows no list rather
@@ -54,8 +54,10 @@ export default async function ChatPage() {
   // Chat-history rebuild (2026-08-24): the FULL conversation — every
   // exercise, submission, feedback, hint, and Q&A exchange — is reassembled
   // server-side on every load, so a refresh never loses the thread.
+  const initialModuleTitle = currentMajorModule(masteryMap).title;
+
   const initialMessages = walkthroughCompleted
-    ? await buildChatTimeline(supabase, user.id, initialModuleNumber)
+    ? await buildChatTimeline(supabase, user.id, initialModuleTitle)
     : [];
 
   return (
@@ -65,7 +67,7 @@ export default async function ChatPage() {
       aiaOnboardingDue={aiaOnboardingDue}
       initialExercise={initialExercise}
       initialHintDepth={initialHintDepth}
-      initialModuleNumber={initialModuleNumber}
+      initialModuleTitle={initialModuleTitle}
       initialMessages={initialMessages}
       initialIssues={initialIssues}
     />

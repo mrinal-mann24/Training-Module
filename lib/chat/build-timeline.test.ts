@@ -62,7 +62,7 @@ describe('assembleTimeline', () => {
         { id: 'q1', question: 'which ledger?', answer: 'Recruitment Charges', created_at: '2026-08-01T10:15:00Z' },
       ],
       sourceDocumentsByExercise: new Map(),
-      currentModuleNumber: 1,
+      currentModuleTitle: 'Sales and Receivables',
     });
 
     expect(messages.map((message) => message.id)).toEqual([
@@ -89,7 +89,7 @@ describe('assembleTimeline', () => {
       hints: [],
       qaMessages: [],
       sourceDocumentsByExercise: new Map(),
-      currentModuleNumber: 1,
+      currentModuleTitle: 'Sales and Receivables',
     });
 
     expect(messages[0].attachmentNames).toEqual(['My Daybook.xml', 'My TB.xml']);
@@ -105,7 +105,7 @@ describe('assembleTimeline', () => {
       hints: [],
       qaMessages: [],
       sourceDocumentsByExercise: new Map(),
-      currentModuleNumber: 1,
+      currentModuleTitle: 'Sales and Receivables',
     });
 
     expect(messages[0].attachmentNames).toEqual(['Day Book.xml', 'Trial Balance.xml']);

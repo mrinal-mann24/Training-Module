@@ -24,7 +24,8 @@ import type { Submission, SubmissionStatus } from '@/lib/db/queries/submissions'
 import type { ValidityError } from '@/lib/tutor/submission-gate';
 import { getFeedbackForLearner } from '@/lib/db/queries/scoring-results';
 import { insertHintRequest, getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
-import { getModuleNumber } from '@/lib/db/queries/mastery';
+import { getConceptMasteryMap } from '@/lib/db/queries/mastery';
+import { currentMajorModule } from '@/lib/tutor/major-modules';
 import { inngest } from '@/lib/jobs/client';
 import type { Coaching } from '@/lib/schemas/coaching';
 import type { Hint } from '@/lib/schemas/hint';
@@ -580,7 +581,7 @@ export type GetNextExerciseResult =
       status: 'found';
       exercise: ExerciseForLearner;
       hintDepth: number;
-      moduleNumber: number;
+      moduleTitle: string;
       sourceDocuments: ExerciseSourceDocument[];
     }
   | { status: 'not-found' };
@@ -611,13 +612,19 @@ export async function getNextExercise(previousExerciseId: string): Promise<GetNe
     return { status: 'not-found' };
   }
 
-  const [hintDepth, moduleNumber, sourceDocuments] = await Promise.all([
+  const [hintDepth, masteryMap, sourceDocuments] = await Promise.all([
     getHintDepthForExercise(supabase, user.id, exercise.id),
-    getModuleNumber(supabase, user.id),
+    getConceptMasteryMap(supabase, user.id),
     getExerciseSourceDocuments(supabase, exercise.id),
   ]);
 
-  return { status: 'found', exercise, hintDepth, moduleNumber, sourceDocuments };
+  return {
+    status: 'found',
+    exercise,
+    hintDepth,
+    moduleTitle: currentMajorModule(masteryMap).title,
+    sourceDocuments,
+  };
 }
 
 export type AskQuestionResult =

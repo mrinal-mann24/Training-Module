@@ -30,7 +30,7 @@ type PendingSubmissionProps = {
   onNextExercise: (
     exercise: ExerciseForLearner,
     hintDepth: number,
-    moduleNumber: number,
+    moduleTitle: string,
     sourceDocuments: ExerciseSourceDocument[],
   ) => void;
 };
@@ -124,7 +124,7 @@ export function PendingSubmission({
                 onNextExercise(
                   nextExerciseResult.exercise,
                   nextExerciseResult.hintDepth,
-                  nextExerciseResult.moduleNumber,
+                  nextExerciseResult.moduleTitle,
                   nextExerciseResult.sourceDocuments,
                 );
                 return;

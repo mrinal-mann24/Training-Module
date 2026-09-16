@@ -32,7 +32,7 @@ export function assembleTimeline(rows: {
   hints: HintRequest[];
   qaMessages: QaMessage[];
   sourceDocumentsByExercise: Map<string, SourceDocumentCard[]>;
-  currentModuleNumber: number;
+  currentModuleTitle: string;
 }): ChatMessage[] {
   type TimelineEvent = { at: string; order: number; message: ChatMessage };
   const events: TimelineEvent[] = [];
@@ -54,10 +54,10 @@ export function assembleTimeline(rows: {
         role: 'assistant',
         kind: 'exercise',
         content: formatExerciseContent(exercise.scenario, itemLines, exercise.requiredParts),
-        // Historical module numbers aren't stored (module is a derived
-        // progress value); the current number is a close-enough label for
-        // history and exact for the latest exercise.
-        progressLabel: `Module ${rows.currentModuleNumber} · Level ${exercise.difficulty_level.replace('L', '')}`,
+        // Which module a PAST exercise belonged to isn't stored (the module
+        // is derived from current mastery); the current module is a
+        // close-enough label for history and exact for the latest exercise.
+        progressLabel: `${rows.currentModuleTitle} · Level ${exercise.difficulty_level.replace('L', '')}`,
         sourceDocuments: sourceDocuments.length > 0 ? sourceDocuments : undefined,
       },
     });
@@ -158,7 +158,7 @@ export function assembleTimeline(rows: {
 export async function buildChatTimeline(
   supabase: SupabaseClient,
   learnerId: string,
-  currentModuleNumber: number,
+  currentModuleTitle: string,
 ): Promise<ChatMessage[]> {
   const [exercises, submissions, feedbacks, hints, qaMessages] = await Promise.all([
     getExercisesForLearner(supabase, learnerId),
@@ -189,6 +189,6 @@ export async function buildChatTimeline(
     hints,
     qaMessages,
     sourceDocumentsByExercise,
-    currentModuleNumber,
+    currentModuleTitle,
   });
 }

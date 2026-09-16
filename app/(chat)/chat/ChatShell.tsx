@@ -38,7 +38,7 @@ type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documen
 // Exactly one of the two is ever non-empty for a given exercise.
 function exerciseToMessages(
   exercise: ExerciseForLearner,
-  moduleNumber: number,
+  moduleTitle: string,
   sourceDocuments: ExerciseSourceDocument[],
 ): ChatMessage[] {
   // Documents-only batches (2026-09-10) show no transaction lines.
@@ -56,7 +56,7 @@ function exerciseToMessages(
       content: formatExerciseContent(exercise.scenario, itemLines, exercise.requiredParts),
       // Small inline progress label, existing token styles only — no new
       // screen (Unit 09's design note; the full progress view is Unit 12).
-      progressLabel: `Module ${moduleNumber} · Level ${exercise.difficulty_level.replace('L', '')}`,
+      progressLabel: `${moduleTitle} · Level ${exercise.difficulty_level.replace('L', '')}`,
       // Document cards sit below the scenario text in this same message, per
       // Unit 10's design note — never a separate message.
       sourceDocuments: sourceDocuments.length > 0 ? sourceDocuments : undefined,
@@ -75,9 +75,10 @@ type ChatShellProps = {
   // hint button's label is correct on first render/reload, not just after a
   // hint is requested in the current session.
   initialHintDepth: number;
-  // Count of mastered concepts + 1, for the progress label — see
-  // getModuleNumber's comment for why this is derived, not stored.
-  initialModuleNumber: number;
+  // The learner-facing module the chip names (2026-09-16), derived from the
+  // same mastery map /progress and the dashboard bar use, so the three
+  // screens can never name different modules for the same learner.
+  initialModuleTitle: string;
   // Chat-history rebuild (2026-08-24): the full persisted conversation,
   // reassembled server-side (lib/chat/build-timeline.ts) — the timeline
   // opens with this and appends everything that happens live.
@@ -93,7 +94,7 @@ export function ChatShell({
   aiaOnboardingDue,
   initialExercise,
   initialHintDepth,
-  initialModuleNumber,
+  initialModuleTitle,
   initialMessages,
   initialIssues,
 }: ChatShellProps) {
@@ -103,7 +104,7 @@ export function ChatShell({
   const [showWalkthrough, setShowWalkthrough] = useState(!walkthroughCompleted);
   const [showAiaOnboarding, setShowAiaOnboarding] = useState(aiaOnboardingDue);
   const [exercise, setExercise] = useState<ExerciseForLearner | null>(initialExercise);
-  const [moduleNumber, setModuleNumber] = useState(initialModuleNumber);
+  const [moduleTitle, setModuleTitle] = useState(initialModuleTitle);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // Holds both submission-related messages and hint messages, appended in
   // chronological order — a single timeline, same pattern already used for
@@ -163,7 +164,7 @@ export function ChatShell({
   function handleNextExercise(
     nextExercise: ExerciseForLearner,
     hintDepth: number,
-    nextModuleNumber: number,
+    nextModuleTitle: string,
     nextSourceDocuments: ExerciseSourceDocument[],
   ) {
     // The new exercise is appended to the running timeline rather than
@@ -175,10 +176,10 @@ export function ChatShell({
     // being told to improve on.
     setSubmissionMessages((current) => [
       ...current,
-      ...exerciseToMessages(nextExercise, nextModuleNumber, nextSourceDocuments),
+      ...exerciseToMessages(nextExercise, nextModuleTitle, nextSourceDocuments),
     ]);
     setExercise(nextExercise);
-    setModuleNumber(nextModuleNumber);
+    setModuleTitle(nextModuleTitle);
     setHasRequestedHint(hintDepth > 0);
     // An open Smart Send card for the previous exercise turns stale by itself
     // (draftIsStale). Deliberately not handled here: PendingSubmission keeps
@@ -487,7 +488,7 @@ export function ChatShell({
       // exercise already loaded (initialExercise is null on this path).
       setSubmissionMessages((current) => [
         ...current,
-        ...exerciseToMessages(result.exercise, moduleNumber, result.sourceDocuments),
+        ...exerciseToMessages(result.exercise, moduleTitle, result.sourceDocuments),
       ]);
       setExercise(result.exercise);
       setShowWalkthrough(false);

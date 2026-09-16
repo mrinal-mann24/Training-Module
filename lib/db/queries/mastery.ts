@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { RETIRED_CONCEPT_TAGS, type ConceptTag } from '@/lib/schemas/exercise';
+import type { ConceptTag } from '@/lib/schemas/exercise';
 import type { StatePatch, ConceptMasteryStatus } from '@/lib/schemas/state-patch';
 
 export type ConceptAttempt = {
@@ -95,27 +95,14 @@ export async function getConceptMasteryMap(
   return new Map((data ?? []).map((row) => [row.concept_tag as ConceptTag, row as ConceptMastery]));
 }
 
-// "Module number" for the progress label (Unit 09's UI note: "Module 3 ·
-// Level 2") is derived, not stored — count of concepts currently mastered,
-// plus 1. No module-numbering scheme is defined anywhere else in the spec,
-// so this stays a simple progress indicator rather than a fixed curriculum
-// position (confirmed with the user rather than inventing a grouping table).
-export async function getModuleNumber(supabase: SupabaseClient, learnerId: string): Promise<number> {
-  // Retired concepts (narration, 2026-09-10) no longer count towards the
-  // module number even where an older row still says 'mastered'.
-  const { count, error } = await supabase
-    .from('concept_mastery')
-    .select('concept_tag', { count: 'exact', head: true })
-    .eq('learner_id', learnerId)
-    .eq('status', 'mastered')
-    .not('concept_tag', 'in', `(${RETIRED_CONCEPT_TAGS.join(',')})`);
-
-  if (error) {
-    throw error;
-  }
-
-  return (count ?? 0) + 1;
-}
+// getModuleNumber was removed on 2026-09-16. It derived a bare "Module N"
+// label as the count of mastered concepts plus 1, which disagreed with the
+// stored module_progress.current_module that /progress printed: the same
+// learner could read "Module 3" in chat and "Module 7" on the progress page.
+// Both are gone from the UI. The chat chip, the progress page and the
+// dashboard bar now all derive their label from the mastery map through
+// lib/tutor/major-modules.ts, so they cannot disagree. module_progress is
+// still written and still gates advancement; it is simply not displayed.
 
 // The one sanctioned write path for concept_mastery (architecture.md
 // invariant 5) — only ever called from lib/tutor/mastery.ts's caller

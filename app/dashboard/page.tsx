@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isLearnerOnboarded } from "@/lib/db/queries/learner-profile";
+import { getConceptMasteryMap } from "@/lib/db/queries/mastery";
+import { currentMajorModule, overallProgress } from "@/lib/tutor/major-modules";
 import { buttonVariants } from "@/app/components/ui/button";
+import { ProgressBar } from "@/app/components/ui/ProgressBar";
 import { logOut } from "@/app/(auth)/login/actions";
 
 export default async function DashboardPage() {
@@ -19,6 +22,13 @@ export default async function DashboardPage() {
   if (!(await isLearnerOnboarded(supabase, user.id))) {
     redirect("/onboarding");
   }
+
+  // The dashboard's only data read beyond the session (2026-09-16). Both the
+  // bar and the module name come from the same mastery map, and /progress
+  // derives its own from the same query, so the two screens cannot disagree.
+  const masteryMap = await getConceptMasteryMap(supabase, user.id);
+  const progress = overallProgress(masteryMap);
+  const currentModule = currentMajorModule(masteryMap);
 
   return (
     <div className="min-h-svh w-full bg-background font-body">
@@ -48,7 +58,25 @@ export default async function DashboardPage() {
           Pick up your training right where you left off.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Link
+          href="/progress"
+          className="group mt-10 block rounded-2xl border border-border bg-background p-6 transition-all hover:-translate-y-1 hover:shadow-dashboard active:translate-y-0"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Your progress
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {progress.percent}% complete · {progress.masteredCount} of {progress.totalCount} concepts
+            </p>
+          </div>
+          <ProgressBar percent={progress.percent} label="Overall course progress" className="mt-4" />
+          <p className="mt-3 text-sm text-muted-foreground">
+            Working through <span className="text-foreground">{currentModule.title}</span>. See the full breakdown.
+          </p>
+        </Link>
+
+        <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-8">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">

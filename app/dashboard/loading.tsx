@@ -1,9 +1,9 @@
 /**
  * Suspense fallback for /dashboard while the session and onboarding checks
  * run. Mirrors the page: wordmark header with the Log out button, the display
- * heading and lede, and the two-card grid. A skeleton block is one step darker
- * than the ground it sits on (`bg-secondary` on white, `bg-border` on the grey
- * card).
+ * heading and lede, the progress card, and the two-card grid. A skeleton block
+ * is one step darker than the ground it sits on (`bg-secondary` on white,
+ * `bg-border` on the grey card).
  */
 export default function DashboardLoading() {
   return (
@@ -22,7 +22,16 @@ export default function DashboardLoading() {
           <div className="h-12 w-72 max-w-full rounded-xl bg-secondary md:h-16 md:w-96" />
           <div className="mt-4 h-6 w-full max-w-md rounded-md bg-secondary md:h-7" />
 
-          <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <div className="mt-10 rounded-2xl border border-border bg-background p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <div className="h-4 w-28 rounded-sm bg-secondary" />
+              <div className="h-5 w-48 max-w-full rounded-sm bg-secondary" />
+            </div>
+            <div className="mt-4 h-2 w-full rounded-full bg-secondary" />
+            <div className="mt-3 h-5 w-64 max-w-full rounded-sm bg-secondary" />
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-8">
               <div>
                 <div className="h-4 w-16 rounded-sm bg-border" />
