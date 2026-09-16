@@ -37,8 +37,15 @@ export type UploadSubmissionXmlResult = { status: 'uploaded' } | { status: 'fail
 // submission and collided with the same two objects. That is a permanent
 // dead end for the exercise, and it is exactly what a half-finished first
 // attempt leaves behind (files and rows written, then the Inngest send
-// fails). Overwriting makes the retry a genuine self-heal. It needs the
-// bucket's UPDATE policy as well as INSERT — see the 2026-09-16 migration.
+// fails). Overwriting makes the retry a genuine self-heal.
+//
+// Supabase checks an overwrite against the bucket's UPDATE policy, and that
+// policy only permits it while the submission is still 'validating'
+// (20260916150000). Files of a 'scoring' or 'scored' submission stay
+// immutable: an overwrite there comes back as 'failed', which is intended.
+// A scored Trial Balance is the next month's tie-out baseline, so letting a
+// learner rewrite it would let them change what they are measured against.
+// A first upload is an INSERT and is never affected.
 export async function uploadSubmissionXmlFiles(
   supabase: SupabaseClient,
   paths: SubmissionXmlPaths,

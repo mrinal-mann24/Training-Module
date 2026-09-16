@@ -59,9 +59,9 @@ the failure down a line each time:
   learner's folder.
 - `lib/db/queries/submission-parts.ts` — `insertSubmissionPart` was a plain
   insert against `unique (submission_id, part_type)`, so re-recording the same
-  part threw and reached the learner as a 500. Now upserts on that conflict
-  target, stamping `received_at` so the parts checklist shows the latest
-  arrival rather than the first.
+  part threw and reached the learner as a 500. Now `INSERT ... ON CONFLICT DO
+  NOTHING` (see the correction below: the first version used DO UPDATE and
+  failed live).
 
 Together the retry becomes a genuine self-heal: files overwritten, parts
 replaced, and `submitFiles` re-sends `submission/uploaded` at the end as it
@@ -73,8 +73,48 @@ terminal (`npx inngest-cli@latest dev -u http://localhost:3000/api/inngest`).
 **Gates:** `tsc` clean, `eslint` clean, `vitest run` 62 files / 637 tests,
 `next build` compiled successfully.
 
-**Open item:** `20260916140000_submissions_storage_update.sql` must be applied
-alongside the two earlier 2026-09-16 migrations, none of which are applied yet.
+**Correction, same day — the first version of this fix had two bugs of its own.**
+
+1. **The parts upsert failed live** with `42501 new row violates row-level
+   security policy (USING expression) for table "submission_parts"`. It used
+   `ON CONFLICT DO UPDATE`, which Postgres checks against an UPDATE policy,
+   and `submission_parts` has only select-own and insert-own. This is the
+   identical mistake already caught for Storage, repeated on the table. Fixed
+   with `ignoreDuplicates: true` (`ON CONFLICT DO NOTHING`), which needs only
+   INSERT, and `.maybeSingle()` so the zero rows returned on a conflict
+   resolve to null instead of throwing. Adding an UPDATE policy was rejected:
+   it would let a learner rewrite their own parts from the browser, including
+   an explanation already confirmed through Smart Send, bypassing every guard
+   in `submitTextPart`. DO NOTHING is also simply correct: a file part's
+   content is `{ storage_path }`, derived from the submission id, so on a
+   rejoin the existing row already holds that exact value, and a text part
+   conflict is only ever a race, where the first confirmed answer should win.
+2. **The Storage UPDATE policy was far too broad.** Its predicate was only
+   "your own folder", so a learner could overwrite ANY of their submission
+   files, scored ones included. That broke `architecture.md`'s "immutable once
+   submitted" rule and opened a tampering path: the movement tie-out uses the
+   most recent SCORED Trial Balance as the next month's baseline, so a learner
+   could rewrite it and change what the next batch, and the
+   `trial_balance_tie_out` concept's mastery, is measured against.
+   `20260916150000_submissions_storage_update_scope.sql` replaces the policy
+   with one that allows an overwrite only while the submission is still
+   `'validating'` — exactly the stranded case the overwrite exists for. First
+   uploads and correction rounds are INSERTs and unaffected.
+
+Both were found by loading `supabase-postgres-best-practices` before choosing
+the fix: its upsert rule distinguishes DO UPDATE from DO NOTHING by the
+permission each needs, and its least-privilege rule is what flagged the broad
+Storage policy. A sweep of every `.upsert(` in `lib/` found no other instance:
+the remaining DO UPDATE upserts run through the service role, and
+`learner_profile`, the one called as the learner, has an UPDATE policy.
+
+**Gates:** `tsc` clean, `eslint` clean, `vitest run` 62 files / 638 tests,
+`next build` compiled successfully.
+
+**Open item:** four 2026-09-16 migrations must be applied, in order:
+`20260916120000_correction_rounds`, `20260916130000_scoring_results_off_realtime`,
+`20260916140000_submissions_storage_update`,
+`20260916150000_submissions_storage_update_scope`.
 
 ## Session log — 2026-09-16: LEARNING-FIRST BATCHES — no scores, a correction loop, five modules, one progress bar
 

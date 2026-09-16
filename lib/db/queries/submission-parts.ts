@@ -15,34 +15,48 @@ export type SubmissionPart = {
 // Storage bucket at the path already recorded on submissions.daybook_path/
 // trialbalance_path; this is a structurally-consistent pointer, not a second
 // copy of the path.
-// Upserts on (submission_id, part_type), the table's own unique constraint
-// (20260817120000_multipart_qualitative_scoring.sql). A re-sent part REPLACES
-// its predecessor instead of raising a unique violation (2026-09-16).
+// INSERT ... ON CONFLICT (submission_id, part_type) DO NOTHING (2026-09-16).
+// A part that is already recorded is left exactly as it is, and the call
+// returns null instead of throwing.
 //
-// This is the second half of the re-send fix. submitFiles rejoins an open
-// submission rather than starting a new one, so sending the two exports again
-// re-records the same two part types for the same submission. As a plain
-// insert that threw, and the throw reached the learner as a 500 rather than a
-// message. Fixing only the Storage upsert would have moved the failure from
-// the upload to this line.
+// Why a re-send reaches here at all: submitFiles rejoins an open submission
+// rather than starting a new one, so sending the two exports again re-records
+// the same two part types for the same submission. As a plain insert that hit
+// the table's unique constraint and reached the learner as a 500.
 //
-// received_at is set explicitly because an upsert keeps the existing row's
-// column values otherwise, and the chat's parts checklist reads it as "when
-// this arrived" — it should mean the latest arrival, not the first.
+// Why DO NOTHING and never DO UPDATE. An upsert that updates is checked
+// against an UPDATE policy, and submission_parts has only select-own and
+// insert-own. The first version of this fix used DO UPDATE and failed live
+// with 42501 "new row violates row-level security policy (USING expression)".
+// Adding an UPDATE policy would fix that error but is the wrong fix: it would
+// let any learner rewrite their own parts straight from the browser,
+// including an explanation already confirmed through Smart Send, bypassing
+// every guard in submitTextPart. DO NOTHING needs only INSERT.
+//
+// And DO NOTHING is the correct behaviour, not a workaround:
+// - a file part's content is { storage_path }, and that path is derived from
+//   the submission id, so on a rejoin the existing row already holds exactly
+//   the value this call would write; the file bytes themselves are replaced
+//   in Storage, and the scoring job reads the path fresh.
+// - a text part is refused upstream once received (submitTextPart), so a
+//   conflict here is only ever a race, and keeping the FIRST confirmed answer
+//   is right; silently swapping it for a later one is not.
 export async function insertSubmissionPart(
   supabase: SupabaseClient,
   submissionId: string,
   partType: SubmissionPartType,
   content: unknown,
-): Promise<SubmissionPart> {
+): Promise<SubmissionPart | null> {
   const { data, error } = await supabase
     .from('submission_parts')
     .upsert(
-      { submission_id: submissionId, part_type: partType, content, received_at: new Date().toISOString() },
-      { onConflict: 'submission_id,part_type' },
+      { submission_id: submissionId, part_type: partType, content },
+      { onConflict: 'submission_id,part_type', ignoreDuplicates: true },
     )
     .select('id, submission_id, part_type, content, received_at')
-    .single();
+    // Zero rows come back when the part already existed, so maybeSingle,
+    // never single, which would turn the normal re-send into an error.
+    .maybeSingle();
 
   if (error) {
     throw error;
