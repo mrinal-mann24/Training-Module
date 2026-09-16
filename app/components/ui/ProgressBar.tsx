@@ -12,10 +12,9 @@ type ProgressBarProps = {
 // material a learner is, which is why it survived the same change that took
 // percentages off batch feedback: this number is a position, not a mark.
 //
-// Tokens only, and deliberately the pair that resolves on BOTH app surfaces:
-// bg-secondary and bg-accent are defined for the dashboard's shadcn set and
-// still resolve in the older chat/progress token set, so one component serves
-// both without a second variant.
+// Tokens only: bg-day-line and bg-day-blue resolve through :root variables,
+// so the bar reads the same on every day-surface route (dashboard, progress)
+// without a second variant.
 //
 // The width is an inline style on purpose: code-standards rule 24 names "a
 // computed progress-bar width" as the example of a value that cannot be a
@@ -30,10 +29,10 @@ export function ProgressBar({ percent, label, className }: ProgressBarProps) {
       aria-valuenow={safePercent}
       aria-valuemin={0}
       aria-valuemax={100}
-      className={cn('h-2 w-full overflow-hidden rounded-full bg-secondary', className)}
+      className={cn('h-2 w-full overflow-hidden rounded-full bg-day-line', className)}
     >
       <div
-        className="h-full rounded-full bg-accent transition-[width] duration-500 motion-reduce:transition-none"
+        className="h-full rounded-full bg-day-blue transition-[width] duration-500 motion-reduce:transition-none"
         style={{ width: `${safePercent}%` }}
       />
     </div>

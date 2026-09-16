@@ -46,6 +46,8 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 
 - Landing screen shown after onboarding, two entry points: Modules and Task
 - Modules box: placeholder for v1 (5–6 video slots reserved, no functional content — real video library is a later phase)
+- Chat video sidebar (2026-09-16): a "Video library" list beside the chat (a drawer on phones) showing five sample titles, each labelled "Sample"; it plays nothing and links nowhere until the real video library exists
+- Sign up has its own URL, `/login?mode=signup`, which the landing page's "Get started" links to; after creating an account the learner lands on `/login?created=1` to sign in
 - Task box: the only functional path in v1, opens the chat shell
 
 ### The Live Tutor (Chat)

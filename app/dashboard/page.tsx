@@ -5,9 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isLearnerOnboarded } from "@/lib/db/queries/learner-profile";
 import { getConceptMasteryMap } from "@/lib/db/queries/mastery";
 import { currentMajorModule, overallProgress } from "@/lib/tutor/major-modules";
-import { buttonVariants } from "@/app/components/ui/button";
 import { ProgressBar } from "@/app/components/ui/ProgressBar";
-import { logOut } from "@/app/(auth)/login/actions";
+import { ProductHeader } from "@/app/components/ProductHeader";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -31,85 +30,75 @@ export default async function DashboardPage() {
   const currentModule = currentMajorModule(masteryMap);
 
   return (
-    <div className="min-h-svh w-full bg-background font-body">
-      <header className="flex items-center justify-between px-6 py-5 md:px-12 lg:px-20">
-        <Link
-          href="/"
-          className="text-xl font-semibold tracking-tight text-foreground transition-opacity hover:opacity-70"
-        >
-          ✦ AIA Academy
-        </Link>
+    <div className="day relative isolate min-h-svh w-full">
+      <ProductHeader />
 
-        <form action={logOut}>
-          <button
-            type="submit"
-            className={buttonVariants({ variant: "outline", className: "h-10 px-5" })}
-          >
-            Log out
-          </button>
-        </form>
-      </header>
-
-      <main className="mx-auto w-full max-w-5xl px-6 pb-24 pt-12 md:pt-16">
-        <h1 className="font-display text-5xl leading-[1.05] tracking-tight text-foreground md:text-6xl">
-          Welcome <em className="italic">back</em>
+      <main className="mx-auto w-full max-w-5xl px-5 pb-24 pt-12 md:px-8 md:pt-16">
+        <h1 className="day-heading font-nunito text-day-ink">
+          Welcome <em className="not-italic text-day-blue">back</em>
         </h1>
-        <p className="mt-4 max-w-162.5 text-base leading-relaxed text-muted-foreground md:text-lg">
+        <p className="day-lede mt-4 max-w-162.5 font-nunito text-day-muted">
           Pick up your training right where you left off.
         </p>
 
         <Link
           href="/progress"
-          className="group mt-10 block rounded-2xl border border-border bg-background p-6 transition-all hover:-translate-y-1 hover:shadow-dashboard active:translate-y-0"
+          className="group mt-10 block rounded-card border border-day-line bg-day-card p-2.5 transition-colors duration-200 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-day-blue"
         >
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Your progress
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {progress.percent}% complete · {progress.masteredCount} of {progress.totalCount} concepts
+          <div className="rounded-panel bg-white p-6 md:p-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <p className="font-urbanist text-xs uppercase tracking-[0.12em] text-day-muted">
+                Your progress
+              </p>
+              <p className="font-nunito text-sm text-day-muted">
+                {progress.percent}% complete · {progress.masteredCount} of {progress.totalCount} concepts
+              </p>
+            </div>
+            <ProgressBar percent={progress.percent} label="Overall course progress" className="mt-4" />
+            <p className="mt-3 font-nunito text-sm text-day-muted">
+              Working through <span className="text-day-ink">{currentModule.title}</span>. See the full breakdown.
             </p>
           </div>
-          <ProgressBar percent={progress.percent} label="Overall course progress" className="mt-4" />
-          <p className="mt-3 text-sm text-muted-foreground">
-            Working through <span className="text-foreground">{currentModule.title}</span>. See the full breakdown.
-          </p>
         </Link>
 
         <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <div className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-8">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Modules
-              </p>
-              <h2 className="mt-3 font-display text-3xl tracking-tight text-foreground">
-                Video library
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">Coming soon</p>
+          <div className="rounded-card border border-day-line bg-day-card p-2.5">
+            <div className="day-grid-paper flex min-h-60 flex-col justify-between rounded-panel border border-day-line p-8">
+              <div>
+                <p className="font-urbanist text-xs uppercase tracking-[0.12em] text-day-muted">
+                  Modules
+                </p>
+                <h2 className="mt-3 font-nunito text-3xl font-medium text-day-ink">
+                  Video library
+                </h2>
+                <p className="mt-2 font-nunito text-sm text-day-muted">Coming soon</p>
+              </div>
+              <span className="inline-flex w-fit rounded-full border border-day-line bg-white px-4 py-1.5 font-urbanist text-xs text-day-muted">
+                In a later phase
+              </span>
             </div>
-            <span className="inline-flex w-fit rounded-full border border-border bg-background px-4 py-1.5 text-xs font-medium text-muted-foreground">
-              In a later phase
-            </span>
           </div>
 
           <Link
             href="/chat"
-            className="group flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-background p-8 transition-all hover:-translate-y-1 hover:shadow-dashboard active:translate-y-0"
+            className="group flex rounded-card bg-day-blue p-2.5 transition-colors duration-200 hover:bg-day-blue-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-day-blue"
           >
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">
-                Task
-              </p>
-              <h2 className="mt-3 font-display text-3xl tracking-tight text-foreground">
-                Start your diagnostic exercise
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Open the chat and work with your tutor.
-              </p>
+            <div className="flex min-h-60 w-full flex-col justify-between rounded-panel border border-white/15 p-8">
+              <div>
+                <p className="font-urbanist text-xs uppercase tracking-[0.12em] text-white/80">
+                  Task
+                </p>
+                <h2 className="mt-3 font-nunito text-3xl font-medium text-white">
+                  Start your diagnostic exercise
+                </h2>
+                <p className="mt-2 font-nunito text-sm text-white/80">
+                  Open the chat and work with your tutor.
+                </p>
+              </div>
+              <span className="day-disc flex size-12 items-center justify-center self-end rounded-full text-day-blue transition-transform duration-200 group-hover:scale-105">
+                <ArrowUpRight className="h-5 w-5" />
+              </span>
             </div>
-            <span className="flex h-11 w-11 items-center justify-center self-end rounded-full bg-primary text-primary-foreground transition-transform group-hover:scale-105">
-              <ArrowUpRight className="h-5 w-5" />
-            </span>
           </Link>
         </div>
       </main>

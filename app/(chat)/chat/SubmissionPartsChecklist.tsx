@@ -23,14 +23,14 @@ export function SubmissionPartsChecklist({ requiredParts, receivedParts }: Submi
   const receivedSet = new Set(receivedParts);
 
   return (
-    <p className="text-sm text-text-secondary">
+    <p className="font-nunito text-sm text-day-muted">
       {requiredParts.map((partType, index) => {
         const isReceived = receivedSet.has(partType);
         return (
           <span key={partType}>
             {index > 0 && ' · '}
             {PART_LABEL[partType]}{' '}
-            <span className={cn(isReceived ? 'text-status-success' : 'text-text-muted')}>
+            <span className={cn(isReceived ? 'text-status-success' : 'text-day-muted')}>
               {isReceived ? '✓' : '— waiting'}
             </span>
           </span>

@@ -271,7 +271,7 @@ export const VOICES: readonly (readonly VoiceCard[])[] = [
 
 export const FINAL_CTA = {
   title: "ARE YOU IN?",
-  cta: { label: "Get started", href: "/login" },
+  cta: { label: "Get started", href: "/login?mode=signup" },
 } as const;
 
 export const FOOTER = {

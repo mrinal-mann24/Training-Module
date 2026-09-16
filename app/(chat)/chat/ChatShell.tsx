@@ -28,7 +28,8 @@ import { textPartTypeFor } from '@/lib/tutor/submission-routing';
 import { AiaOnboarding } from './AiaOnboarding';
 import { ReportIssue } from './ReportIssue';
 import type { LearnerIssue } from '@/lib/db/queries/learner-issues';
-import { logOut } from '@/app/(auth)/login/actions';
+import { ProductHeader } from '@/app/components/ProductHeader';
+import { VideoSidebar } from './VideoSidebar';
 import type { ChatMessage } from '@/lib/chat/message';
 
 type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documentName: string; url: string };
@@ -129,6 +130,8 @@ export function ChatShell({
   // already asked about extra files so the next Send proceeds.
   const [composerResetSignal, setComposerResetSignal] = useState(0);
   const extraFilesConfirmedRef = useRef(false);
+  // UI-only: the video library drawer on small screens (md+ shows it inline).
+  const [videosOpen, setVideosOpen] = useState(false);
 
   const walkthroughMessages: ChatMessage[] = walkthroughSteps
     .slice(0, stepIndex + 1)
@@ -539,7 +542,7 @@ export function ChatShell({
   }
 
   return (
-    <div className="flex h-screen flex-col bg-bg-canvas">
+    <div className="day flex h-dvh flex-col">
       {showAiaOnboarding && (
         <AiaOnboarding
           onComplete={async () => {
@@ -550,29 +553,34 @@ export function ChatShell({
           }}
         />
       )}
-      {/* Slim persistent header so the learner always has a visible,
-          unambiguous Log out — the chat screen previously had none, and the
-          only logout lived on the dashboard (2026-08-31). */}
-      <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5 font-body">
-        <span className="text-base font-semibold tracking-tight text-foreground">✦ AIA Academy</span>
-        <form action={logOut}>
-          <button
-            type="submit"
-            className="cursor-pointer rounded-lg border border-border bg-background px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-          >
-            Log out
-          </button>
-        </form>
-      </header>
+      {/* Persistent header so the learner always has a visible, unambiguous
+          Log out (2026-08-31). The shared product pill; on small screens it
+          also opens the video library drawer. */}
+      <ProductHeader className="pb-3 md:pb-4">
+        <button
+          type="button"
+          onClick={() => setVideosOpen(true)}
+          aria-expanded={videosOpen}
+          aria-haspopup="dialog"
+          className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-full px-4 font-urbanist text-base text-white transition-colors duration-200 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:hidden"
+        >
+          Videos
+        </button>
+      </ProductHeader>
 
+      <div className="flex min-h-0 flex-1">
+      <VideoSidebar open={videosOpen} onClose={() => setVideosOpen(false)} />
+
+      {/* Chat column: the message area and the composer, beside the sidebar. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Relative wrapper so the floating "Report an issue" button sits over
           the bottom-right of the message area and never over the composer;
           the extra bottom padding keeps the last message clear of it. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-20">
+      <div className="flex-1 overflow-y-auto px-4 pt-8 pb-20 md:px-8">
         {/* Phase 4 (spec 16): widescreen — messages live in a centered
             ~1150px column instead of spanning the whole window. */}
-        <div className="mx-auto w-full max-w-287.5 space-y-4">
+        <div className="mx-auto w-full max-w-287.5 space-y-6">
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
@@ -590,14 +598,14 @@ export function ChatShell({
 
         {!showWalkthrough && !exercise && messages.length === 0 && (
           <div className="flex flex-col items-start gap-2">
-            <p className="text-base text-text-secondary">
-              You&apos;re all set up — your first exercise is ready when you are.
+            <p className="font-nunito text-base text-day-muted">
+              You&apos;re all set up. Your first exercise is ready when you are.
             </p>
             <button
               type="button"
               onClick={deliverDiagnostic}
               disabled={isPending}
-              className="rounded-md bg-accent px-4 py-2 text-base text-white hover:bg-accent-hover disabled:opacity-60"
+              className="inline-flex h-11 items-center rounded-full bg-day-blue px-6 font-urbanist text-base text-white transition-colors hover:bg-day-blue-hover disabled:opacity-60"
             >
               {isPending ? 'Getting your exercise…' : 'Start my training'}
             </button>
@@ -610,7 +618,7 @@ export function ChatShell({
               type="button"
               onClick={handleStepAction}
               disabled={isPending}
-              className="rounded-md bg-accent px-4 py-2 text-base text-white hover:bg-accent-hover disabled:opacity-60"
+              className="inline-flex h-11 items-center rounded-full bg-day-blue px-6 font-urbanist text-base text-white transition-colors hover:bg-day-blue-hover disabled:opacity-60"
             >
               {isPending ? 'Generating…' : currentStep.buttonLabel}
             </button>
@@ -650,6 +658,8 @@ export function ChatShell({
         isRequestingHint={isRequestingHint}
         onRequestHint={handleRequestHint}
       />
+      </div>
+      </div>
     </div>
   );
 }

@@ -37,19 +37,19 @@ export function AiaOnboarding({ onComplete }: AiaOnboardingProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="aia-onboarding-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 font-body"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 font-nunito"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-border bg-background p-6 shadow-dashboard">
-        <p className="text-xs font-medium uppercase tracking-wide text-accent">
+      <div className="w-full max-w-xl rounded-panel border border-day-line bg-white p-6 shadow-dashboard">
+        <p className="font-urbanist text-xs font-medium uppercase tracking-wide text-day-blue">
           AI Accountant setup · Step {stepIndex + 1} of {AIA_ONBOARDING_STEPS.length}
         </p>
-        <h2 id="aia-onboarding-title" className="mt-2 text-xl font-semibold text-foreground">
+        <h2 id="aia-onboarding-title" className="mt-2 text-xl font-semibold text-day-ink">
           {step.title}
         </h2>
 
         {step.video && (
           <div className="mt-4">
-            <div className="aspect-video w-full overflow-hidden rounded-lg border border-border bg-black">
+            <div className="aspect-video w-full overflow-hidden rounded-2xl border border-day-line bg-black">
               <iframe
                 className="h-full w-full"
                 src={AIA_SETUP_VIDEO_EMBED_URL}
@@ -62,14 +62,14 @@ export function AiaOnboarding({ onComplete }: AiaOnboardingProps) {
               href={AIA_SETUP_VIDEO_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-block text-sm text-accent underline-offset-2 hover:underline"
+              className="mt-2 inline-block text-sm text-day-blue underline-offset-2 hover:underline"
             >
               Open the video on YouTube
             </a>
           </div>
         )}
 
-        <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-text-secondary">{step.body}</p>
+        <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-day-muted">{step.body}</p>
 
         {errorMessage && <p className="mt-3 text-sm text-status-error">{errorMessage}</p>}
 
@@ -78,7 +78,7 @@ export function AiaOnboarding({ onComplete }: AiaOnboardingProps) {
             type="button"
             onClick={handleAction}
             disabled={isPending}
-            className="rounded-md bg-accent px-5 py-2 text-base text-white hover:bg-accent-hover disabled:opacity-60"
+            className="inline-flex h-11 items-center rounded-full bg-day-blue px-6 font-urbanist text-base text-white transition-colors hover:bg-day-blue-hover disabled:opacity-60"
           >
             {isPending ? 'Saving…' : step.buttonLabel}
           </button>

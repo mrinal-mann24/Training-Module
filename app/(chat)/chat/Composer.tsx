@@ -92,7 +92,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-border-default bg-bg-canvas p-4">
+    <div className="border-t border-day-line bg-day-bg px-4 py-4 md:px-8">
       {/* Phase 4 (spec 16): composer width matches the chat column. */}
       <div className="mx-auto w-full max-w-[1150px]">
       {files.length > 0 && (
@@ -100,7 +100,7 @@ export function Composer({
           {files.map((file, index) => (
             <span
               key={`${file.name}-${index}`}
-              className="inline-flex items-center gap-2 rounded-sm bg-bg-surface px-2 py-1 text-xs text-text-secondary"
+              className="inline-flex items-center gap-2 rounded-full border border-day-line bg-white px-3 py-1 text-xs text-day-muted"
             >
               <span className="font-mono">{file.name}</span>
               <button
@@ -108,7 +108,7 @@ export function Composer({
                 onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
                 disabled={busy}
                 aria-label={`Remove ${file.name}`}
-                className="text-text-muted hover:text-text-primary disabled:cursor-not-allowed"
+                className="text-day-muted hover:text-day-ink disabled:cursor-not-allowed"
               >
                 ×
               </button>
@@ -118,14 +118,14 @@ export function Composer({
       )}
       {fileError && <p className="mb-2 text-xs text-status-error">{fileError}</p>}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || busy}
           aria-label="Attach files"
           title="Attach your Tally XML exports"
-          className="shrink-0 rounded-full border border-border-default p-3 text-base text-text-secondary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full border border-day-line bg-white text-base text-day-muted hover:border-day-blue hover:text-day-blue disabled:cursor-not-allowed disabled:opacity-60"
         >
           📎
         </button>
@@ -155,14 +155,14 @@ export function Composer({
                 ? TEXT_PART_PLACEHOLDER[textPartType]
                 : 'Message your tutor: ask anything, or attach your exports and send…'
           }
-          className="w-full rounded-xl border border-border-default bg-bg-surface px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          className="day-input h-12 w-full rounded-full px-5 font-nunito text-base disabled:cursor-not-allowed disabled:opacity-60"
         />
         {!disabled && (
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
-            className="shrink-0 rounded-md bg-accent px-4 py-3 text-base text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-12 shrink-0 items-center rounded-full bg-day-blue px-6 font-urbanist text-base text-white transition-colors hover:bg-day-blue-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? 'Sending…' : 'Send'}
           </button>
@@ -170,12 +170,12 @@ export function Composer({
       </div>
 
       {!disabled && (
-        <div className="mt-2 flex justify-start">
+        <div className="mt-3 flex justify-start">
           <button
             type="button"
             onClick={onRequestHint}
             disabled={isRequestingHint}
-            className="rounded-full border border-border-default px-3 py-1.5 text-xs text-text-secondary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full border border-day-line bg-white px-4 py-1.5 font-urbanist text-sm text-day-muted hover:border-day-blue hover:text-day-blue disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isRequestingHint
               ? 'Getting help…'

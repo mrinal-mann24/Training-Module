@@ -15,7 +15,7 @@ type DocumentCardProps = {
 
 // File-attachment card, not an inline PDF preview — per ui-context.md's
 // chat-appropriate conventions, a real chat product shows attachments as
-// cards. bg-surface + radius-md per Unit 10's design note.
+// cards. A white day-surface row (was bg-surface + radius-md, Unit 10).
 //
 // Sign-on-click (2026-09-01): the href is a signed Storage URL minted when
 // the page rendered, so a chat left open past the TTL used to open to
@@ -73,13 +73,13 @@ export function DocumentCard({ documentName, url, documentId, isPackFile }: Docu
       target="_blank"
       rel="noopener noreferrer"
       onClick={handleClick}
-      className="flex items-center gap-3 rounded-md border border-border-default bg-bg-surface px-3 py-2.5 text-sm text-text-primary transition-colors hover:bg-bg-surface-raised"
+      className="flex items-center gap-3 rounded-2xl border border-day-line bg-white px-4 py-3 font-nunito text-sm text-day-ink transition-colors hover:border-day-ink"
     >
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
         fill="none"
-        className="h-5 w-5 shrink-0 text-text-secondary"
+        className="h-5 w-5 shrink-0 text-day-muted"
       >
         <path
           d="M6 2h8l4 4v16H6V2z"
@@ -90,7 +90,7 @@ export function DocumentCard({ documentName, url, documentId, isPackFile }: Docu
         <path d="M14 2v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       </svg>
       <span className="flex-1 truncate font-medium">{documentName}</span>
-      <span className="shrink-0 text-xs text-accent">{isOpening ? 'Opening…' : 'View'}</span>
+      <span className="shrink-0 font-urbanist text-xs text-day-blue">{isOpening ? 'Opening…' : 'View'}</span>
     </a>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import Link from 'next/link';
+import { useActionState } from 'react';
 import { logIn, signUp } from './actions';
 import { initialAuthFormState } from './auth-form-state';
 
-type Mode = 'log-in' | 'sign-up';
+export type Mode = 'log-in' | 'sign-up';
 
 /**
  * Sign in and sign up are one form in two modes. Everything that differs
@@ -53,17 +54,25 @@ const INPUT_CLASSES =
 const SUBMIT_CLASSES =
   'mt-1 inline-flex h-12 w-full cursor-pointer items-center justify-center rounded-full bg-day-blue font-urbanist text-lg text-white transition-colors duration-200 hover:bg-day-blue-hover disabled:cursor-not-allowed disabled:opacity-50';
 
-export function AuthForm() {
-  const [mode, setMode] = useState<Mode>('log-in');
+const NOTICE_CLASSES =
+  'rounded-2xl border border-day-line bg-day-card px-4 py-3 font-nunito text-sm leading-relaxed text-day-ink';
+
+/**
+ * The mode comes from the URL (`/login` or `/login?mode=signup`), and the page
+ * keys this component on it, so each mode mounts with its own fixed action
+ * and a fresh action state. Switching modes is a plain link, not local state.
+ */
+export function AuthForm({
+  mode,
+  accountCreated,
+  callbackError,
+}: {
+  mode: Mode;
+  accountCreated: boolean;
+  callbackError: boolean;
+}) {
   const action = mode === 'log-in' ? logIn : signUp;
   const [state, formAction, isPending] = useActionState(action, initialAuthFormState);
-
-  // Sign-up succeeded: the account exists but the auto-session was ended
-  // server-side, so flip straight to the login form (guarded render-time
-  // state adjustment) and confirm what just happened above it.
-  if (state.accountCreated && mode !== 'log-in') {
-    setMode('log-in');
-  }
 
   if (state.confirmEmailSent) {
     return (
@@ -87,10 +96,18 @@ export function AuthForm() {
         <p className="mt-2 font-nunito text-base leading-relaxed text-day-muted">{copy.blurb}</p>
       </div>
 
-      {state.accountCreated && (
-        <p className="rounded-2xl border border-day-line bg-day-card px-4 py-3 font-nunito text-sm leading-relaxed text-day-ink">
+      {/* Sign-up redirects here with `created=1`: the account exists but its
+          auto-session was ended server-side, so confirm that above the form. */}
+      {accountCreated && mode === 'log-in' && (
+        <p className={NOTICE_CLASSES}>
           Account created. Sign in below with the email and password you just chose.
         </p>
+      )}
+
+      {/* The auth callback redirects here with `error` when a link fails.
+          The copy is fixed: query text is never echoed onto the page. */}
+      {callbackError && mode === 'log-in' && (
+        <p className={NOTICE_CLASSES}>That sign-in link didn&apos;t work. Sign in below.</p>
       )}
 
       <form action={formAction} className="flex flex-col gap-3">
@@ -130,13 +147,12 @@ export function AuthForm() {
         </button>
       </form>
 
-      <button
-        type="button"
-        onClick={() => setMode(mode === 'log-in' ? 'sign-up' : 'log-in')}
-        className="cursor-pointer font-urbanist text-base text-day-blue transition-colors duration-200 hover:text-day-blue-hover"
+      <Link
+        href={mode === 'log-in' ? '/login?mode=signup' : '/login'}
+        className="cursor-pointer text-center font-urbanist text-base text-day-blue transition-colors duration-200 hover:text-day-blue-hover"
       >
         {copy.switchTo}
-      </button>
+      </Link>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { headerReveal } from "@/app/components/site/site-motion";
 import { Bubbles } from "@/app/components/site/Bubbles";
 import { CardCarousel } from "@/app/components/site/CardCarousel";
 
-const PRACTISE: SiteLink = { label: "Start practising", href: "/login" };
+const PRACTISE: SiteLink = { label: "Start practising", href: "/login?mode=signup" };
 
 /** "Training by Category": the same card system as the tracks, in two rails. */
 export function Categories() {

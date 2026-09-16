@@ -21,17 +21,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     <div className={cn('flex w-full', isLearner ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'max-w-[80%] whitespace-pre-wrap rounded-lg px-4 py-3 text-base leading-[1.4]',
-          isLearner ? 'bg-bg-user-bubble text-text-primary' : 'bg-bg-surface text-text-primary',
+          'max-w-[80%] whitespace-pre-wrap rounded-panel px-6 py-5 font-nunito text-base leading-relaxed',
+          isLearner ? 'bg-day-blue text-white' : 'bg-day-card text-day-ink',
         )}
       >
         {message.progressLabel && (
-          <span className="mb-2 mr-2 inline-block rounded-sm bg-bg-canvas px-2 py-0.5 text-xs font-medium text-text-secondary">
+          <span className="mb-2 mr-2 inline-block rounded-full bg-white px-3 py-0.5 font-urbanist text-xs font-medium text-day-muted">
             {message.progressLabel}
           </span>
         )}
         {isInvalidResult && (
-          <span className="mr-2 inline-block rounded-sm bg-status-error/10 px-2 py-0.5 text-xs font-medium text-status-error">
+          <span className="mr-2 inline-block rounded-full bg-status-error/10 px-3 py-0.5 font-urbanist text-xs font-medium text-status-error">
             Needs a fix
           </span>
         )}
@@ -40,7 +40,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             <p className="font-bold">{scoringFeedback.feedback.opening_line}</p>
             {scoringFeedback.feedback.went_well.length > 0 && (
               <div>
-                <p className="text-lg font-medium">What went well</p>
+                <p className="font-nunito text-lg font-semibold">What went well</p>
                 <ul className="mt-1 list-disc space-y-1 pl-5">
                   {scoringFeedback.feedback.went_well.map((point) => (
                     <li key={point}>{point}</li>
@@ -50,7 +50,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             )}
             {scoringFeedback.feedback.needs_work.length > 0 && (
               <div>
-                <p className="text-lg font-medium">What needs work</p>
+                <p className="font-nunito text-lg font-semibold">What needs work</p>
                 <ul className="mt-1 list-disc space-y-1 pl-5">
                   {scoringFeedback.feedback.needs_work.map((point) => (
                     <li key={point}>{point}</li>
@@ -58,12 +58,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 </ul>
               </div>
             )}
-            <p className="text-text-secondary">{scoringFeedback.feedback.next_note}</p>
+            <p className="text-day-muted">{scoringFeedback.feedback.next_note}</p>
           </div>
         )}
         {hint && (
           <div className="space-y-2">
-            <span className="inline-block rounded-sm bg-accent-subtle px-2 py-0.5 text-xs font-medium text-accent">
+            <span className="inline-block rounded-full bg-day-blue/10 px-3 py-0.5 font-urbanist text-xs font-medium text-day-blue">
               Help step {Math.min(hint.rung, 3)} of 3
             </span>
             <p>{hint.hint_text}</p>
@@ -92,7 +92,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             {message.attachmentNames.map((name, index) => (
               <span
                 key={`${name}-${index}`}
-                className="inline-flex items-center gap-1 rounded-sm border border-border-default bg-bg-surface px-2 py-1 font-mono text-xs text-text-secondary"
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-3 py-1 font-mono text-xs',
+                  isLearner ? 'border-white/25 bg-white/15 text-white' : 'border-day-line bg-white text-day-muted',
+                )}
               >
                 {name}
               </span>

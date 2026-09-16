@@ -1,53 +1,64 @@
+import { ProductHeader } from '@/app/components/ProductHeader';
+
 /**
  * Suspense fallback for /chat while the server rebuilds the full conversation
- * (buildChatTimeline). Mirrors ChatShell: the slim header, the centred message
- * column, and the composer bar pinned to the bottom, so the page settles into
- * place instead of jumping when the real timeline streams in.
+ * (buildChatTimeline). Mirrors ChatShell: the header pill, the video library
+ * column on md+, the centred message column, and the composer bar pinned to
+ * the bottom, so the page settles into place instead of jumping when the real
+ * timeline streams in.
  */
 export default function ChatLoading() {
   return (
-    <div aria-busy="true" className="flex h-screen flex-col bg-bg-canvas">
+    <div aria-busy="true" className="day flex h-dvh flex-col">
       <p role="status" className="sr-only">
         Loading your chat…
       </p>
 
-      <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5 font-body">
-        <span className="text-base font-semibold tracking-tight text-foreground">✦ AIA Academy</span>
-        <div aria-hidden="true" className="h-8 w-20 rounded-lg border border-border" />
-      </header>
+      <ProductHeader className="pb-3 md:pb-4" />
 
-      <div aria-hidden="true" className="min-h-0 flex-1 overflow-hidden px-4 pt-6 pb-20">
-        <div className="mx-auto w-full max-w-287.5 space-y-4 motion-safe:animate-pulse">
-          <div className="flex justify-start">
-            <div className="w-4/5 space-y-2 rounded-lg bg-bg-surface px-4 py-3">
-              <div className="h-5 w-28 rounded-sm bg-bg-canvas" />
-              <div className="h-4 w-full rounded-sm bg-border-default" />
-              <div className="h-4 w-11/12 rounded-sm bg-border-default" />
-              <div className="h-4 w-2/3 rounded-sm bg-border-default" />
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <div className="h-12 w-1/3 rounded-lg bg-bg-user-bubble" />
-          </div>
-
-          <div className="flex justify-start">
-            <div className="w-3/5 space-y-2 rounded-lg bg-bg-surface px-4 py-3">
-              <div className="h-4 w-full rounded-sm bg-border-default" />
-              <div className="h-4 w-3/4 rounded-sm bg-border-default" />
-            </div>
-          </div>
+      <div aria-hidden="true" className="flex min-h-0 flex-1">
+        <div className="hidden w-72 shrink-0 flex-col gap-4 overflow-hidden border-r border-day-line bg-day-bg p-4 motion-safe:animate-pulse md:flex">
+          <div className="h-6 w-32 rounded-full bg-day-card" />
+          <div className="aspect-video rounded-panel bg-day-card" />
+          <div className="aspect-video rounded-panel bg-day-card" />
+          <div className="aspect-video rounded-panel bg-day-card" />
         </div>
-      </div>
 
-      <div aria-hidden="true" className="border-t border-border-default bg-bg-canvas p-4">
-        <div className="mx-auto w-full max-w-287.5 motion-safe:animate-pulse">
-          <div className="flex items-center gap-2">
-            <div className="h-12 w-12 shrink-0 rounded-full border border-border-default" />
-            <div className="h-12 w-full rounded-xl border border-border-default bg-bg-surface" />
-            <div className="h-12 w-20 shrink-0 rounded-md bg-bg-surface" />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-hidden px-4 pt-8 pb-20 md:px-8">
+            <div className="mx-auto w-full max-w-287.5 space-y-6 motion-safe:animate-pulse">
+              <div className="flex justify-start">
+                <div className="w-4/5 space-y-2 rounded-panel bg-day-card px-6 py-5">
+                  <div className="h-5 w-28 rounded-full bg-white" />
+                  <div className="h-4 w-full rounded-full bg-day-line" />
+                  <div className="h-4 w-11/12 rounded-full bg-day-line" />
+                  <div className="h-4 w-2/3 rounded-full bg-day-line" />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <div className="h-14 w-1/3 rounded-panel bg-day-card" />
+              </div>
+
+              <div className="flex justify-start">
+                <div className="w-3/5 space-y-2 rounded-panel bg-day-card px-6 py-5">
+                  <div className="h-4 w-full rounded-full bg-day-line" />
+                  <div className="h-4 w-3/4 rounded-full bg-day-line" />
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="mt-2 h-7 w-36 rounded-full border border-border-default" />
+
+          <div className="border-t border-day-line bg-day-bg px-4 py-4 md:px-8">
+            <div className="mx-auto w-full max-w-287.5 motion-safe:animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="size-12 shrink-0 rounded-full border border-day-line bg-white" />
+                <div className="h-12 w-full rounded-full border border-day-line bg-white" />
+                <div className="h-12 w-24 shrink-0 rounded-full bg-day-card" />
+              </div>
+              <div className="mt-3 h-8 w-40 rounded-full border border-day-line bg-white" />
+            </div>
+          </div>
         </div>
       </div>
     </div>

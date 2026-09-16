@@ -102,7 +102,7 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
         onClick={openBox}
         aria-haspopup="dialog"
         aria-label="Report an issue"
-        className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2.5 text-sm font-medium text-foreground shadow-dashboard transition-colors hover:bg-secondary sm:px-4"
+        className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-2 rounded-full border border-day-line bg-white px-3 py-2.5 font-urbanist text-sm font-medium text-day-ink shadow-dashboard transition-colors hover:bg-day-card sm:px-4"
       >
         <FlagIcon />
         <span className="hidden sm:inline">Report an issue</span>
@@ -121,20 +121,20 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
               closeBox();
             }
           }}
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8 font-body sm:items-center"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8 font-nunito sm:items-center"
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="report-issue-title"
-            className="w-full max-w-lg rounded-2xl border border-border bg-background p-6 shadow-dashboard"
+            className="w-full max-w-lg rounded-panel border border-day-line bg-white p-6 shadow-dashboard"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="report-issue-title" className="text-xl font-semibold text-foreground">
+                <h2 id="report-issue-title" className="text-xl font-semibold text-day-ink">
                   Report an issue
                 </h2>
-                <p className="mt-1 text-sm text-text-secondary">
+                <p className="mt-1 text-sm text-day-muted">
                   Tell us what went wrong. We can already see which batch you are on, so just describe the problem.
                 </p>
               </div>
@@ -143,7 +143,7 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
                 onClick={closeBox}
                 disabled={isSending}
                 aria-label="Close"
-                className="shrink-0 rounded-md px-2 text-xl leading-none text-text-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="shrink-0 rounded-full px-2 text-xl leading-none text-day-muted hover:text-day-ink disabled:cursor-not-allowed disabled:opacity-60"
               >
                 ×
               </button>
@@ -170,9 +170,9 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
                 }
               }}
               placeholder="For example: my June sales invoice shows the wrong invoice number."
-              className="mt-4 w-full resize-y rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-text-muted focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+              className="day-input mt-4 w-full resize-y rounded-2xl px-4 py-2.5 font-nunito text-sm disabled:cursor-not-allowed disabled:opacity-60"
             />
-            <div className="mt-1 flex justify-between gap-2 text-xs text-text-muted">
+            <div className="mt-1 flex justify-between gap-2 text-xs text-day-muted">
               <span>Ctrl + Enter to send</span>
               <span>
                 {draft.length}/{ISSUE_MESSAGE_MAX_LENGTH}
@@ -195,7 +195,7 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
                 type="button"
                 onClick={closeBox}
                 disabled={isSending}
-                className="rounded-md border border-border-default px-4 py-2 text-sm text-text-secondary hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 items-center rounded-full border border-day-line bg-white px-5 font-urbanist text-sm text-day-ink transition-colors hover:border-day-blue hover:text-day-blue disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Close
               </button>
@@ -203,7 +203,7 @@ export function ReportIssue({ initialIssues }: ReportIssueProps) {
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 items-center rounded-full bg-day-blue px-5 font-urbanist text-sm text-white transition-colors hover:bg-day-blue-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSending ? 'Sending…' : 'Send issue'}
               </button>
