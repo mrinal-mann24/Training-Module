@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSubmissionStatus } from './useSubmissionStatus';
 import { useSubmissionParts } from './useSubmissionParts';
-import { getScoringFeedback, getNextExercise, getSubmissionPartsStatus, getSubmissionStatus } from './actions';
+import { getScoringFeedback, getNextExercise, getSubmissionStatus } from './actions';
 import type { SubmissionStatus } from '@/lib/db/queries/submissions';
 import type { ValidityError } from '@/lib/tutor/submission-gate';
 import { ThinkingIndicator } from './ThinkingIndicator';
@@ -19,9 +19,9 @@ type ExerciseSourceDocument = { id: string; docType: SourceDocumentType; documen
 type PendingSubmissionProps = {
   submissionId: string;
   exerciseId: string;
-  // Only exercises with more than one required part (Unit 11) show the live
-  // status checklist — a plain two-file exercise keeps Unit 07's single
-  // ai-thinking indicator, unchanged.
+  // Only exercises that also need a typed part (explain or review, Unit 11)
+  // show the live status checklist — a plain two-file exercise keeps Unit
+  // 07's single ai-thinking indicator, unchanged.
   requiredParts: SubmissionPartType[];
   onResult: (message: ChatMessage) => void;
   // Called once the mastery recompute + adaptive generation steps
@@ -52,26 +52,17 @@ export function PendingSubmission({
   onNextExercise,
 }: PendingSubmissionProps) {
   const resolvedRef = useRef(false);
-  const [initialReceivedParts, setInitialReceivedParts] = useState<SubmissionPartType[] | null>(null);
 
-  const isMultiPart = requiredParts.length > 1;
+  // A checklist only when a typed part is also owed (2026-09-16). This was
+  // `requiredParts.length > 1`, which is also true of a plain Day Book + Trial
+  // Balance batch, so every plain upload showed a checklist its own comments
+  // said it never should.
+  const needsChecklist = requiredParts.some((part) => part === 'explain_text' || part === 'review_text');
 
-  useEffect(() => {
-    if (!isMultiPart) {
-      return;
-    }
-    let cancelled = false;
-    getSubmissionPartsStatus(submissionId).then((result) => {
-      if (!cancelled) {
-        setInitialReceivedParts(result.receivedParts);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [submissionId, isMultiPart]);
-
-  const receivedParts = useSubmissionParts(submissionId, initialReceivedParts ?? []);
+  // The hook reads the stored parts itself once its channel is live. The read
+  // that used to happen here was passed in as a useState initial value and
+  // silently dropped; see useSubmissionParts.
+  const receivedParts = useSubmissionParts(submissionId, needsChecklist);
 
   // Shared by both paths that can observe a terminal status: the Realtime
   // subscription (job finished while the client was listening) and the
@@ -225,7 +216,7 @@ export function PendingSubmission({
     return null;
   }
 
-  if (isMultiPart) {
+  if (needsChecklist) {
     return (
       <div className="space-y-2">
         <SubmissionPartsChecklist requiredParts={requiredParts} receivedParts={receivedParts} />

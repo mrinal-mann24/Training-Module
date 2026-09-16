@@ -276,6 +276,19 @@ export async function generateNextExercise(
   return 'generated';
 }
 
+// The submission a failed run belonged to (2026-09-16), read from an
+// Inngest inngest/function.failed payload. In SDK 4.18 the original
+// triggering event sits at event.data.event (FailureEventPayload,
+// node_modules/inngest/types.d.ts), so the id is one level deeper than in the
+// function body. Returns null rather than throwing on an unexpected shape: a
+// failure handler that itself throws would leave the submission stuck, which
+// is the thing it exists to prevent.
+export function submissionIdFromFailureEvent(failureEvent: unknown): string | null {
+  const original = (failureEvent as { data?: { event?: { data?: { submissionId?: unknown } } } } | null)?.data?.event;
+  const submissionId = original?.data?.submissionId;
+  return typeof submissionId === 'string' && submissionId.length > 0 ? submissionId : null;
+}
+
 export type CorrectionOutcome =
   | { opened: false }
   | { opened: true; round: number; conceptTag: string };

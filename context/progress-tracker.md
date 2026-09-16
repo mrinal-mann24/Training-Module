@@ -21,6 +21,28 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-16 (evening): EXPLAIN SUBMISSION STUCK AT "WAITING" — explanation unfileable, checklist wrong, Inngest invisible
+
+Found testing live on an explain exercise. Three subagents traced it read-only, one reading the local Inngest server's run history over its GraphQL API. The job was healthy and **parked waiting for `explain_text`**; both file parts were stored; the explanation never reached the database.
+
+**(0) Inngest showed 0 runs / Not Synced — not a code bug.** Two dev servers were running. `inngest.exe` on 8288 was left over from a background `npx inngest-cli dev -u …` started earlier in this session (stopping the task killed only the `npx` wrapper) and held every registered function. The user's own server found 8288 taken, moved to 8290 and had `functions: []`. `INNGEST_DEV=1` is a boolean, so SDK 4.18 falls back to the hard-coded `http://localhost:8288/` (`node_modules/inngest/components/Inngest.js:134-156`): every event went to the invisible server. The leftover was stopped. Run exactly one dev server, in your own terminal: `npx inngest-cli@latest dev -u http://localhost:3000/api/inngest`.
+
+**(1) Explanation unfileable — Smart Send design flaw.** `"1. Put the entry in the GST etccc"` and `"Entry is done"` match no rule, so they went to the LLM tie-break, which defines an answer as explaining *why* and so returned `'question'`; it also returned `'question'` on every timeout, invalid output or error. `submitTextPart` is reachable only from the confirmation card and a Q&A reply has no way back, so the explanation could never be filed. The `'question'` default assumed "an answer locks the exercise", but the card already makes an answer reversible. **Fix:** `routeTypedMessage` answers only a rules-clear question; an answer OR unclear text gets the card. The tie-break was deleted (`lib/tutor/classify-message-intent.ts`, `lib/llm/prompts/message-intent.ts`, `lib/schemas/message-intent.ts`, all with tests; `'message-intent'` CallType; `OPENROUTER_INTENT_MODEL`). A wrong card costs one tap; a wrong question verdict cost the explanation. Named regressions for both live messages.
+
+**(2) Checklist showed stored parts as "waiting" — pre-existing since f27be2c.** `PendingSubmission` fetched received parts and passed them as the `useState` initial value of `useSubmissionParts`; React reads that on first render only, when it was `[]`, so the result was dropped and the list changed only on Realtime INSERTs. `submitFiles` writes both parts before the hook subscribes, so those were never seen. "Shows waiting again" was the same stale checklist redrawn under each new message. **Fix:** the hook reads the stored parts when its channel reports SUBSCRIBED (also on reconnect) and unions them with inserts via the pure `mergeReceivedParts`.
+
+**(3) Checklist on plain two-file uploads.** `requiredParts.length > 1` is also true of Day Book + Trial Balance. Now shown only when a typed part is required.
+
+**(4) A failed Inngest send stranded the upload and crashed the chat** — exactly how this submission got stuck. `submitFiles` now catches the send and asks the learner to press Send again (files stay attached; the re-send rejoins, overwrites, re-sends). `submitTextPart` deliberately lets it throw, because a returned error closes the card and discards the draft; its retry of the same stored text now re-sends the event and reports it filed rather than "I already have your explanation", which would have recreated the dead end. `ChatShell` catches unexpected throws from `submitFiles`.
+
+**(5) Re-upload while scoring was a dead end; a crashed job stuck forever.** A `scoring` submission was rejoined, but its files may not be overwritten (20260916150000), so every re-send failed. Both `submitFiles` and `submitTextPart` now reply "being scored right now" instead. Both jobs gained `onFailure`, which calls `markSubmissionFailedIfOpen` — `status in ('validating','scoring')` in the WHERE clause, so a failure after a score was saved can never undo it — moving the row to `invalid`, which a re-send starts clean from.
+
+**(6) An explanation sent right after the files could be missed for 45 minutes.** The job's check and `waitForEvent` were separate steps and `waitForEvent` never looks back. **Fix:** `lib/jobs/wait-for-parts.ts` waits in 2-minute slices that re-read the database, so a missed or never-sent event costs at most one slice. Per-part window unchanged (45 min). Step ids now carry a slice suffix; in-flight production waits re-run their read-only checks once on deploy, which is harmless.
+
+**Gates:** `tsc` clean, `eslint` clean, `vitest run` 62 files / 648 tests, `next build` compiled successfully. No migration.
+
+**To test:** one Inngest dev server on 8288 → upload both files on an explain exercise (checklist shows Daybook ✓ · Trial Balance ✓) → type `Entry is done` → the card appears → Submit → Explanation ✓, job resumes within about 2 minutes and scores.
+
 ## Session log — 2026-09-16 (later): RE-SENDING FILES WAS A PERMANENT DEAD END
 
 Found while testing the correction loop live. Not caused by it: this is the

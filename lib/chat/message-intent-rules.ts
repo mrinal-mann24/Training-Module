@@ -35,11 +35,16 @@ function normalize(text: string): string {
 }
 
 /**
- * First pass of Smart Send: decides from the text alone whether a message
- * typed while an explain/review part is pending is a question, an answer,
- * or unclear. Deliberately conservative: anything mixed or bare is
- * "unclear" and goes to the LLM tie-break (lib/tutor/classify-message-intent.ts).
- * An "answer" verdict never files anything by itself; the learner confirms.
+ * Smart Send's only classifier: decides from the text alone whether a message
+ * typed while an explain/review part is pending is a question, an answer, or
+ * unclear. Deliberately conservative about 'question', because that is the
+ * one verdict that skips the confirmation card: only a CLEAR question is
+ * answered directly. "answer" and "unclear" both show the card
+ * (route-typed-message.ts), where the learner decides, so neither files
+ * anything by itself.
+ *
+ * There is no LLM tie-break any more (removed 2026-09-16). It turned short
+ * explanations into questions with no way back; see routeTypedMessage.
  */
 export function classifyByRules(text: string, part: TextPartType): RuleVerdict {
   const normalized = normalize(text);

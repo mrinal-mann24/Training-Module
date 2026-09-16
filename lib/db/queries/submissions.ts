@@ -228,6 +228,44 @@ export async function updateSubmissionStatus(
   }
 }
 
+// What the learner sees when a scoring job gave up (2026-09-16). The
+// submission becomes 'invalid', which is exactly the status a re-send starts
+// clean from: getOpenSubmissionForExercise never rejoins it, and
+// hasScoredSubmissionForExercise does not count it.
+export const PROCESSING_FAILED_ERROR: ValidityError = {
+  code: 'processing_failed',
+  message: 'Something went wrong on my side while checking this. Nothing you did wrong. Please send your files again.',
+};
+
+// Moves a submission whose job exhausted its retries out of 'validating' or
+// 'scoring', so the exercise does not stay blocked forever (2026-09-16).
+// Without it, a crash after mark-scoring left the row 'scoring' permanently,
+// and every re-send was refused.
+//
+// Guarded on status in the WHERE clause, never read-then-write: both jobs can
+// still fail AFTER they have persisted a score (the mastery recompute,
+// next-exercise generation). A scored submission must never be turned
+// 'invalid' by a failure in work that happens after its score was saved.
+// Returns whether a row was actually moved.
+export async function markSubmissionFailedIfOpen(
+  supabase: SupabaseClient,
+  submissionId: string,
+  error: ValidityError = PROCESSING_FAILED_ERROR,
+): Promise<boolean> {
+  const { data, error: updateError } = await supabase
+    .from('submissions')
+    .update({ status: 'invalid', validity_errors: [error] })
+    .eq('id', submissionId)
+    .in('status', ['validating', 'scoring'])
+    .select('id');
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  return (data ?? []).length > 0;
+}
+
 // Chat-history rebuild: every submission, oldest first.
 // The Trial Balance file of the learner's most recent scored submission
 // before `beforeCreatedAt` (2026-09-09, movement-based tie-out): its closing

@@ -61,7 +61,7 @@ This document exists so unit 5 and unit 20 look like they were written by the sa
 
 ## 6a. Testing Patterns
 
-**Injected dependencies for LLM and database calls (2026-09-15):** Functions that call the LLM or the database take an optional last `deps` argument (e.g. `{ complete, timeoutMs }` for LLM calls; `{ loadExercise, findPendingPart, classify, answer }` for business logic) so tests inject `vi.fn()` doubles. Production code passes nothing (undefined deps). Example: `export async function classifyMessageIntent(text: string, deps?: ClassifyDeps) { const classify = deps?.classify ?? openRouterClassify; ... }`. No `vi.mock()` of modules — dependencies are passed explicitly.
+**Injected dependencies for LLM and database calls (2026-09-15):** Functions that call the LLM or the database take an optional last `deps` argument (e.g. `{ complete, timeoutMs }` for LLM calls; `{ loadExercise, findPendingPart, answer }` for business logic) so tests inject `vi.fn()` doubles. Production code passes nothing (undefined deps). Example: `export async function routeTypedMessage({ supabase, learnerId, text, deps = {} }) { const answer = deps.answer ?? answerLearnerQuestion; ... }`. Where a function needs only part of a framework object, narrow it to a type the test can fake instead of injecting the whole thing: `waitForRequiredParts(step: PartWaitStep, …)` in `lib/jobs/wait-for-parts.ts` takes just `run` and `waitForEvent`. No `vi.mock()` of modules — dependencies are passed explicitly.
 
 ## 7. Cross-Cutting Rule
 

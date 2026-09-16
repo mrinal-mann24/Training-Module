@@ -21,9 +21,6 @@ function makeDeps(overrides: Partial<Required<RouteTypedMessageDeps>> = {}) {
   return {
     loadExercise: vi.fn<Required<RouteTypedMessageDeps>['loadExercise']>().mockResolvedValue(exercise),
     findPendingPart: vi.fn<Required<RouteTypedMessageDeps>['findPendingPart']>().mockResolvedValue('explain_text'),
-    classify: vi
-      .fn<Required<RouteTypedMessageDeps>['classify']>()
-      .mockResolvedValue({ intent: 'question', source: 'llm' }),
     answer: vi
       .fn<Required<RouteTypedMessageDeps>['answer']>()
       .mockResolvedValue({ status: 'answered', answer: 'Post it to Bank Charges.' }),
@@ -38,7 +35,6 @@ describe('routeTypedMessage', () => {
     const result = await routeTypedMessage({ supabase, learnerId: 'learner-1', text: 'I posted rent because it is monthly', deps });
 
     expect(result).toEqual({ status: 'answered', answer: 'Post it to Bank Charges.' });
-    expect(deps.classify).not.toHaveBeenCalled();
     expect(deps.answer).toHaveBeenCalledWith(
       expect.objectContaining({ question: 'I posted rent because it is monthly', exerciseScenario: exercise.scenario }),
     );
@@ -53,14 +49,17 @@ describe('routeTypedMessage', () => {
     expect(deps.answer).toHaveBeenCalledWith(expect.objectContaining({ exerciseScenario: null }));
   });
 
-  it('answers a clear question without calling the LLM', async () => {
-    const deps = makeDeps();
+  it.each(['which ledger for bank charges', 'Which ledger does bank charges go to?', 'how do I record a credit note'])(
+    'answers a clear question directly, with no card: %s',
+    async (text) => {
+      const deps = makeDeps();
 
-    await expect(
-      routeTypedMessage({ supabase, learnerId: 'learner-1', text: 'which ledger for bank charges', deps }),
-    ).resolves.toEqual({ status: 'answered', answer: 'Post it to Bank Charges.' });
-    expect(deps.classify).not.toHaveBeenCalled();
-  });
+      await expect(routeTypedMessage({ supabase, learnerId: 'learner-1', text, deps })).resolves.toEqual({
+        status: 'answered',
+        answer: 'Post it to Bank Charges.',
+      });
+    },
+  );
 
   it('asks for confirmation on a clear answer and writes nothing', async () => {
     const deps = makeDeps();
@@ -72,33 +71,28 @@ describe('routeTypedMessage', () => {
       partType: 'explain_text',
       text,
     });
-    expect(deps.classify).not.toHaveBeenCalled();
     expect(deps.answer).not.toHaveBeenCalled();
   });
 
-  it('breaks a tie with the LLM and confirms when it says answer', async () => {
-    const deps = makeDeps({ classify: vi.fn().mockResolvedValue({ intent: 'answer', source: 'llm' }) });
-    const text = 'Bank charges go under Indirect Expenses';
+  // The live dead end (2026-09-16). These short explanations match no rule,
+  // so they used to go to an LLM tie-break that answered them as questions,
+  // and a Q&A reply offers no way to file them. They must reach the card,
+  // where the learner decides. A wrong card costs one tap; a wrong question
+  // verdict lost the explanation for good.
+  it.each(['1. Put the entry in the GST etccc', 'Entry is done', 'Bank charges go under Indirect Expenses'])(
+    'offers the card for text the rules cannot call, never answering it as a question: %s',
+    async (text) => {
+      const deps = makeDeps();
 
-    const result = await routeTypedMessage({ supabase, learnerId: 'learner-1', text, deps });
-
-    expect(result.status).toBe('needs-confirmation');
-    expect(deps.classify).toHaveBeenCalledWith('learner-1', {
-      text,
-      expectedPart: 'explain_text',
-      exerciseScenario: exercise.scenario,
-    });
-  });
-
-  it('treats a classifier fallback as a question', async () => {
-    const deps = makeDeps({
-      classify: vi.fn().mockResolvedValue({ intent: 'question', source: 'fallback', fallback: 'timeout' }),
-    });
-
-    await expect(
-      routeTypedMessage({ supabase, learnerId: 'learner-1', text: 'Bank charges go under Indirect Expenses', deps }),
-    ).resolves.toEqual({ status: 'answered', answer: 'Post it to Bank Charges.' });
-  });
+      await expect(routeTypedMessage({ supabase, learnerId: 'learner-1', text, deps })).resolves.toEqual({
+        status: 'needs-confirmation',
+        exerciseId: 'exercise-1',
+        partType: 'explain_text',
+        text,
+      });
+      expect(deps.answer).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a question longer than Q&A accepts', async () => {
     const deps = makeDeps({ findPendingPart: vi.fn().mockResolvedValue(null) });

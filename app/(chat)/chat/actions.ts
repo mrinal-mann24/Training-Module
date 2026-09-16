@@ -199,6 +199,24 @@ export type SubmitFilesResult =
   | { status: 'accepted'; submission: Submission }
   | { status: 'error'; error: string };
 
+// A submission already in 'scoring' has every part it is going to get, and
+// its files are being read right now. Taking another upload for it cannot be
+// honoured: the Storage policy (20260916150000) refuses to overwrite a scoring
+// submission's files, so before this check a re-send failed with "send both
+// files again" on every attempt. It must not start a second submission either,
+// which would score the exercise twice. So say plainly what is happening.
+// A job that crashes mid-scoring does not leave this message up forever: the
+// jobs' onFailure moves the submission to 'invalid', which is re-submittable.
+const STILL_SCORING_MESSAGE =
+  "This batch is being scored right now, so I can't take anything more for it. Your feedback will appear here shortly.";
+
+// The files and rows are saved but the scoring job could not be started, most
+// often because the job server was unreachable. Pressing Send again is a real
+// fix, not a hope: it rejoins this 'validating' submission, overwrites the
+// files, leaves the recorded parts, and sends the events again.
+const FILES_SAVED_NOT_STARTED_MESSAGE =
+  "I saved your files, but couldn't start checking them just now. Nothing you did wrong. Press Send again in a moment and I'll pick up from there.";
+
 // Shown when the displayed exercise already has a scored submission: the next
 // batch is generated a few minutes after scoring, and in that window the old
 // exercise is still the latest one (see hasScoredSubmissionForExercise).
@@ -286,6 +304,9 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
   // arrived first, out of order) rather than always creating a new row —
   // see getOpenSubmissionForExercise's comment.
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);
+  if (existingSubmission?.status === 'scoring') {
+    return { status: 'error', error: STILL_SCORING_MESSAGE };
+  }
   const submissionId = existingSubmission?.id ?? crypto.randomUUID();
 
   const paths = submissionXmlPaths(user.id, submissionId);
@@ -325,7 +346,17 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
 
   // Plain two-file exercises go straight to run-scoring; multi-part ones wake
   // wait-for-submission once per file.
-  await inngest.send(fileSubmissionEvents(submissionId, exercise.requiredParts));
+  //
+  // Everything above is already written, so a failed send must not throw
+  // (2026-09-16). Unhandled, it left a 'validating' submission with no job and
+  // crashed the chat, which is exactly how a live submission was stranded.
+  // Returned as an error instead, the files stay attached in the composer and
+  // a second Send repairs it (see FILES_SAVED_NOT_STARTED_MESSAGE).
+  try {
+    await inngest.send(fileSubmissionEvents(submissionId, exercise.requiredParts));
+  } catch {
+    return { status: 'error', error: FILES_SAVED_NOT_STARTED_MESSAGE };
+  }
 
   const submission: Submission = {
     id: submissionId,
@@ -390,13 +421,33 @@ export async function submitTextPart(text: string, expectedExerciseId?: string):
   }
 
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);
+  if (existingSubmission?.status === 'scoring') {
+    return { status: 'error', error: STILL_SCORING_MESSAGE };
+  }
 
   // Smart Send (2026-09-15): the part may already be in (a second tap, another
   // tab). The unique (submission_id, part_type) constraint would otherwise
   // throw out of this action instead of answering the learner.
   if (existingSubmission) {
     const parts = await getSubmissionParts(supabase, existingSubmission.id);
-    if (parts.some((part) => part.part_type === partType)) {
+    const received = parts.find((part) => part.part_type === partType);
+    if (received) {
+      // The SAME text already stored means this is a retry of an answer that
+      // was saved but whose event never went out: the send below threw, the
+      // card stayed open, and the learner tapped Submit answer again
+      // (2026-09-16). Send the event now and report it filed, because it is.
+      // Answering "I already have your explanation" here would close the card,
+      // and any retyped text would then find the part received and be routed
+      // to Q&A: the same dead end Smart Send was just fixed to remove.
+      //
+      // Re-sending is safe. The job reads parts from the database, not from
+      // events, and the singleton skips a duplicate run. A throw here reaches
+      // the client's catch, which keeps the card open for another try.
+      const storedText = (received.content as { text?: unknown } | null)?.text;
+      if (storedText === text) {
+        await inngest.send({ name: 'submission/part-received', data: { submissionId: existingSubmission.id, partType } });
+        return { status: 'accepted', submission: existingSubmission };
+      }
       return {
         status: 'error',
         error: `I already have your ${TEXT_PART_LABEL[partType]} for this exercise, so there's nothing more to send. Your result will show here once it's scored.`,
@@ -414,6 +465,11 @@ export async function submitTextPart(text: string, expectedExerciseId?: string):
 
   await insertSubmissionPart(supabase, submissionId, partType, { text });
 
+  // Deliberately NOT caught (2026-09-16), unlike submitFiles. A returned error
+  // closes the confirmation card and discards the draft; a thrown one keeps
+  // the card open with "Tap Submit answer again" (ChatShell's catch). The part
+  // is already saved, so that retry lands in the same-text branch above,
+  // which re-sends the event and reports it filed.
   await inngest.send({
     name: 'submission/part-received',
     data: { submissionId, partType },

@@ -2,11 +2,12 @@ import { inngest } from '@/lib/jobs/client';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
 import { getExerciseById, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
-import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissions';
+import { getSubmission, markSubmissionFailedIfOpen, updateSubmissionStatus } from '@/lib/db/queries/submissions';
 import {
   logAttemptsAndClassifyRectifications,
   recomputeMasteryAndModuleProgress,
   openCorrectionRoundOrAdvance,
+  submissionIdFromFailureEvent,
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
@@ -49,6 +50,16 @@ export const runScoring = inngest.createFunction(
     id: 'run-scoring',
     triggers: [{ event: 'submission/uploaded' }],
     singleton: { key: 'event.data.submissionId', mode: 'skip' },
+    // Once retries are exhausted, release the submission (2026-09-16).
+    // Without this, a crash after mark-scoring left it 'scoring' forever and
+    // every re-send was refused. The update is guarded on status, so a failure
+    // that happens after the score was already saved cannot undo it.
+    onFailure: async ({ event }) => {
+      const submissionId = submissionIdFromFailureEvent(event);
+      if (submissionId) {
+        await markSubmissionFailedIfOpen(createServiceRoleClient(), submissionId);
+      }
+    },
   },
   async ({ event, step }) => {
     const submissionId: string = event.data.submissionId;

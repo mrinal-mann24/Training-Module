@@ -50,7 +50,6 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
   /schemas
     exercise.ts, scoring.ts, coaching.ts, state-patch.ts
                               → Zod schemas — the single contract between LLM output and app code
-    message-intent.ts         → Message intent schema (2026-09-15): classifies typed text as question|answer
     chat-actions.ts           → Input schemas + invalid-input wording for chat Server Actions (2026-09-15)
     auth.ts                   → Credentials schema for logIn / signUp Server Actions (2026-09-15)
   /parsing
@@ -83,8 +82,8 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     issue-limits.ts           → Shared constant mirrored by the learner-issue schema and its DB check constraint
     report-issue.ts           → Learner issue reports (2026-09-15): validation, duplicate + hourly limits, batch-context snapshot, service-role insert. Never calls an LLM
     answer-learner-question.ts → Free-text Q&A (2026-09-15): answers learner questions grounded in Rulebook/docs/context, persists to qa_messages
-    message-intent-rules.ts   → Rule-based intent classification (2026-09-15): decides question/answer/unclear on typed text during explain/review
-    route-typed-message.ts    → Smart Send router (2026-09-15): dispatches typed text to question or answer flow based on textPartTypeFor / message-intent
+    message-intent-rules.ts   → Smart Send's only classifier (2026-09-15; LLM tie-break removed 2026-09-16): decides question/answer/unclear on typed text during explain/review
+    route-typed-message.ts    → Smart Send router: only a CLEAR question (per the rules) is answered directly; an answer OR unclear text returns needs-confirmation (the Submit card), so the learner decides and nothing is ever unfileable (2026-09-16)
     text-part-labels.ts       → Client-safe labels for submit button and confirmation states (2026-09-15)
   /db
     queries/                  → All Supabase reads/writes go through here — no ad-hoc queries in /app
@@ -92,6 +91,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
   /jobs
     client.ts                 → Inngest client instance
     wait-for-submission.ts    → Aggregates multi-part submissions within the wait window
+    wait-for-parts.ts         → The multi-part wait, in 2-minute slices that re-read the DB, so a part whose event was missed or never sent is found within one slice rather than after the 45-minute window (2026-09-16)
     run-scoring.ts            → Triggered once validity gate passes
     advance-learner.ts        → Runs after scoring: logs concept attempts, recomputes mastery/module progress, triggers next-exercise generation (mastery recompute logic lives here, not in a separate recompute-mastery.ts)
   /documents
@@ -164,7 +164,6 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
 | Coaching / feedback  | After scoring completes                                                                                                                                    | `coaching.ts` (result line, praise, flagged areas, next-step note)                                                                                                                                                                                                                                                                                                                                                                            |
 | Hint response        | Learner requests help                                                                                                                                      | `hint-ladder.ts` output (rung number, hint content)                                                                                                                                                                                                                                                                                                                                                                                           |
 | Mastery/state patch  | After scoring                                                                                                                                              | `state-patch.ts` (mastery map delta, escalation flags)                                                                                                                                                                                                                                                                                                                                                                                        |
-| Message intent       | Typed text sent during explain/review and rules are inconclusive (2026-09-15)                                                                             | `message-intent.ts` ({ intent: question|answer, reason }); never the answer key; on invalid or timeout -> question                                                                                                                                                                                                                                                                                                                                |
 | Hint response (pushed) | A scored batch has a failing concept and a correction round opens (2026-09-16) | Same `hint-ladder.ts` output as a requested hint, with `focusConceptTag` set so the step aims at the concept that failed. A generation failure falls back to advancing the learner rather than leaving them with neither a hint nor a next batch |
 
 Every LLM response is validated against its Zod schema before it is persisted or shown to the learner. On validation failure, the call is retried with the validation error fed back into the prompt (bounded retry count) — the app never falls back to unvalidated model output.
@@ -177,6 +176,12 @@ Every LLM response is validated against its Zod schema before it is persisted or
 - **Escalation check job** — flags learners who've hit escalation mode for progress-view visibility.
 
 All jobs are durable — if the process restarts mid-window, the job resumes from its persisted state rather than restarting or being lost.
+
+**No submission may stay blocked (2026-09-16).** Three rules keep an exercise from ever becoming unsubmittable:
+
+- Both scoring jobs declare `onFailure`: once retries are exhausted, `markSubmissionFailedIfOpen` moves the submission to `invalid` (which a re-send starts clean from). The update is guarded on `status in ('validating', 'scoring')` inside the query, so a job that fails *after* persisting a score can never undo it.
+- `submitFiles` catches a failed `inngest.send` and tells the learner to press Send again; the files stay attached, and the re-send rejoins the `validating` row, overwrites the files and re-sends the events. `submitTextPart` deliberately lets the throw reach the client, which keeps the confirmation card open; the retry of the same text re-sends the event and reports it filed.
+- Uploads or typed parts sent while a submission is `scoring` get a plain "being scored right now" reply rather than rejoining it, since its files may not be overwritten and a second submission would score the exercise twice.
 
 ## 6. Deployment
 

@@ -1,7 +1,8 @@
 import { inngest } from '@/lib/jobs/client';
 import { createServiceRoleClient } from '@/lib/supabase/service-role';
 import { getExerciseById, getExerciseAnswerKeyForScoring } from '@/lib/db/queries/exercises';
-import { getSubmission, updateSubmissionStatus } from '@/lib/db/queries/submissions';
+import { getSubmission, markSubmissionFailedIfOpen, updateSubmissionStatus } from '@/lib/db/queries/submissions';
+import { waitForRequiredParts } from '@/lib/jobs/wait-for-parts';
 import { getSubmissionParts, missingParts, type SubmissionPart } from '@/lib/db/queries/submission-parts';
 import { getLedgerReviewItemsForExercise } from '@/lib/db/queries/ledger-review-items';
 import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
@@ -18,6 +19,7 @@ import {
   logAttemptsAndClassifyRectifications,
   recomputeMasteryAndModuleProgress,
   openCorrectionRoundOrAdvance,
+  submissionIdFromFailureEvent,
   describeRectification,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
@@ -28,12 +30,6 @@ import { evaluateBooksReconciliation } from '@/lib/tutor/books-reconciliation';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
 import type { ScoringResult } from '@/lib/schemas/scoring';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
-
-// Multi-part submissions wait up to this long for the remaining required
-// parts before scoring proceeds with whatever arrived, per the spec's
-// "30-45 minutes" window. Missing parts are flagged in feedback, never
-// silently unscored forever.
-const WAIT_WINDOW = '45m';
 
 function extractText(content: unknown): string {
   return (content as { text?: string }).text ?? '';
@@ -60,6 +56,16 @@ export const waitForSubmission = inngest.createFunction(
     id: 'wait-for-submission',
     triggers: [{ event: 'submission/part-received' }],
     singleton: { key: 'event.data.submissionId', mode: 'skip' },
+    // Once retries are exhausted, release the submission (2026-09-16), same as
+    // run-scoring: a crash after mark-scoring otherwise leaves it 'scoring'
+    // forever. Guarded on status, so a failure after the score was saved
+    // cannot undo it.
+    onFailure: async ({ event }) => {
+      const submissionId = submissionIdFromFailureEvent(event);
+      if (submissionId) {
+        await markSubmissionFailedIfOpen(createServiceRoleClient(), submissionId);
+      }
+    },
   },
   async ({ event, step }) => {
     const submissionId: string = event.data.submissionId;
@@ -91,26 +97,20 @@ export const waitForSubmission = inngest.createFunction(
     // in before this job even started" case — step.waitForEvent only
     // catches events sent after it runs, so a part that arrived earlier
     // must be detected by the DB check, not by waiting for its event again.
-    for (const partType of exercise.requiredParts) {
-      const currentParts = await step.run(`check-part-${partType}`, async () => {
-        return getSubmissionParts(supabase, submissionId);
-      });
-
-      if (currentParts.some((part) => part.part_type === partType)) {
-        continue;
-      }
-
-      await step.waitForEvent(`wait-for-${partType}`, {
-        event: 'submission/part-received',
-        timeout: WAIT_WINDOW,
-        if: `async.data.submissionId == "${submissionId}" && async.data.partType == "${partType}"`,
-      });
-      // Return value intentionally unused — whether it matched or timed
-      // out, the next loop iteration (or the completeness check after the
-      // loop) re-reads submission_parts as the source of truth, so a
-      // same-event-different-part race can never be misread as "this part
-      // arrived."
-    }
+    // Sliced so a part that arrives between a check and a wait is found on
+    // the next check instead of costing the full window (see wait-for-parts).
+    await waitForRequiredParts(
+      {
+        run: (id, fn) => step.run(id, fn),
+        waitForEvent: (id, options) => step.waitForEvent(id, options),
+      },
+      {
+        submissionId,
+        requiredParts: exercise.requiredParts,
+        readReceivedParts: async () =>
+          (await getSubmissionParts(supabase, submissionId)).map((part) => part.part_type),
+      },
+    );
 
     const finalParts = await step.run('fetch-final-parts', async () => {
       return getSubmissionParts(supabase, submissionId);

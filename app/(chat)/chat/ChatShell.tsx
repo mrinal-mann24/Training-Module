@@ -295,7 +295,17 @@ export function ChatShell({
         formData.append('files', file);
       }
 
-      const result = await submitFiles(formData);
+      // An unexpected throw (a network drop, a server error that is not a
+      // typed result) used to escape this transition and crash the chat
+      // (2026-09-16). The files stay attached either way, so the note tells
+      // the learner to press Send again rather than showing an error page.
+      let result: Awaited<ReturnType<typeof submitFiles>>;
+      try {
+        result = await submitFiles(formData);
+      } catch {
+        appendTutorNote("I couldn't send your files just now. Nothing you did wrong. Press Send again in a moment.");
+        return;
+      }
 
       if (result.status === 'error') {
         // Conversational, like the rest of the chat — the files stay

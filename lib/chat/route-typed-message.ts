@@ -5,7 +5,6 @@ import { getSubmissionParts } from '@/lib/db/queries/submission-parts';
 import type { SubmissionPartType, TextPartType } from '@/lib/schemas/exercise';
 import { ASK_QUESTION_INVALID_MESSAGE, AskQuestionInputSchema } from '@/lib/schemas/chat-actions';
 import { textPartTypeFor } from '@/lib/tutor/submission-routing';
-import { classifyMessageIntent } from '@/lib/tutor/classify-message-intent';
 import { classifyByRules } from '@/lib/chat/message-intent-rules';
 import { answerLearnerQuestion } from '@/lib/chat/answer-learner-question';
 
@@ -51,7 +50,6 @@ export async function findPendingTextPart(
 export type RouteTypedMessageDeps = {
   loadExercise?: (supabase: SupabaseClient, learnerId: string) => Promise<RoutableExercise | null>;
   findPendingPart?: typeof findPendingTextPart;
-  classify?: typeof classifyMessageIntent;
   answer?: typeof answerLearnerQuestion;
 };
 
@@ -67,12 +65,23 @@ export type RouteTypedMessageParams = {
  * Smart Send (2026-09-15): one Send button for everything a learner types.
  *
  * - No typed part owed: the text is a question and is answered here.
- * - A typed part owed: rules decide first, the LLM only breaks ties, and any
- *   classifier failure counts as a question. A question is answered; an
- *   answer comes back as "needs-confirmation" and NOTHING is written: the
- *   learner taps Submit answer, which calls submitTextPart as before. So a
- *   misrouted message can never reach scoring on its own (invariant 2), and
- *   the classifier never sees the answer key (invariant 1).
+ * - A typed part owed: only text the rules call a CLEAR question is answered
+ *   directly. Everything else, a clear answer or anything the rules cannot
+ *   call, comes back as "needs-confirmation" and NOTHING is written: the
+ *   learner taps Submit answer (which calls submitTextPart) or "It's a
+ *   question" (which answers it). A misrouted message can therefore never
+ *   reach scoring on its own (invariant 2).
+ *
+ * Why unclear text gets the card (2026-09-16). It used to go to an LLM
+ * tie-break that returned 'question' both as a real verdict and as the
+ * fallback on every timeout, invalid output or error, on the reasoning that
+ * "an answer locks the exercise". That premise was false: the card already
+ * makes an answer verdict reversible. The asymmetry runs the other way. A
+ * wrong card costs one tap on "It's a question". A wrong question verdict
+ * loses the explanation outright, because a Q&A reply offers no way back and
+ * submitTextPart is reachable only from the card. Live, "1. Put the entry in
+ * the GST" and "Entry is done" were both answered as questions and could
+ * never be filed. The LLM tie-break was removed with this change.
  */
 export async function routeTypedMessage({
   supabase,
@@ -82,22 +91,13 @@ export async function routeTypedMessage({
 }: RouteTypedMessageParams): Promise<RouteTypedMessageResult> {
   const loadExercise = deps.loadExercise ?? getLatestExercise;
   const findPendingPart = deps.findPendingPart ?? findPendingTextPart;
-  const classify = deps.classify ?? classifyMessageIntent;
   const answer = deps.answer ?? answerLearnerQuestion;
 
   const exercise = await loadExercise(supabase, learnerId);
   const pendingPart = exercise ? await findPendingPart(supabase, learnerId, exercise) : null;
 
-  if (exercise && pendingPart) {
-    const byRules = classifyByRules(text, pendingPart);
-    const intent =
-      byRules.intent === 'unclear'
-        ? (await classify(learnerId, { text, expectedPart: pendingPart, exerciseScenario: exercise.scenario })).intent
-        : byRules.intent;
-
-    if (intent === 'answer') {
-      return { status: 'needs-confirmation', exerciseId: exercise.id, partType: pendingPart, text };
-    }
+  if (exercise && pendingPart && classifyByRules(text, pendingPart).intent !== 'question') {
+    return { status: 'needs-confirmation', exerciseId: exercise.id, partType: pendingPart, text };
   }
 
   const question = AskQuestionInputSchema.safeParse({ question: text });

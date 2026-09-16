@@ -15,9 +15,10 @@ type SubmissionPartsChecklistProps = {
 
 // Small status checklist shown while a multi-part submission is incomplete —
 // "Daybook ✓ · Trial Balance ✓ · Explanation — waiting", per the spec's
-// design note. Only rendered for exercises with more than one required part
-// (see PendingSubmission.tsx) — a plain two-file exercise never shows this,
-// matching Units 05-07's existing single ai-thinking indicator instead.
+// design note. Only rendered for exercises that also need a typed part,
+// explain or review (see PendingSubmission.tsx) — a plain two-file exercise
+// never shows this, matching Units 05-07's existing single ai-thinking
+// indicator instead.
 export function SubmissionPartsChecklist({ requiredParts, receivedParts }: SubmissionPartsChecklistProps) {
   const receivedSet = new Set(receivedParts);
 
