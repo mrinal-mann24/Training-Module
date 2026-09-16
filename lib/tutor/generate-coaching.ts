@@ -561,15 +561,28 @@ export async function generateCoaching(
         ? buildCoachingPrompt(signal, facts)
         : buildCoachingRetryPrompt(signal, facts, violations, previousOutput);
 
-    const raw = await complete({
-      messages,
-      jsonSchema,
-      traceName: 'coaching',
-      learnerId,
-      callType: 'coaching',
-      temperature: COACHING_TEMPERATURE,
-      extraMetadata: { attempt, factCount: facts.length, ...(attempt > 1 ? { previousViolations: violations } : {}) },
-    });
+    let raw: unknown;
+    try {
+      raw = await complete({
+        messages,
+        jsonSchema,
+        traceName: 'coaching',
+        learnerId,
+        callType: 'coaching',
+        temperature: COACHING_TEMPERATURE,
+        extraMetadata: { attempt, factCount: facts.length, ...(attempt > 1 ? { previousViolations: violations } : {}) },
+      });
+    } catch (error) {
+      // Malformed JSON from the model is one more failed attempt, so it ends
+      // in the fact-built fallback like any other bad output (review finding,
+      // 2026-09-16). Anything else (network, auth, 4xx) still throws and
+      // Inngest retries the step.
+      if (!(error instanceof SyntaxError)) throw error;
+      violations = [`The response was not valid JSON: ${error.message}`];
+      previousOutput = null;
+      recordViolations({ learnerId, attempt, violations, usedFallback: attempt === MAX_ATTEMPTS });
+      continue;
+    }
     previousOutput = raw;
 
     const parsed = CoachingModelOutputSchema.safeParse(raw);
@@ -653,6 +666,61 @@ function identifiersIn(text: string): string[] {
   return text.match(FEEDBACK_IDENTIFIER_PATTERN) ?? [];
 }
 
+// The ledger a Trial Balance or books fact is about: the words before its
+// verb ("Sales shows…", "Purchase Returns has no ledger…").
+const LEDGER_FACT_SUBJECT = /^(.+?) (?:shows|closes|does not appear|has no ledger)\b/i;
+
+function ledgerSubjectOf(fact: CoachingFact): string | null {
+  if (fact.kind !== 'tieout' && fact.kind !== 'books') return null;
+  const match = LEDGER_FACT_SUBJECT.exec(fact.text);
+  return match ? match[1].trim().toLowerCase() : null;
+}
+
+// Clauses of a bullet: sentences, semicolons, colons, and "and"/"while"/
+// "with" joins, which is where a model merging several ledgers puts the seam.
+function clausesOf(text: string): string[] {
+  return text
+    .split(/[.;:]\s+|,?\s+\b(?:and|while|with|whereas|but)\b\s+/i)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0);
+}
+
+function mentions(clause: string, subject: string): boolean {
+  const escaped = subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(clause);
+}
+
+// Figures swapped between merged ledger facts (review finding, 2026-09-16).
+// The pooled check only asks whether a figure appears in ANY cited fact, so
+// "Sales is off by Rs 8,000 and Purchases by Rs 15,000" passed when the
+// facts said the reverse. Here, a clause that names a cited ledger may only
+// carry that ledger's figures. When a clause names a ledger and also a longer
+// ledger containing it ("Sales" inside "Sales Returns"), only the longer one
+// counts, so the two cannot lend each other figures.
+function misattributedFigures(bulletText: string, citedFacts: CoachingFact[]): string[] {
+  const ledgerFacts = citedFacts
+    .map((fact) => ({ fact, subject: ledgerSubjectOf(fact) }))
+    .filter((entry): entry is { fact: CoachingFact; subject: string } => entry.subject !== null);
+  if (ledgerFacts.length < 2) return [];
+
+  const problems: string[] = [];
+  for (const clause of clausesOf(bulletText)) {
+    const figures = numbersIn(clause);
+    if (figures.length === 0) continue;
+    const named = ledgerFacts.filter((entry) => mentions(clause, entry.subject));
+    const owners = named.filter(
+      (entry) => !named.some((other) => other.subject.length > entry.subject.length && other.subject.includes(entry.subject)),
+    );
+    if (owners.length === 0) continue;
+    const ownFigures = new Set(owners.flatMap((entry) => numbersIn(entry.fact.text)));
+    const stray = figures.filter((figure) => !ownFigures.has(figure));
+    if (stray.length > 0) {
+      problems.push(`${stray.join(', ')} next to ${owners.map((entry) => entry.subject).join(' / ')}`);
+    }
+  }
+  return problems;
+}
+
 export type GroundingContext = { tbTieOut: boolean | null };
 
 // The citation contract, checked in code (2026-09-16). Returns every
@@ -723,6 +791,12 @@ export function checkGrounding(
       if (unknownNumbers.length > 0) {
         violations.push(
           `${where} states the number(s) ${unknownNumbers.join(', ')}, not written in the facts it cites. Use only figures copied from a cited fact.`,
+        );
+      }
+      const misattributed = misattributedFigures(bullet.text, citedFacts);
+      if (misattributed.length > 0) {
+        violations.push(
+          `${where} puts a figure against the wrong ledger (${misattributed.join('; ')}). Each ledger's figure must come from that ledger's own fact.`,
         );
       }
 

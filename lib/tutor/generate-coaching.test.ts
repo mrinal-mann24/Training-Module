@@ -379,6 +379,41 @@ describe('checkGrounding', () => {
     expect(checkGrounding(output, FACTS, context).join(' ')).toMatch(/claims history/);
   });
 
+  describe('figures merged across ledger facts', () => {
+    const ledgerFacts: CoachingFact[] = [
+      { id: 'I1', kind: 'issue', text: 'the GST treatment (INV-012 (the Coimbatore Interiors sales)) needs another look' },
+      { id: 'T1', kind: 'tieout', text: "Sales shows Rs 15,000 more on the debit side in the Trial Balance than this month's correct postings" },
+      { id: 'T2', kind: 'tieout', text: "Purchases shows Rs 8,000 more on the credit side in the Trial Balance than this month's correct postings" },
+      { id: 'T3', kind: 'tieout', text: 'Sales Returns does not appear in the Trial Balance export at all (it should have moved by Rs 12,000 this month)' },
+    ];
+    const withBullet = (text: string, ids: string[]): CoachingModelOutput => ({
+      opening_line: 'A few ledgers need a look.',
+      went_well: [],
+      needs_work: [bullet('Take another look at the GST on INV-012.', ['I1']), bullet(text, ids)],
+    });
+
+    it('rejects figures swapped between two merged ledgers (review finding)', () => {
+      const output = withBullet('Sales is off by Rs 8,000 and Purchases by Rs 15,000.', ['T1', 'T2', 'T3']);
+      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong ledger/);
+    });
+
+    it('does not let Sales lend its figure to Sales Returns', () => {
+      const output = withBullet(
+        'Sales shows Rs 15,000 more on the debit side; Purchases shows Rs 8,000 more on the credit side; Sales Returns should have moved by Rs 15,000.',
+        ['T1', 'T2', 'T3'],
+      );
+      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong ledger/);
+    });
+
+    it('accepts correctly merged ledgers', () => {
+      const output = withBullet(
+        'Sales shows Rs 15,000 more on the debit side, and Purchases shows Rs 8,000 more on the credit side, while Sales Returns does not appear though it should have moved by Rs 12,000.',
+        ['T1', 'T2', 'T3'],
+      );
+      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false })).toEqual([]);
+    });
+  });
+
   // Ordinary coaching the bare-word rule used to reject (live replay: two of
   // three attempts retried over "look again" and "before").
   it.each([
@@ -552,6 +587,30 @@ describe('generateCoaching (grounded loop, injected completion)', () => {
       needs_work: grounded.needs_work.map((item) => item.text),
       next_note: composeNextNote({ nextStep: OPEN_ROUND, missingPartDescriptions: [], hasFindings: true }),
     });
+  });
+
+  it('treats malformed JSON as a failed attempt instead of throwing', async () => {
+    const complete = vi.fn().mockRejectedValue(new SyntaxError('Unexpected token < in JSON'));
+    const recordViolations = vi.fn();
+    const coaching = await generateCoaching(
+      'learner-1',
+      { overallResult: 'partial', scoringResult: fakeScoring(), qualitative: null, nextStep: OPEN_ROUND },
+      { complete, recordViolations },
+    );
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(recordViolations.mock.calls[0][0].violations.join(' ')).toMatch(/not valid JSON/);
+    expect(coaching.needs_work).toHaveLength(5);
+  });
+
+  it('still throws on a network failure so Inngest retries the step', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('OpenRouter request failed (503)'));
+    await expect(
+      generateCoaching(
+        'learner-1',
+        { overallResult: 'partial', scoringResult: fakeScoring(), qualitative: null, nextStep: OPEN_ROUND },
+        { complete, recordViolations: vi.fn() },
+      ),
+    ).rejects.toThrow(/503/);
   });
 
   it('the fallback passes its own grounding check', () => {
