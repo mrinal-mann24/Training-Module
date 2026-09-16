@@ -250,7 +250,6 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
       scoringResult.books_reconciliation === undefined
         ? null
         : { clean: scoringResult.books_reconciliation.length === 0, descriptions: describeBooksReconciliation(scoringResult.books_reconciliation) },
-    weightedScorePercent: Math.round(scoringResult.weighted_score * 100),
     incorrectConceptDescriptions,
     correctConceptDescriptions,
     qualitative: null,
@@ -409,7 +408,6 @@ export async function generateCoaching(
     : {
         overallResult: params.overallResult,
         tbTieOut: null,
-        weightedScorePercent: null,
         incorrectConceptDescriptions: [],
         correctConceptDescriptions: [],
         qualitative: null,
@@ -518,26 +516,45 @@ export function checkFeedbackIdentifiers(
   return `Your bullets mention identifier(s) not present in the scoring signal: ${unknown.join(', ')}. Copy identifiers EXACTLY as the signal states them — never retype, alter, or invent a reference.`;
 }
 
+// A percentage, a mark, or the word "score" in the opening line (2026-09-16).
+// Learners no longer see a number for a batch, and prompt instruction alone
+// has never been reliable on this file's other guards, which is why they are
+// all enforced in code here.
+const SCORE_LANGUAGE_PATTERN = /\d\s*(?:%|percent\b)|\bscored?\b|\bscores\b|\bout of \d/i;
+
+// Verdict words in the opening line. "partial" and the fail family are banned
+// outright. "pass" is NOT: passing an entry is ordinary Indian accounting
+// usage ("you passed the journal correctly") and banning it would send clean
+// feedback into a pointless retry, so only its verdict shapes are caught.
+const VERDICT_LANGUAGE_PATTERN = /\bpartial(?:ly)?\b|\bfail(?:s|ed|ure|ing)?\b|\bpasses\b|\b(?:did|does|do)\s+not\s+pass\b|\bnot a pass\b/i;
+
 // Returns a retry-feedback message when opening_line contradicts the computed
-// scoring facts, null when it's consistent. Exported for tests.
+// scoring facts or reaches for score/verdict language, null when it's clean.
+// Exported for tests.
 export function checkOpeningLineFacts(openingLine: string, signal: CoachingSignal): string | null {
   if (signal.tbTieOut === true && /trial\s*balance/i.test(openingLine)) {
     return 'Your opening_line attributes the result to the Trial Balance, but the Trial Balance tie-out MATCHED. Restate the opening_line without mentioning the Trial Balance.';
+  }
+  if (SCORE_LANGUAGE_PATTERN.test(openingLine)) {
+    return 'Your opening_line states a score, a percentage or a mark. Learners are never shown one. Restate it saying what the batch showed, with no numbers about performance.';
+  }
+  if (VERDICT_LANGUAGE_PATTERN.test(openingLine)) {
+    return 'Your opening_line uses a verdict word ("partial", "fail", "passes"). Learners are never given a verdict. Restate it saying what went right and what the sections below cover.';
   }
   return null;
 }
 
 // Deterministic opening line used only when the model repeatedly produces a
-// factually-wrong one: plain and safe rather than clever, score included when
-// available, no em dashes (learner-facing hard rule).
+// factually-wrong one: plain and safe rather than clever, no score, no
+// verdict, no em dashes (learner-facing hard rule). These three lines must
+// themselves survive checkOpeningLineFacts, since they are what replaces a
+// line that failed it.
 export function composeFallbackOpeningLine(signal: CoachingSignal): string {
-  const scorePrefix =
-    signal.weightedScorePercent === null ? '' : `Your submission came in at ${signal.weightedScorePercent} percent. `;
   if (signal.overallResult === 'pass') {
-    return `${scorePrefix}This submission passes.`;
+    return 'This batch came out clean. Here is what you got right.';
   }
   if (signal.overallResult === 'partial') {
-    return `${scorePrefix}A partial result: some entries are right, and a few areas below need another look.`;
+    return 'Good work on a lot of this. Some entries are right, and a few areas below are worth another look.';
   }
-  return `${scorePrefix}This one did not pass yet. The areas below are where to focus.`;
+  return 'There is real ground to cover in this one. The areas below are where to start.';
 }

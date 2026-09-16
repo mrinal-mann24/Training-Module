@@ -50,12 +50,16 @@ Hard formatting rule: never use an em dash anywhere in your output. Use a
 colon, a comma, or a full stop instead.
 
 Write, in order:
-- opening_line: one plain line that OPENS WITH THE SCORE, using the weighted
-  score percentage from the signal below, measured framing, no inflation.
-  Example shape: "Your submission came in at 63 percent. A solid first pass
-  with real strengths to build on." State the result's actual cause honestly:
-  if the Trial Balance tie-out is reported as matched below, the submission
-  did not fall short because of the Trial Balance, so do not say or imply it did.
+- opening_line: one plain line that orients the learner on what this batch
+  showed, in measured words, no inflation. NEVER state a score, a percentage,
+  a mark out of anything, or a verdict word ("pass", "passes", "partial",
+  "fail"). The learner is not being graded here, they are being taught: say
+  what the batch was about and what the sections below cover.
+  Example shape: "You worked the whole month through, and the sales and
+  receipt entries came out clean. GST heads are the area to revisit."
+  State the result's actual cause honestly: if the Trial Balance tie-out is
+  reported as matched below, the submission did not fall short because of the
+  Trial Balance, so do not say or imply it did.
 - went_well: bullet points, each specific and explanatory, tied to what the
   signal lists as correctly handled. Each bullet names WHAT was right and WHY
   it matters, pilot-style. Never generic encouragement, never praise for
@@ -115,13 +119,18 @@ export type QualitativeCoachingSignal = {
   reasoningDescription: string;
 };
 
+// overallResult stays on the signal because it still sets the TONE of the
+// message (how much rework is ahead), but it is never quoted back: the
+// prompt turns it into a plain sentence and bans the verdict words outright
+// (2026-09-16, percentages and pass/fail removed from the learner's view).
+// weightedScorePercent was removed from this type entirely rather than left
+// unused, so no later edit can reintroduce the number by wiring it up again.
 export type CoachingSignal = {
   overallResult: "pass" | "partial" | "fail";
   tbTieOut: boolean | null;
   // Ledgers the tie-out could not reconcile, in plain words with the size
   // of the gap (2026-09-09). Empty/absent when the tie-out matched.
   tbMismatchDescriptions?: string[];
-  weightedScorePercent: number | null;
   // Concept-level descriptions only — never the internal error code or the
   // literal expected value. e.g. "GST head was miscategorized on the purchase
   // voucher", not "GST_HEAD_WRONG: expected IGST, got CGST".
@@ -155,18 +164,25 @@ export type CoachingSignal = {
   rectificationDescriptions: string[];
 };
 
+// The verdict, rendered as tone rather than as a label. The model needs to
+// know whether the learner is mostly there or has real rework ahead; it must
+// never be handed the word itself, because it parrots labels it is given.
+const TONE_BY_RESULT: Record<CoachingSignal["overallResult"], string> = {
+  pass: "almost nothing to redo, so keep this short and confident",
+  partial: "a mix, several areas right and a few to rework",
+  fail: "real rework ahead, so be warm and concrete about where to start",
+};
+
 function buildUserMessage(signal: CoachingSignal): string {
   const lines = [
-    `Overall result: ${signal.overallResult}`,
+    `How much rework is ahead (for TONE ONLY, never state this, never use the
+words pass, passes, partial or fail in your output): ${TONE_BY_RESULT[signal.overallResult]}`,
     signal.tbTieOut === null
       ? null
       : `Trial Balance tie-out: ${signal.tbTieOut ? "matched" : "did not match"}`,
     signal.tbTieOut === false && (signal.tbMismatchDescriptions?.length ?? 0) > 0
       ? `Trial Balance ledgers that did not reconcile this month (compared as the month's movement, so earlier months' balances do not matter — name the ledger and the gap, do not state what the figure should be): ${signal.tbMismatchDescriptions!.join("; ")}`
       : null,
-    signal.weightedScorePercent === null
-      ? null
-      : `Weighted score: ${signal.weightedScorePercent} percent. This number IS learner-visible: open the opening_line with it.`,
     signal.correctConceptDescriptions.length > 0
       ? `Correctly handled: ${signal.correctConceptDescriptions.join("; ")}`
       : "Correctly handled: nothing notable",
@@ -175,7 +191,7 @@ function buildUserMessage(signal: CoachingSignal): string {
     // must not re-expand these back into per-transaction bullets.
     signal.incorrectConceptDescriptions.length > 0
       ? `Concepts to flag (${signal.incorrectConceptDescriptions.length} area(s), concept-level only, do not state the fix). Produce exactly one flagged_areas entry per area listed here, no more: ${signal.incorrectConceptDescriptions.join("; ")}`
-      : "Concepts to flag: none — this was a clean pass",
+      : "Concepts to flag: none, every concept area in this batch came out correct",
     (signal.unmatchedVoucherDescriptions?.length ?? 0) > 0
       ? `Extra vouchers: these Day Book vouchers match no transaction of this batch. Add ONE needs_work entry that lists them plainly (date, type, amount, ledgers) and asks the learner to check whether each is a duplicate, a blank, a reversal or a posting that does not belong: ${signal.unmatchedVoucherDescriptions!.join("; ")}`
       : null,

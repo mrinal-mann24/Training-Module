@@ -4,7 +4,6 @@ import { normalizeStoredCoaching, type Coaching } from '@/lib/schemas/coaching';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
 
 export type FeedbackForLearner = {
-  overall_result: OverallResult;
   feedback_text: Coaching;
 };
 
@@ -61,17 +60,21 @@ export async function insertScoringResult(
   return data;
 }
 
-// Explicitly selects only overall_result and feedback_text — never
-// error_codes or qualitative_score's raw subscores — regardless of what RLS
-// would technically allow, same belt-and-suspenders pattern as
-// getLatestDiagnosticExercise excluding answer_key in Unit 4.
+// Explicitly selects only feedback_text — never error_codes,
+// qualitative_score's raw subscores, weighted_score or overall_result —
+// regardless of what RLS would technically allow, same belt-and-suspenders
+// pattern as getLatestDiagnosticExercise excluding answer_key in Unit 4.
+//
+// The two verdict columns left the learner-facing set on 2026-09-16, when
+// percentages and pass/fail were removed from the UI; that day's migration
+// revokes both from `authenticated`, so selecting them here would now fail.
 export async function getFeedbackForLearner(
   supabase: SupabaseClient,
   submissionId: string,
 ): Promise<FeedbackForLearner | null> {
   const { data, error } = await supabase
     .from('scoring_results')
-    .select('overall_result, feedback_text')
+    .select('feedback_text')
     .eq('submission_id', submissionId)
     .maybeSingle();
 
@@ -84,7 +87,6 @@ export async function getFeedbackForLearner(
   }
 
   return {
-    overall_result: data.overall_result,
     // Compat: rows written before the Phase 1 schema change carry the legacy
     // coaching shape; every read normalizes so the renderer sees one shape.
     feedback_text: normalizeStoredCoaching(data.feedback_text),
@@ -93,22 +95,21 @@ export async function getFeedbackForLearner(
 
 export type FeedbackHistoryRow = {
   submission_id: string;
-  overall_result: OverallResult;
   feedback_text: Coaching;
   created_at: string;
 };
 
 // Chat-history rebuild: every scored feedback for the learner, keyed by
 // submission. Selects ONLY the learner-facing fields — never error_codes,
-// weighted_score, or anything answer-key-adjacent, same boundary as
-// getFeedbackForLearner above.
+// weighted_score, overall_result, or anything answer-key-adjacent, same
+// boundary as getFeedbackForLearner above.
 export async function getFeedbackHistoryForLearner(
   supabase: SupabaseClient,
   learnerId: string,
 ): Promise<FeedbackHistoryRow[]> {
   const { data, error } = await supabase
     .from('scoring_results')
-    .select('submission_id, overall_result, feedback_text, created_at')
+    .select('submission_id, feedback_text, created_at')
     .eq('learner_id', learnerId)
     .order('created_at', { ascending: true });
 

@@ -110,7 +110,7 @@ export function assembleTimeline(rows: {
           role: 'assistant',
           kind: 'submission-result-scored',
           content: '',
-          scoringFeedback: { overallResult: feedback.overall_result, feedback: feedback.feedback_text },
+          scoringFeedback: { feedback: feedback.feedback_text },
         },
       });
     }

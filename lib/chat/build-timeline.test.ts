@@ -44,7 +44,6 @@ describe('assembleTimeline', () => {
       feedbacks: [
         {
           submission_id: 'sub-1',
-          overall_result: 'partial',
           feedback_text: { opening_line: 'r', went_well: ['p'], needs_work: [], next_note: 'n' },
           created_at: '2026-08-01T11:30:00Z',
         },

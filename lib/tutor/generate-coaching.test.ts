@@ -7,7 +7,6 @@ function signalWith(overrides: Partial<CoachingSignal>): CoachingSignal {
   return {
     overallResult: 'fail',
     tbTieOut: true,
-    weightedScorePercent: 40,
     incorrectConceptDescriptions: [],
     correctConceptDescriptions: [],
     qualitative: null,
@@ -65,12 +64,39 @@ describe('checkOpeningLineFacts', () => {
 
   it('accepts a Trial Balance mention when tie-out genuinely failed', () => {
     expect(
-      checkOpeningLineFacts('Did not pass — the Trial Balance does not tie out.', signalWith({ tbTieOut: false })),
+      checkOpeningLineFacts('The Trial Balance does not tie out yet, so that is where to start.', signalWith({ tbTieOut: false })),
     ).toBeNull();
   });
 
   it('accepts a result line that does not mention the Trial Balance', () => {
-    expect(checkOpeningLineFacts('Not a pass — several fields need another look.', signalWith({}))).toBeNull();
+    expect(checkOpeningLineFacts('Several fields need another look before this month is settled.', signalWith({}))).toBeNull();
+  });
+
+  // 2026-09-16: learners are never shown a number or a verdict for a batch.
+  it.each([
+    'Your submission came in at 63 percent. A solid first pass.',
+    'You scored well on the sales entries this month.',
+    'This came out at 41 out of 60 on the checks that matter.',
+  ])('rejects score language: %s', (line) => {
+    expect(checkOpeningLineFacts(line, signalWith({}))).not.toBeNull();
+  });
+
+  it.each([
+    'A partial result: some entries are right.',
+    'This submission passes.',
+    'This one did not pass yet.',
+    'Not a pass, but close.',
+    'The GST treatment failed across the board.',
+  ])('rejects verdict language: %s', (line) => {
+    expect(checkOpeningLineFacts(line, signalWith({}))).not.toBeNull();
+  });
+
+  // "Pass an entry" is ordinary Indian accounting usage and must survive, or
+  // clean feedback would be thrown away and replaced by the fallback line.
+  it('accepts passing an entry, which is bookkeeping vocabulary and not a verdict', () => {
+    expect(
+      checkOpeningLineFacts('You passed the sales entries cleanly and tied the bills to the right invoices.', signalWith({})),
+    ).toBeNull();
   });
 });
 
@@ -79,6 +105,14 @@ describe('composeFallbackOpeningLine', () => {
     expect(composeFallbackOpeningLine(signalWith({ overallResult: 'pass' }))).not.toMatch(/trial balance/i);
     expect(composeFallbackOpeningLine(signalWith({ overallResult: 'partial' }))).not.toMatch(/trial balance/i);
     expect(composeFallbackOpeningLine(signalWith({ overallResult: 'fail' }))).not.toMatch(/trial balance/i);
+  });
+
+  // This line is what REPLACES one that failed the guard, so it has to pass
+  // the guard itself. Otherwise the fallback reintroduces exactly the score
+  // or verdict wording the guard just rejected.
+  it.each(['pass', 'partial', 'fail'] as const)('survives its own guard for %s', (overallResult) => {
+    const signal = signalWith({ overallResult });
+    expect(checkOpeningLineFacts(composeFallbackOpeningLine(signal), signal)).toBeNull();
   });
 });
 

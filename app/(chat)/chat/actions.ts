@@ -27,7 +27,6 @@ import { insertHintRequest, getHintDepthForExercise } from '@/lib/db/queries/hin
 import { getModuleNumber } from '@/lib/db/queries/mastery';
 import { inngest } from '@/lib/jobs/client';
 import type { Coaching } from '@/lib/schemas/coaching';
-import type { OverallResult } from '@/lib/schemas/scoring';
 import type { Hint } from '@/lib/schemas/hint';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import type { SubmissionPartType } from '@/lib/schemas/exercise';
@@ -480,9 +479,7 @@ export async function getSubmissionPartsStatus(submissionId: string): Promise<Ge
   };
 }
 
-export type GetScoringFeedbackResult =
-  | { status: 'found'; overallResult: OverallResult; feedback: Coaching }
-  | { status: 'not-found' };
+export type GetScoringFeedbackResult = { status: 'found'; feedback: Coaching } | { status: 'not-found' };
 
 // Called by the client once its Realtime subscription observes a submission's
 // status flip to 'scored' — fetches only the composed feedback fields
@@ -506,7 +503,7 @@ export async function getScoringFeedback(submissionId: string): Promise<GetScori
     return { status: 'not-found' };
   }
 
-  return { status: 'found', overallResult: feedback.overall_result, feedback: feedback.feedback_text };
+  return { status: 'found', feedback: feedback.feedback_text };
 }
 
 export type RequestHintResult = { status: 'given'; hint: Hint } | { status: 'error'; error: string };

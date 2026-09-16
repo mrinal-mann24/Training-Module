@@ -101,7 +101,7 @@ export function PendingSubmission({
             role: 'assistant',
             kind: 'submission-result-scored',
             content: '',
-            scoringFeedback: { overallResult: result.overallResult, feedback: result.feedback },
+            scoringFeedback: { feedback: result.feedback },
           });
 
           // 'scored' now flips as soon as feedback is persisted, BEFORE the

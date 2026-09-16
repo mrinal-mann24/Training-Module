@@ -1,5 +1,4 @@
 import type { Coaching } from '@/lib/schemas/coaching';
-import type { OverallResult } from '@/lib/schemas/scoring';
 import type { Hint } from '@/lib/schemas/hint';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 
@@ -27,7 +26,12 @@ export type ChatMessage = {
   // Only set for kind: 'submission-result-scored'. Renders only the composed
   // feedback_text fields from the coaching schema — never error codes,
   // weights, or anything derived from answer_key.
-  scoringFeedback?: { overallResult: OverallResult; feedback: Coaching };
+  //
+  // 2026-09-16: overallResult (pass/partial/fail) was removed from this
+  // shape rather than merely left unrendered. The verdict still exists
+  // server-side and still drives mastery; keeping it on the client type
+  // would let any future component put the badge back by accident.
+  scoringFeedback?: { feedback: Coaching };
   // Only set for kind: 'hint'. Renders only the composed hint_text/rung —
   // never the answer_key it was grounded in.
   hint?: Hint;

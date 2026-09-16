@@ -1,5 +1,4 @@
 import { cn } from '@/lib/cn';
-import type { OverallResult } from '@/lib/schemas/scoring';
 import type { ChatMessage } from '@/lib/chat/message';
 import { DocumentCard } from './DocumentCard';
 
@@ -7,17 +6,10 @@ type MessageBubbleProps = {
   message: ChatMessage;
 };
 
-const RESULT_BADGE_STYLES: Record<OverallResult, string> = {
-  pass: 'bg-status-success/10 text-status-success',
-  partial: 'bg-status-warning/10 text-status-warning',
-  fail: 'bg-status-error/10 text-status-error',
-};
-
-const RESULT_BADGE_LABELS: Record<OverallResult, string> = {
-  pass: 'Pass',
-  partial: 'Partial',
-  fail: 'Needs work',
-};
+// 2026-09-16: the Pass / Partial / Needs work badge was removed. Feedback
+// now opens with what the learner did and leads into "What went well" and
+// "What needs work" — a verdict chip above those sections told them how to
+// feel about the batch before they had read either.
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isLearner = message.role === 'learner';
@@ -45,14 +37,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         )}
         {scoringFeedback && (
           <div className="space-y-3">
-            <span
-              className={cn(
-                'inline-block rounded-sm px-2 py-0.5 text-xs font-medium',
-                RESULT_BADGE_STYLES[scoringFeedback.overallResult],
-              )}
-            >
-              {RESULT_BADGE_LABELS[scoringFeedback.overallResult]}
-            </span>
             <p className="font-bold">{scoringFeedback.feedback.opening_line}</p>
             {scoringFeedback.feedback.went_well.length > 0 && (
               <div>
