@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Format E — "cash memo": Courier throughout, dashed separators, qty x rate
 // folded into the description line, small-shop register feel. Same
@@ -132,6 +133,7 @@ export function VendorInvoiceDocumentE({ content }: Props) {
         </View>
         <View style={styles.dashedRule} />
 
+        <VendorInvoiceParticulars content={content} />
         <Text style={styles.thanks}>Thank you! Visit again.</Text>
       </Page>
     </Document>

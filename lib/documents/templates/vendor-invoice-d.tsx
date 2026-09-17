@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Format D — "GST portal dense": small type, ORIGINAL FOR RECIPIENT banner,
 // two bordered meta panels, fully gridded serial-numbered table with the
@@ -166,6 +167,7 @@ export function VendorInvoiceDocumentD({ content }: Props) {
             <Text>{formatAmount(content.totalAmount)}</Text>
           </View>
         </View>
+        <VendorInvoiceParticulars content={content} />
       </Page>
     </Document>
   );

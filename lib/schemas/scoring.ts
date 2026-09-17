@@ -120,6 +120,17 @@ const VoucherDiffSchema = z.object({
   is_correct: z.boolean(),
   vacuously_correct: z.boolean().optional(),
   error_code: z.enum(SCORING_ERROR_CODES).nullable(),
+  // 2026-09-17, both optional so stored results still parse:
+  // leg — for account/dr_cr/amount diffs, the index of the (consolidated)
+  //   expected leg the diff belongs to, so an adjudicator dismissal clears
+  //   exactly that leg and nothing else on the transaction.
+  // weight — overrides the field's standard weight. A VOUCHER_MISSING diff
+  //   carries the full weight of every field the transaction would have been
+  //   scored on (skipping must never score better than attempting), and the
+  //   side/amount of a leg whose account did not match carry 0 (not scored:
+  //   the account error is the whole penalty).
+  leg: z.number().int().nonnegative().optional(),
+  weight: z.number().nonnegative().optional(),
 });
 export type VoucherDiff = z.infer<typeof VoucherDiffSchema>;
 

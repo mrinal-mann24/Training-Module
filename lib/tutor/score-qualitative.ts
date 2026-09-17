@@ -1,12 +1,13 @@
-import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
+import { getTracedStructuredCompletion, type TracedCompletionParams } from '@/lib/llm/tracing';
 import {
   buildQualitativeScoringPrompt,
   buildQualitativeScoringRetryPrompt,
   type QualitativeGroundingItem,
 } from '@/lib/llm/prompts/qualitative-scoring';
 import { QualitativeScoringSchema, type QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
-import type { AnswerKey } from '@/lib/schemas/exercise';
+import type { AnswerKey, ConceptTag } from '@/lib/schemas/exercise';
 import type { OverallResult } from '@/lib/schemas/scoring';
+import { RULEBOOK_SECTIONS_BY_CONCEPT, rulebookSourcesFor } from '@/lib/tutor/grounded-prose';
 
 const MAX_ATTEMPTS = 3;
 
@@ -63,35 +64,96 @@ export function combineOverallResult(
   throw new Error('combineOverallResult requires at least one of quantitative or qualitative to be non-null.');
 }
 
-// ASSUMPTION: standing in for the real Karbon VA House Practices Rulebook,
-// same placeholder pattern as lib/llm/prompts/coaching.ts — swap for real
-// Rulebook content/retrieval once it exists, no restructuring needed.
-const RULEBOOK_GROUNDING_PLACEHOLDER = `Grounding reference (placeholder standing in for the Karbon VA House Practices Rulebook):
-- GST head selection: IGST applies for inter-state supply; CGST+SGST together apply for intra-state supply.
-- TDS applies when a payment crosses the prescribed threshold for its section; correctness depends on the nature of the payment.
-- Every purchase/payment/sales/receipt voucher against a running party balance should carry a bill-by-bill reference.
-- Narration should state what the transaction is and why, in plain language.
-- Trial Balance tie-out is the check that catches an entry that "looks right" per voucher but doesn't actually net correctly.`;
+const MAX_EXCERPT_CHARS = 3000;
+const MAX_RATIONALE_CHARS = 2000;
+
+// Which rulebook sections an issue list is about, when the caller does not
+// name the concepts. Explain exercises carry the answer key's own fields
+// (account, voucher type, GST, TDS, bill reference); review exercises carry
+// anomaly/correct verdicts, which the common-errors and quality-bar sections
+// govern.
+const ITEM_SECTIONS: [RegExp, string[]][] = [
+  [/\bGST\b/, ['R13']],
+  [/\bTDS\b/, ['R12.1', 'R12.4']],
+  [/bill reference/i, ['R4']],
+  [/narration/i, ['R3']],
+  [/voucher type/i, ['R5']],
+  [/\baccount:/i, ['R2', 'R11']],
+  [/anomaly|actually correct/i, ['R15', 'R16']],
+];
+
+// The real rulebook excerpts for the concepts being graded (2026-09-17). The
+// grader was given a five-line placeholder "standing in for" the rulebook
+// long after the real one was extracted, so a learner stating the house rule
+// correctly could be marked against a paraphrase of it.
+export function rulebookGroundingFor(items: readonly QualitativeGroundingItem[], conceptTags?: readonly ConceptTag[]): string {
+  const ids =
+    conceptTags && conceptTags.length > 0
+      ? conceptTags.flatMap((tag) => RULEBOOK_SECTIONS_BY_CONCEPT[tag] ?? [])
+      : (() => {
+          const text = items.map((item) => `${item.label} ${item.detail}`).join('\n');
+          const matched = ITEM_SECTIONS.filter(([pattern]) => pattern.test(text)).flatMap(([, sections]) => sections);
+          return matched.length > 0 ? matched : ['R15', 'R16'];
+        })();
+  return rulebookSourcesFor([...new Set(ids)])
+    .map((source) => `[${source.id}] ${source.text.length > MAX_EXCERPT_CHARS ? source.text.slice(0, MAX_EXCERPT_CHARS) : source.text}`)
+    .join('\n\n');
+}
+
+function toScore(value: unknown): unknown {
+  const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  if (typeof number !== 'number' || !Number.isFinite(number)) return value;
+  return Math.min(100, Math.max(0, Math.round(number)));
+}
+
+// Clamp and round before validating (2026-09-17). A subscore of 100.4, or
+// "85" as a string, is a usable grade, and a retry for it costs the learner a
+// minute; NaN, a missing field or a word is still rejected by the schema.
+// These numbers only ever reach the learner as code-written rubric lines
+// (generate-coaching.ts describeQualitativeSubscore), and the rationale never
+// does.
+export function normalizeQualitativeOutput(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const record = raw as Record<string, unknown>;
+  return {
+    ...record,
+    recall: toScore(record.recall),
+    precision: toScore(record.precision),
+    reasoning_quality: toScore(record.reasoning_quality),
+    rationale: typeof record.rationale === 'string' ? record.rationale.slice(0, MAX_RATIONALE_CHARS) : record.rationale,
+  };
+}
+
+export type QualitativeScoringDeps = {
+  complete: (params: TracedCompletionParams) => Promise<unknown>;
+};
 
 // Unit 11: qualitative scoring genuinely calls the LLM (unlike Unit 06's
 // score-submission.ts, which is deterministic) because free-text natural
 // language can't be code-diffed. Grounded tightly against a server-only
 // issue list — the caller passes exactly what "the real issues" are for
 // this exercise, never the learner-facing packet/scenario text alone — so
-// the model is judging against ground truth, not improvising. Same bounded
-// 3-attempt retry + Zod validation discipline as every other LLM call.
+// the model is judging against ground truth, not improvising. Bounded
+// 3-attempt retry with validation; malformed JSON counts as a failed attempt
+// (2026-09-17). This runs inside an Inngest step, so exhausting the attempts
+// still throws and the step retries.
 export async function scoreQualitative(
   learnerId: string,
   params: {
     learnerText: string;
     groundingItems: QualitativeGroundingItem[];
     traceName: string;
+    // The concepts graded, when the caller knows them; otherwise inferred
+    // from the issue list.
+    conceptTags?: ConceptTag[];
   },
+  deps?: Partial<QualitativeScoringDeps>,
 ): Promise<QualitativeScoring> {
+  const complete = deps?.complete ?? getTracedStructuredCompletion;
   const input = {
     learnerText: params.learnerText,
     groundingItems: params.groundingItems,
-    rulebookGrounding: RULEBOOK_GROUNDING_PLACEHOLDER,
+    rulebookGrounding: rulebookGroundingFor(params.groundingItems, params.conceptTags),
   };
 
   let lastError: string | null = null;
@@ -102,15 +164,22 @@ export async function scoreQualitative(
         ? buildQualitativeScoringPrompt(input)
         : buildQualitativeScoringRetryPrompt(input, lastError);
 
-    const raw = await getTracedStructuredCompletion({
-      messages,
-      jsonSchema,
-      traceName: params.traceName,
-      learnerId,
-      callType: 'qualitative-scoring',
-    });
+    let raw: unknown;
+    try {
+      raw = await complete({
+        messages,
+        jsonSchema,
+        traceName: params.traceName,
+        learnerId,
+        callType: 'qualitative-scoring',
+      });
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      lastError = `The response was not valid JSON: ${error.message}`;
+      continue;
+    }
 
-    const parsed = QualitativeScoringSchema.safeParse(raw);
+    const parsed = QualitativeScoringSchema.safeParse(normalizeQualitativeOutput(raw));
 
     if (parsed.success) {
       return parsed.data;

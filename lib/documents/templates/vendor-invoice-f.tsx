@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Format F — "modern accent": dark header band, zebra-striped rows, accent
 // total band. Same VendorInvoiceContent as every other format (Phase 4,
@@ -178,6 +179,7 @@ export function VendorInvoiceDocumentF({ content }: Props) {
             </View>
           </View>
         </View>
+        <VendorInvoiceParticulars content={content} />
       </Page>
     </Document>
   );

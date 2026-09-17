@@ -7,7 +7,7 @@
 //   npx tsx scripts/advance-learner.ts --learner <email> --replace-latest
 //
 // --replace-latest deletes the learner's newest exercise first, but ONLY if
-// it was created after their latest scored submission and has no
+// it was created after the exercise of their latest scored submission and has no
 // submissions of its own (i.e. it is the batch this script is about to
 // regenerate). Every dependent row cascades (ledger_review_items, source
 // documents, registry/log rows). Reads OPENROUTER/SUPABASE settings from
@@ -90,7 +90,9 @@ async function main(): Promise<void> {
   console.log(`last scored: ${scoredExercise.kind} (${previousDifficultyLevel}) submitted ${lastScored.created_at}`);
   console.log(`newest exercise: ${latest ? `${latest.kind} created ${latest.created_at}` : '(none)'}`);
 
-  if (replaceLatest && latest && latest.created_at > lastScored.created_at) {
+  // Compared against the scored EXERCISE's created_at, not the submission's
+  // (2026-09-17), for the same reason as afterIso below.
+  if (replaceLatest && latest && latest.created_at > scoredExercise.created_at) {
     const { count } = await supabase
       .from('submissions')
       .select('id', { count: 'exact', head: true })
@@ -107,7 +109,13 @@ async function main(): Promise<void> {
     learnerId,
     previousDifficultyLevel,
     licenseMode: profile.license_mode,
-    afterIso: lastScored.created_at,
+    // The scored EXERCISE's created_at, as the scoring jobs pass it
+    // (2026-09-17). The submission's created_at was the pre-correction-round
+    // key: a correction round's upload is newer than the batch that exercise
+    // already produced, so keyed on it this script would hand out a second
+    // next batch (architecture.md, "One exercise produces at most one next
+    // batch").
+    afterIso: scoredExercise.created_at,
   });
   console.log(`outcome: ${outcome}`);
 

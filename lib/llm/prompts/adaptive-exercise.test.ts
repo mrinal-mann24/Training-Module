@@ -113,3 +113,29 @@ describe('overdrawn till instruction (2026-09-02)', () => {
     expect(prompt).not.toContain('TILL IS OVERDRAWN');
   });
 });
+
+describe('dates, document numbers and tax rules in the prompt (2026-09-17 audit)', () => {
+  it('states the canonical DD-Mon-YYYY date rule', () => {
+    const prompt = systemPrompt(params({ exerciseMonthLabel: 'June 2024' }));
+    expect(prompt).toContain('DATE FORMAT (hard requirement): write every date as DD-Mon-YYYY');
+    expect(prompt).toContain('never put a date inside a bill, invoice or note');
+  });
+
+  it('lists the document numbers already used, and omits the block when there are none', () => {
+    expect(systemPrompt(params({ usedBillNumbers: ['INV-018', 'ADV-C01', 'MS/990'] }))).toContain('DOCUMENT NUMBERS ALREADY USED');
+    expect(systemPrompt(params({ usedBillNumbers: ['INV-018', 'ADV-C01', 'MS/990'] }))).toContain('INV-018, ADV-C01, MS/990');
+    expect(systemPrompt(params())).not.toContain('DOCUMENT NUMBERS ALREADY USED');
+  });
+
+  it('states the TDS and GST rules of the batch financial year, and the reverse-charge cases', () => {
+    const fy24 = systemPrompt(params({ exerciseMonthLabel: 'June 2024' }));
+    expect(fy24).toContain('TAX RULES (hard requirement');
+    expect(fy24).toContain('FY 2024-25');
+    expect(fy24).toContain("the year's rent likely to exceed Rs 2,40,000");
+    expect(fy24).toContain('legal services by an individual advocate or a firm of advocates');
+    const fy25 = systemPrompt(params({ exerciseMonthLabel: 'June 2025' }));
+    expect(fy25).toContain('FY 2025-26');
+    expect(fy25).toContain('rent for a month or part of a month over Rs 50,000');
+    expect(fy25).not.toContain('2,40,000 aggregate');
+  });
+});

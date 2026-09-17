@@ -24,6 +24,14 @@ import type {
 import type { AnswerKey } from '@/lib/schemas/exercise';
 import type { QualitativeScoring } from '@/lib/schemas/qualitative-scoring';
 import type { CorrectionDecision } from '@/lib/tutor/correction-round';
+import {
+  containsPhrase,
+  dashViolation,
+  numbersIn,
+  phrasePositions,
+  referencesIn,
+  sanitizeLearnerText,
+} from '@/lib/tutor/grounded-prose';
 
 const MAX_ATTEMPTS = 3;
 
@@ -47,13 +55,36 @@ const COACHING_TEMPERATURE = 0.2;
 // is what names it.
 const GENERIC_ACCOUNT_PATTERN = /^(sales|purchases?|cash|bank|hdfc|output|input|gst|tds|suspense|sales returns?|purchase returns?)\b/i;
 
+// The side of a voucher that carries the PARTY (customer or supplier) for the
+// voucher types where that side is unambiguous. Payments, receipts and
+// journals are not listed: their non-bank leg is as often an expense or
+// income ledger (the answer) as it is a party.
+const PARTY_SIDE_BY_VOUCHER_TYPE: Record<string, 'Dr' | 'Cr'> = {
+  sales: 'Dr',
+  purchase: 'Cr',
+  'credit note': 'Cr',
+  'debit note': 'Dr',
+};
+
+function rupees(amount: number): string {
+  return `Rs ${Math.abs(Math.round(amount)).toLocaleString('en-IN')}`;
+}
+
 // Human identifiers per answer-key sequence: the bill/invoice reference when
-// one exists ("INV-012"), else the distinctive party/expense account ("Signage
-// Advertising"). Bare sequence numbers mean nothing to a learner working a
-// pack exercise - the transactions live in files, not a numbered chat list -
-// and feedback that says "transaction 43" reads as noise (observed live
+// one exists ("INV-012"), the party the voucher is with, or the voucher's
+// amount. Bare sequence numbers mean nothing to a learner working a pack
+// exercise - the transactions live in files, not a numbered chat list - and
+// feedback that says "transaction 43" reads as noise (observed live
 // 2026-08-24: coaching went fully generic because the signal gave the model
 // nothing nameable).
+//
+// Invariant 1 (2026-09-17): a label names only what the learner's own source
+// documents show, the bill reference, the party on a sales or purchase
+// voucher and the voucher total. It used to fall back to the first
+// non-generic leg, which on a direct expense ("Dr Advertisement & Marketing,
+// Cr Bank") is the ledger the learner is being scored on choosing, so the
+// feedback named the correct account before a correction round resubmitted
+// against the same key.
 export function buildSequenceLabels(answerKey: AnswerKey): Map<number, string> {
   const labels = new Map<number, string>();
   const bySequence = new Map<number, typeof answerKey.entries>();
@@ -62,60 +93,54 @@ export function buildSequenceLabels(answerKey: AnswerKey): Map<number, string> {
     group.push(entry);
     bySequence.set(entry.sequence, group);
   }
+  const totalOf = (legs: typeof answerKey.entries) => Math.max(...legs.map((leg) => Math.abs(leg.amount)));
+
   for (const [sequence, legs] of bySequence) {
+    const voucherWord = legs[0].voucher_type.trim().toLowerCase();
+    const partySide = PARTY_SIDE_BY_VOUCHER_TYPE[voucherWord];
+    const partyLegs = partySide ? legs.filter((leg) => leg.dr_cr === partySide) : [];
+    const partyLeg = partyLegs.reduce<(typeof legs)[number] | null>(
+      (largest, leg) => (largest === null || Math.abs(leg.amount) > Math.abs(largest.amount) ? leg : largest),
+      null,
+    );
+    const party =
+      partyLeg && !GENERIC_ACCOUNT_PATTERN.test(partyLeg.correct_account) ? sanitizeLearnerText(partyLeg.correct_account) : null;
     const billRef = legs.find((leg) => leg.bill_reference)?.bill_reference;
-    if (billRef) {
-      // Bill references come from the SOURCE PACK, not the learner's books —
-      // a learner who never entered the Against Ref cannot find "INV-M-101"
-      // anywhere in their Tally (reported verbatim by the first real intern,
-      // 2026-08-31). Pair the ref with the party/voucher-type so the label
-      // locates the entry even when the ref itself is absent from their
-      // books: "INV-M-101 (the Karnataka Emporium receipt)".
-      const partyLeg = legs.find((leg) => !GENERIC_ACCOUNT_PATTERN.test(leg.correct_account));
-      labels.set(
-        sequence,
-        partyLeg
-          ? `${billRef} (the ${partyLeg.correct_account} ${legs[0].voucher_type.toLowerCase()})`
-          : billRef,
-      );
-      continue;
-    }
-    const namedLeg = legs.find((leg) => !GENERIC_ACCOUNT_PATTERN.test(leg.correct_account));
-    if (namedLeg) {
-      labels.set(sequence, `the ${namedLeg.correct_account} ${legs[0].voucher_type.toLowerCase()}`);
-      continue;
-    }
-    // Every leg is generic (a bank charge, the Suspense parking entry) —
-    // still label it by its most descriptive leg rather than falling back to
-    // a bare sequence number the learner can't act on. Prefer the non-bank/
-    // cash leg ("the Suspense receipt" over "the HDFC Bank receipt").
-    const descriptiveLeg = legs.find((leg) => !/^(hdfc|bank|cash)\b/i.test(leg.correct_account)) ?? legs[0];
-    labels.set(sequence, `the ${descriptiveLeg.correct_account} ${legs[0].voucher_type.toLowerCase()}`);
+    const rider = party ? `the ${party} ${voucherWord}` : `the ${rupees(totalOf(legs))} ${voucherWord}`;
+    // Bill references come from the SOURCE PACK, not the learner's books, so
+    // a learner who never entered the Against Ref cannot find "INV-M-101" in
+    // their Tally (first real intern, 2026-08-31). The rider locates it.
+    labels.set(sequence, billRef ? `${billRef} (${rider})` : rider);
   }
 
   // Collision guardrail (2026-09-01): two different transactions can produce
-  // the same label (the key has two "Bank Charges" payments) — praise for one
-  // and a flag for the other then read as the tool contradicting itself.
-  // Colliding labels get the transaction's amount appended (a fact from the
-  // learner's own source documents, so it never leaks the answer key).
-  const sequencesByLabel = new Map<string, number[]>();
-  for (const [sequence, label] of labels) {
-    const group = sequencesByLabel.get(label) ?? [];
-    group.push(sequence);
-    sequencesByLabel.set(label, group);
-  }
-  for (const [label, sequences] of sequencesByLabel) {
-    if (sequences.length < 2) {
-      continue;
+  // the same label — praise for one and a flag for the other then read as
+  // the tool contradicting itself. The amount goes on first (a fact from the
+  // learner's own source documents); if that still collides, the sequence.
+  const disambiguate = (suffixOf: (sequence: number, label: string) => string | null) => {
+    const sequencesByLabel = new Map<string, number[]>();
+    for (const [sequence, label] of labels) {
+      sequencesByLabel.set(label, [...(sequencesByLabel.get(label) ?? []), sequence]);
     }
-    for (const sequence of sequences) {
-      const amount = bySequence.get(sequence)?.[0]?.amount;
-      if (amount !== undefined) {
-        labels.set(sequence, `${label} of Rs. ${Math.abs(amount).toLocaleString('en-IN')}`);
+    for (const [label, sequences] of sequencesByLabel) {
+      if (sequences.length < 2) continue;
+      for (const sequence of sequences) {
+        const suffix = suffixOf(sequence, label);
+        if (suffix) labels.set(sequence, `${label}${suffix}`);
       }
     }
-  }
+  };
+  disambiguate((sequence, label) => {
+    const legs = bySequence.get(sequence);
+    const amount = legs ? rupees(totalOf(legs)) : null;
+    return amount && !label.includes(amount) ? ` of ${amount}` : null;
+  });
+  disambiguate((sequence) => `, transaction ${sequence}`);
   return labels;
+}
+
+function joinNames(names: string[]): string {
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 export function groupDescriptionsByField(
@@ -149,12 +174,11 @@ export function groupDescriptionsByField(
           : `transactions ${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`;
       return `${label} (${suffix})`;
     }
-    const names = [
-      ...new Set(sorted.map((ref) => sequenceLabels?.get(ref) ?? `transaction ${ref}`)),
-    ];
-    const suffix =
-      names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-    return `${label} (${suffix})`;
+    // "on" rather than wrapping the labels in parentheses (2026-09-17): the
+    // labels carry their own "(the X sales)" rider, and the fallback printed
+    // "(INV-012 (the X sales))" to learners.
+    const names = [...new Set(sorted.map((ref) => sequenceLabels?.get(ref) ?? `transaction ${ref}`))];
+    return `${label} on ${joinNames(names)}`;
   });
 }
 
@@ -242,11 +266,7 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
         ),
       ),
     ];
-    const suffix =
-      names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-    missingDescriptions.push(
-      `entries that appear not to have been recorded in the Day Book at all (${suffix})`,
-    );
+    missingDescriptions.push(`entries that appear not to have been recorded in the Day Book at all: ${joinNames(names)}`);
   }
 
   const incorrectConceptDescriptions = [
@@ -275,11 +295,9 @@ export function buildCoachingSignal(scoringResult: ScoringResult, answerKey?: An
 }
 
 // Which ledgers the Trial Balance could not reconcile and by how much
-// (2026-09-09, movement-based tie-out). The gap is the learner's own
-// figure against the correct movement, never the expected figure, so the
-// coaching can point at the ledger without handing over the answer. Capped
-// so a badly exported Trial Balance does not flood the prompt; the cap is
-// stated as its own line, never silent.
+// (2026-09-09, movement-based tie-out). Capped so a badly exported Trial
+// Balance does not flood the prompt; the cap is stated as its own line,
+// never silent.
 const MAX_TIE_OUT_MISMATCHES = 6;
 
 // The difference is Dr-positive (learner's signed movement minus the correct
@@ -291,17 +309,18 @@ function sideOf(difference: number): 'debit' | 'credit' {
   return difference > 0 ? 'debit' : 'credit';
 }
 
-function rupeesOf(amount: number): string {
-  return `Rs ${Math.abs(Math.round(amount)).toLocaleString('en-IN')}`;
-}
-
+// Invariant 1 (2026-09-17): a ledger MISSING from the export has no figure of
+// the learner's own, so its "difference" is the correct movement itself.
+// Printing it ("it should have moved by Rs 5,000") handed over the answer key
+// ahead of a correction-round resubmission against the same key. A missing
+// ledger is now stated without a figure.
 export function describeTieOutMismatches(mismatches: TieOutMismatch[]): string[] {
   const lines = mismatches.slice(0, MAX_TIE_OUT_MISMATCHES).map((mismatch) => {
-    const rupees = rupeesOf(mismatch.difference);
+    const account = sanitizeLearnerText(mismatch.account);
     if (mismatch.status === 'missing') {
-      return `${mismatch.account} does not appear in the Trial Balance export at all (it should have moved by ${rupees} this month)`;
+      return `${account} does not appear in the Trial Balance export at all, although this month's postings should move it`;
     }
-    return `${mismatch.account} shows ${rupees} more on the ${sideOf(mismatch.difference)} side in the Trial Balance than this month's correct postings`;
+    return `${account} shows ${rupees(mismatch.difference)} more on the ${sideOf(mismatch.difference)} side in the Trial Balance than this month's correct postings`;
   });
   if (mismatches.length > MAX_TIE_OUT_MISMATCHES) {
     lines.push(`and ${mismatches.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) in the Trial Balance are off`);
@@ -316,9 +335,13 @@ const MAX_UNMATCHED_VOUCHERS = 6;
 
 function formatTallyDate(date: string): string {
   const match = /^(\d{4})(\d{2})(\d{2})$/.exec(date);
-  return match ? `${match[3]}-${match[2]}-${match[1]}` : date;
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : sanitizeLearnerText(date, 20);
 }
 
+// Ledger and voucher-type names here are typed by the learner in Tally
+// (2026-09-17): they are sanitized (control characters, quote/bracket
+// characters, dashes, length) before they become fact text, because fact
+// text goes into the prompt and, verbatim, into the fallback review.
 export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[] {
   const kindText: Record<UnmatchedVoucher['kind'], string> = {
     blank: 'a blank voucher with no ledger lines',
@@ -327,9 +350,10 @@ export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[
     extra: 'a posting that matches nothing in this batch',
   };
   const lines = vouchers.slice(0, MAX_UNMATCHED_VOUCHERS).map((voucher) => {
-    const ledgers = voucher.ledgers.length > 0 ? `, ledgers ${voucher.ledgers.join(', ')}` : '';
+    const names = voucher.ledgers.map((ledger) => sanitizeLearnerText(ledger)).filter((ledger) => ledger.length > 0);
+    const ledgers = names.length > 0 ? `, ledgers ${names.join(', ')}` : '';
     const amount = voucher.amount > 0 ? `, Rs ${Math.round(voucher.amount).toLocaleString('en-IN')}` : '';
-    return `${voucher.voucher_type} voucher no. ${voucher.position} dated ${formatTallyDate(voucher.date)}${amount}${ledgers}: ${kindText[voucher.kind]}`;
+    return `${sanitizeLearnerText(voucher.voucher_type, 30)} voucher no. ${voucher.position} dated ${formatTallyDate(voucher.date)}${amount}${ledgers}: ${kindText[voucher.kind]}`;
   });
   if (vouchers.length > MAX_UNMATCHED_VOUCHERS) {
     lines.push(`and ${vouchers.length - MAX_UNMATCHED_VOUCHERS} more voucher(s) matched nothing`);
@@ -338,15 +362,20 @@ export function describeUnmatchedVouchers(vouchers: UnmatchedVoucher[]): string[
 }
 
 // Books reconciliation lines (2026-09-10): closing balance per ledger
-// against the correct books, year to date. Gap only, never the expected
-// figure. Same cap as the tie-out list, and the same sign convention.
+// against the correct books, year to date. Same cap and sign convention as
+// the tie-out list.
+//
+// Direction only (2026-09-17, invariant 1): the gap in rupees, read against
+// the learner's own closing balance, IS the correct books' figure, and a
+// missing ledger's figure is the correct balance outright. Both were printed
+// before a correction round resubmitted against the same key.
 export function describeBooksReconciliation(differences: TieOutMismatch[]): string[] {
   const lines = differences.slice(0, MAX_TIE_OUT_MISMATCHES).map((difference) => {
-    const rupees = rupeesOf(difference.difference);
+    const account = sanitizeLearnerText(difference.account);
     if (difference.status === 'missing') {
-      return `${difference.account} has no ledger in the export although the correct books carry a balance of about ${rupees} on it`;
+      return `${account} has no ledger in the export although the correct books carry a balance on it`;
     }
-    return `${difference.account} closes with ${rupees} more on the ${sideOf(difference.difference)} side than the correct books, year to date`;
+    return `${account} closes heavier on the ${sideOf(difference.difference)} side than the correct books, year to date`;
   });
   if (differences.length > MAX_TIE_OUT_MISMATCHES) {
     lines.push(`and ${differences.length - MAX_TIE_OUT_MISMATCHES} more ledger(s) differ`);
@@ -356,7 +385,7 @@ export function describeBooksReconciliation(differences: TieOutMismatch[]): stri
 
 export function describeLedgerFindings(findings: LedgerFinding[]): string[] {
   return findings.map((finding) => {
-    const names = finding.ledgers.join(', ');
+    const names = finding.ledgers.map((ledger) => sanitizeLearnerText(ledger)).join(', ');
     switch (finding.code) {
       case 'GST_LEDGER_NO_SIDE':
         return `GST ledger(s) named without an Input or Output side (${names}); the house practice keeps a separate Input and Output ledger for each head`;
@@ -380,7 +409,9 @@ export function describeCompositeMatches(composites: CompositeMatch[], sequenceL
 // Plain-language buckets for each qualitative subscore — never a number, per
 // the spec's "never raw subscores as numbers to the learner" rule. Coarse on
 // purpose: the LLM turns these into natural prose, it doesn't need
-// finer-grained input than "strong/mixed/weak" to do that well.
+// finer-grained input than "strong/mixed/weak" to do that well. The grader's
+// own rationale never reaches a fact (2026-09-17): only these code-written
+// rubric lines do.
 function qualitativeBucket(value: number): 'strong' | 'mixed' | 'weak' {
   return value >= 80 ? 'strong' : value >= 50 ? 'mixed' : 'weak';
 }
@@ -407,7 +438,7 @@ function describeQualitativeSubscore(value: number, dimension: 'recall' | 'preci
   return LABEL[dimension][bucket];
 }
 
-function buildQualitativeCoachingSignal(qualitative: QualitativeScoring): QualitativeCoachingSignal {
+export function buildQualitativeCoachingSignal(qualitative: QualitativeScoring): QualitativeCoachingSignal {
   return {
     recallDescription: describeQualitativeSubscore(qualitative.recall, 'recall'),
     precisionDescription: describeQualitativeSubscore(qualitative.precision, 'precision'),
@@ -483,6 +514,28 @@ const PRAISE_KINDS: ReadonlySet<CoachingFactKind> = new Set(['praise', 'fixed'])
 const ISSUE_KINDS: ReadonlySet<CoachingFactKind> = new Set(['issue', 'unmatched', 'ledger', 'tieout', 'books', 'still', 'missing']);
 const HISTORY_KINDS: ReadonlySet<CoachingFactKind> = new Set(['fixed', 'still']);
 
+// Every ledger or party name the feedback could plausibly name (2026-09-17):
+// the answer key's accounts and aliases, and every ledger the learner's own
+// export put into a finding. checkGrounding rejects a bullet naming one of
+// these that its cited facts do not name, which is how "the Mumbai Suppliers
+// invoice" on a Karnataka Emporium finding is caught.
+export function collectKnownNames(answerKey: AnswerKey | null | undefined, scoringResult: ScoringResult | null): string[] {
+  const names = new Set<string>();
+  const add = (name: string) => {
+    const clean = sanitizeLearnerText(name);
+    if (clean.length >= 3) names.add(clean);
+  };
+  for (const entry of answerKey?.entries ?? []) {
+    add(entry.correct_account);
+    for (const alias of entry.account_aliases ?? []) add(alias);
+  }
+  for (const voucher of scoringResult?.unmatched_vouchers ?? []) voucher.ledgers.forEach(add);
+  for (const finding of scoringResult?.ledger_findings ?? []) finding.ledgers.forEach(add);
+  for (const mismatch of scoringResult?.tb_tie_out_mismatches ?? []) add(mismatch.account);
+  for (const difference of scoringResult?.books_reconciliation ?? []) add(difference.account);
+  return [...names];
+}
+
 export type CoachingDeps = {
   complete: (params: TracedCompletionParams) => Promise<unknown>;
   recordViolations: typeof recordCoachingGroundingViolations;
@@ -546,6 +599,7 @@ export async function generateCoaching(
     batchOrdinal: params.batchOrdinal ?? null,
   };
   const facts = buildCoachingFacts(signal);
+  const knownNames = collectKnownNames(params.answerKey, params.scoringResult);
   const nextNote = composeNextNote({
     nextStep: params.nextStep,
     missingPartDescriptions: signal.missingPartDescriptions,
@@ -587,7 +641,7 @@ export async function generateCoaching(
 
     const parsed = CoachingModelOutputSchema.safeParse(raw);
     violations = parsed.success
-      ? checkGrounding(parsed.data, facts, { tbTieOut: signal.tbTieOut })
+      ? checkGrounding(parsed.data, facts, { tbTieOut: signal.tbTieOut, knownNames })
       : [`The response did not match the schema: ${parsed.error.message}`];
 
     if (parsed.success && violations.length === 0) {
@@ -614,13 +668,14 @@ function toStoredCoaching(output: CoachingModelOutput, nextNote: string): Coachi
 }
 
 // Identifier-like tokens: uppercase-led hyphenated references as they appear
-// in the signal's labels — DT-115, INV-016, INV-M-101, CA26-101, AI-201.
+// in the signal's labels — DT-115, INV-016, INV-M-101, CA26-101, AI-201 —
+// plus any-case references carrying a digit (2026-09-17: "inv-099" slipped
+// past the uppercase-only pattern). Compared case-insensitively.
 const FEEDBACK_IDENTIFIER_PATTERN = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b/g;
 
-// Any figure: 15,000 / 1,50,000 (Indian grouping) / 720.34 / 12-04-2025's
-// parts. Compared after removing grouping commas and leading zeros, so
-// "Rs 15,000" in a fact and "Rs 15000" in a bullet agree.
-const NUMBER_PATTERN = /\d[\d,]*(?:\.\d+)?/g;
+function identifiersIn(text: string): string[] {
+  return [...new Set([...(text.match(FEEDBACK_IDENTIFIER_PATTERN) ?? []), ...referencesIn(text)])];
+}
 
 // Phrases that claim history. Allowed only where the cited facts carry
 // history themselves (see checkGrounding).
@@ -632,11 +687,19 @@ const NUMBER_PATTERN = /\d[\d,]*(?:\.\d+)?/g;
 // that learner's first review took: "flagged in an earlier round", "still
 // recurring", "two rounds running", "showed up as a gap before too", "same
 // classification gap flagged", "same as last time".
+//
+// Widened 2026-09-17 with every history phrase the grounding audit got past
+// the old list: "keep making", "keeps happening", "continues to", "second
+// time", "persists", "remains wrong", "still has not been fixed", "like your
+// April batch", "first review", "yet another", "from the last review",
+// "previous one", "habit". "the second transaction" stays ordinary.
+const MONTH_NAMES = 'January|February|March|April|May|June|July|August|September|October|November|December';
 const HISTORY_PATTERN = new RegExp(
   [
     String.raw`recurr\w*`,
     String.raw`rounds? running`,
     String.raw`(?:earlier|previous|prior|last|past|other) (?:rounds?|batch(?:es)?|months?|attempts?|submissions?|exercises?|weeks?|time)`,
+    String.raw`(?:earlier|previous|prior|last|past) (?:reviews?|feedback|one)`,
     String.raw`(?:as|like|from|than) (?:before|last time)`,
     String.raw`before (?:too|as well)`,
     String.raw`(?:flagged|seen|noted|raised|pointed out|mentioned|caught|called out) (?:\w+ )?(?:before|earlier|previously|last time|again)`,
@@ -647,24 +710,110 @@ const HISTORY_PATTERN = new RegExp(
     String.raw`previously`,
     String.raw`no longer`,
     String.raw`same (?:\w+ )?(?:gap|issue|mistake|problem|error|slip|weakness) (?:as|from|flagged|seen|noted|again|before|that (?:came|showed|was))`,
+    String.raw`(?:keeps?|kept|keeping) (?:on )?(?:making|happening|slipping|getting|missing|posting|using|coming|showing|repeating|forgetting|mixing)`,
+    String.raw`continu(?:e|es|ed|ing) to`,
+    String.raw`(?:second|third|fourth|fifth|another) time`,
+    String.raw`persist(?:s|ed|ent|ently|ing|ence)?`,
+    String.raw`remain(?:s|ed|ing)? (?:wrong|off|missing|unfixed|uncorrected|incorrect|unresolved|an issue|a problem|a gap)`,
+    String.raw`(?:still|yet) (?:has|have|had|is|are) (?:not|n't)`,
+    String.raw`(?:has|have) still not`,
+    String.raw`not (?:been )?(?:fixed|corrected) yet`,
+    String.raw`yet another`,
+    String.raw`first (?:review|feedback)`,
+    String.raw`(?:like|as in|as with|from|since|than) your (?:\w+ )?(?:batch|review|submission|attempt|round|month)`,
+    String.raw`habit(?:s|ual|ually)?`,
+    String.raw`(?:your|the|in|from|since|like) (?:${MONTH_NAMES})(?:'s)? (?:batch|review|submission|attempt|feedback|round)`,
   ]
     .map((phrase) => String.raw`\b${phrase}\b`)
     .join('|'),
   'i',
 );
 
-const EM_DASH = '—';
+// Spelled-out figures of ten and above (2026-09-17): "fifteen thousand
+// rupees" carried a number no digit check could see.
+const SPELLED_NUMBER_PATTERN =
+  /\b(?:ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakhs?|crores?|million|billion)\b/i;
 
-function numbersIn(text: string): string[] {
-  return (text.match(NUMBER_PATTERN) ?? [])
-    .map((token) => token.replace(/,/g, ''))
-    .filter((token) => token.length > 0)
-    .map((token) => String(Number(token)));
-}
+// Dates written in words ("the fifth of June").
+const WORD_ORDINAL =
+  'first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty-\\w+|thirtieth|thirty-first';
+const WORDED_DATE_PATTERN = new RegExp(
+  String.raw`\b(?:${WORD_ORDINAL})\s+(?:day\s+)?of\s+(?:${MONTH_NAMES})\b|\b(?:${MONTH_NAMES})\s+(?:the\s+)?(?:${WORD_ORDINAL})\b`,
+  'i',
+);
 
-function identifiersIn(text: string): string[] {
-  return text.match(FEEDBACK_IDENTIFIER_PATTERN) ?? [];
-}
+// A bullet that merges figures from several facts and then assigns them by
+// "respectively" cannot be attributed clause by clause, so it is refused.
+const RESPECTIVELY_PATTERN = /\brespectively\b/i;
+
+// Praise wording in a needs_work bullet flips the finding's polarity ("Sales
+// in the Trial Balance is actually fine").
+const NEEDS_WORK_PRAISE_PATTERN =
+  /\b(?:is|are|was|were|looks?|seems?|came out|comes out)\s+(?:(?:actually|all|already|now|really|perfectly|entirely|fully|completely|totally|quite)\s+)?(?:fine|correct|right|clean|ok(?:ay)?|accurate|good|perfect|in order)\b|\bfine\b|\bclean\b(?!\s+up)|\bno (?:issues?|problems?|errors?|mistakes?)\b|\bnothing (?:wrong|to fix)\b|\bspot on\b|\bflawless\b|\bperfect(?:ly)?\b|\bhandled (?:correctly|well)\b|\bgot (?:it )?right\b/i;
+
+// Claims of totality. In went_well and the opening line they are only true
+// when nothing was flagged (2026-09-17 audit: "Every entry in the batch was
+// handled correctly" above three findings).
+const OVERCLAIM_PATTERN =
+  /\b(?:all|every|each)\b(?:\s+[\w']+){0,3}?\s+(?:entr(?:y|ies)|transactions?|vouchers?|ledgers?|postings?|bills?|invoices?|lines?|thing)\b|\beverything\b|\bperfect(?:ly)?\b|\bclean(?:ly)?\b(?!\s+up)|\bno (?:errors?|mistakes?|issues?)\b|\bnothing to fix\b|\bflawless(?:ly)?\b|\bwithout (?:a single |any )?(?:error|mistake)s?\b/i;
+
+// Concept words a bullet may only use when a cited fact is about that
+// concept (2026-09-17 audit: "the TDS on INV-012" on an account
+// classification finding). `said` is the looser form used to check that a
+// cited fact is actually stated.
+type ConceptFamily = { name: string; bullet: RegExp; support: (fact: CoachingFact) => boolean; said: RegExp };
+const CONCEPT_FAMILIES: ConceptFamily[] = [
+  {
+    name: 'GST',
+    bullet: /\b(?:GST|IGST|CGST|SGST|UTGST|ITC|input tax credit)\b/i,
+    support: (fact) => /\b(?:GST|IGST|CGST|SGST|UTGST|ITC|input tax credit)\b/i.test(fact.text),
+    said: /\b(?:GST|IGST|CGST|SGST|UTGST|ITC|tax)\b/i,
+  },
+  {
+    name: 'TDS',
+    bullet: /\bTDS\b|\b19[2-6][A-Z]{1,2}\b/,
+    support: (fact) => /\bTDS\b/i.test(fact.text),
+    said: /\bTDS\b/i,
+  },
+  {
+    name: 'bill-by-bill referencing',
+    bullet: /\bbill[- ]by[- ]bill\b|\bbill ref(?:erence)?s?\b|\bagainst ref\b|\bnew ref\b/i,
+    support: (fact) => /\bbill[- ]by[- ]bill\b|\bbill ref(?:erence)?s?\b|\bagainst ref\b|\bbills\b/i.test(fact.text),
+    said: /\bbills?\b|\bref(?:erence)?s?\b/i,
+  },
+  {
+    name: 'narration',
+    bullet: /\bnarrations?\b/i,
+    support: (fact) => /\bnarrations?\b/i.test(fact.text),
+    said: /\bnarrations?\b/i,
+  },
+  {
+    name: 'voucher type',
+    bullet: /\bvoucher types?\b/i,
+    support: (fact) => /\bvoucher types?\b/i.test(fact.text),
+    said: /\bvoucher types?\b|\bvoucher\b/i,
+  },
+  {
+    name: 'debit/credit direction',
+    bullet: /\b[Dd]ebit\b|(?<![Tt]ax )\b[Cc]redit\b(?!\s+[Nn]ote)|\bDr\b|\bCr\b/,
+    support: (fact) => /\bdebit\b|\bcredit\b/i.test(fact.text) || fact.kind === 'tieout' || fact.kind === 'books',
+    said: /\bdebit\b|\bcredit\b|\bdirection\b|\bDr\b|\bCr\b/i,
+  },
+  {
+    name: 'ledger classification',
+    bullet: /\b(?:ledger|account) classification\b|\bwrong (?:ledger|account)\b|\b(?:ledger|account) (?:head|choice|chosen|selection)\b/i,
+    support: (fact) => /\bledger\b|\baccount\b/i.test(fact.text) || ['tieout', 'books', 'unmatched'].includes(fact.kind),
+    said: /\bledgers?\b|\baccounts?\b|\bclassif\w*\b/i,
+  },
+  {
+    name: 'amount',
+    bullet: /\bamounts?\b/i,
+    support: (fact) => /\bamount\b|\bRs\b/i.test(fact.text) || ['tieout', 'books', 'unmatched'].includes(fact.kind),
+    said: /\bamounts?\b|\bRs\b/i,
+  },
+];
+
+const VOUCHER_TYPE_WORD = /\b(payment|receipt|sales|purchase|journal|contra|credit note|debit note)\s+(?:voucher\s*)?$/i;
 
 // The ledger a Trial Balance or books fact is about: the words before its
 // verb ("Sales shows…", "Purchase Returns has no ledger…").
@@ -673,55 +822,195 @@ const LEDGER_FACT_SUBJECT = /^(.+?) (?:shows|closes|does not appear|has no ledge
 function ledgerSubjectOf(fact: CoachingFact): string | null {
   if (fact.kind !== 'tieout' && fact.kind !== 'books') return null;
   const match = LEDGER_FACT_SUBJECT.exec(fact.text);
-  return match ? match[1].trim().toLowerCase() : null;
+  return match ? match[1].trim() : null;
 }
 
-// Clauses of a bullet: sentences, semicolons, colons, and "and"/"while"/
-// "with" joins, which is where a model merging several ledgers puts the seam.
-function clausesOf(text: string): string[] {
-  return text
-    .split(/[.;:]\s+|,?\s+\b(?:and|while|with|whereas|but)\b\s+/i)
-    .map((clause) => clause.trim())
-    .filter((clause) => clause.length > 0);
+function factSide(fact: CoachingFact): 'debit' | 'credit' | null {
+  const match = /\bon the (debit|credit) side\b/i.exec(fact.text);
+  return match ? (match[1].toLowerCase() as 'debit' | 'credit') : null;
 }
 
-function mentions(clause: string, subject: string): boolean {
-  const escaped = subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(clause);
+function unmatchedVoucherOf(fact: CoachingFact): { type: string; position: string } | null {
+  if (fact.kind !== 'unmatched') return null;
+  const match = /^(.+?) voucher no\. (\d+)\b/i.exec(fact.text);
+  return match ? { type: match[1].trim().toLowerCase(), position: match[2] } : null;
 }
 
-// Figures swapped between merged ledger facts (review finding, 2026-09-16).
-// The pooled check only asks whether a figure appears in ANY cited fact, so
-// "Sales is off by Rs 8,000 and Purchases by Rs 15,000" passed when the
-// facts said the reverse. Here, a clause that names a cited ledger may only
-// carry that ledger's figures. When a clause names a ledger and also a longer
-// ledger containing it ("Sales" inside "Sales Returns"), only the longer one
-// counts, so the two cannot lend each other figures.
-function misattributedFigures(bulletText: string, citedFacts: CoachingFact[]): string[] {
-  const ledgerFacts = citedFacts
-    .map((fact) => ({ fact, subject: ledgerSubjectOf(fact) }))
-    .filter((entry): entry is { fact: CoachingFact; subject: string } => entry.subject !== null);
-  if (ledgerFacts.length < 2) return [];
+// Sentences of a bullet. "no. 7" and "Rs. 350" are not sentence ends.
+function segmentsOf(text: string): { text: string; offset: number }[] {
+  const segments: { text: string; offset: number }[] = [];
+  const boundary = /(?<!\b(?:no|Rs|vs|viz|nos))[.;:!?](?=\s|$)/gi;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(text)) !== null) {
+    segments.push({ text: text.slice(start, match.index), offset: start });
+    start = match.index + 1;
+  }
+  segments.push({ text: text.slice(start), offset: start });
+  return segments.filter((segment) => segment.text.trim().length > 0);
+}
 
-  const problems: string[] = [];
-  for (const clause of clausesOf(bulletText)) {
-    const figures = numbersIn(clause);
-    if (figures.length === 0) continue;
-    const named = ledgerFacts.filter((entry) => mentions(clause, entry.subject));
-    const owners = named.filter(
-      (entry) => !named.some((other) => other.subject.length > entry.subject.length && other.subject.includes(entry.subject)),
-    );
-    if (owners.length === 0) continue;
-    const ownFigures = new Set(owners.flatMap((entry) => numbersIn(entry.fact.text)));
-    const stray = figures.filter((figure) => !ownFigures.has(figure));
-    if (stray.length > 0) {
-      problems.push(`${stray.join(', ')} next to ${owners.map((entry) => entry.subject).join(' / ')}`);
+type OwnerMention = { start: number; end: number; label: string; facts: CoachingFact[] };
+
+// Where each cited fact is named in a sentence: a Trial Balance/books ledger,
+// an unmatched voucher's number, or a bill reference. Longer names win over
+// names they contain ("Sales Returns" over "Sales"), and a name joined with
+// "and" ("Freight and Delivery Charges") is one name, not two.
+function ownerMentions(segment: string, citedFacts: CoachingFact[]): OwnerMention[] {
+  const candidates: OwnerMention[] = [];
+  const phraseOwners = new Map<string, CoachingFact[]>();
+  for (const fact of citedFacts) {
+    const subject = ledgerSubjectOf(fact);
+    const phrases = [...(subject ? [subject] : []), ...identifiersIn(fact.text)];
+    for (const phrase of phrases) {
+      const key = phrase.toLowerCase();
+      phraseOwners.set(key, [...(phraseOwners.get(key) ?? []), fact]);
     }
   }
-  return problems;
+  for (const [phrase, facts] of phraseOwners) {
+    for (const position of phrasePositions(segment, phrase)) {
+      candidates.push({ ...position, label: phrase, facts });
+    }
+  }
+  const voucherPattern = /\b(?:voucher\s+)?(?:no\.?|number)\s*(\d+)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = voucherPattern.exec(segment)) !== null) {
+    const position = match[1];
+    const facts = citedFacts.filter((fact) => unmatchedVoucherOf(fact)?.position === position);
+    candidates.push({ start: match.index, end: match.index + match[0].length, label: `voucher no. ${position}`, facts });
+  }
+  candidates.sort((a, b) => b.end - b.start - (a.end - a.start));
+  const kept: OwnerMention[] = [];
+  for (const candidate of candidates) {
+    if (!kept.some((other) => candidate.start < other.end && other.start < candidate.end)) {
+      kept.push(candidate);
+    }
+  }
+  return kept.sort((a, b) => a.start - b.start);
 }
 
-export type GroundingContext = { tbTieOut: boolean | null };
+function ownerAt(mentions: OwnerMention[], start: number, end: number): OwnerMention | null {
+  const before = mentions.filter((mention) => mention.end <= start);
+  if (before.length > 0) return before[before.length - 1];
+  return mentions.find((mention) => mention.start >= end) ?? null;
+}
+
+// Figures (and voucher types, and debit/credit sides) put against the wrong
+// fact inside a merged bullet. The pooled check only asks whether a figure
+// appears in ANY cited fact, so "Sales is off by Rs 8,000 and Purchases by
+// Rs 15,000" passed when the facts said the reverse (review finding,
+// 2026-09-16). Attribution is positional within a sentence (2026-09-17):
+// each figure belongs to the nearest fact named before it, which also
+// catches comma-joined swaps ("Purchases is off by Rs 15,000, as is Sales by
+// Rs 8,000"), unmatched vouchers traded between numbers, a Trial Balance
+// figure laundered onto an invoice reference, and a flipped side.
+function misattributions(bulletText: string, citedFacts: CoachingFact[]): string[] {
+  const problems: string[] = [];
+  const hasOwners = citedFacts.some(
+    (fact) => ledgerSubjectOf(fact) !== null || unmatchedVoucherOf(fact) !== null || identifiersIn(fact.text).length > 0,
+  );
+  if (!hasOwners) return problems;
+  const ledgerSides = [...new Set(citedFacts.map(factSide).filter((side): side is 'debit' | 'credit' => side !== null))];
+
+  for (const segment of segmentsOf(bulletText)) {
+    const mentions = ownerMentions(segment.text, citedFacts);
+
+    for (const mention of mentions) {
+      if (mention.facts.length === 0 && mention.label.startsWith('voucher no.')) continue;
+      const voucher = mention.facts.map(unmatchedVoucherOf).find((value) => value !== null);
+      if (voucher) {
+        const typed = VOUCHER_TYPE_WORD.exec(segment.text.slice(Math.max(0, mention.start - 30), mention.start));
+        if (typed && typed[1].toLowerCase() !== voucher.type) {
+          problems.push(`${typed[1]} voucher no. ${voucher.position}, which the facts list as a ${voucher.type} voucher`);
+        }
+      }
+    }
+
+    if (citedFacts.length >= 2 && mentions.length > 0) {
+      let masked = segment.text;
+      for (const mention of mentions) {
+        masked = `${masked.slice(0, mention.start)}${' '.repeat(mention.end - mention.start)}${masked.slice(mention.end)}`;
+      }
+      for (const reference of identifiersIn(masked)) {
+        masked = masked.split(reference).join(' '.repeat(reference.length));
+      }
+      const figurePattern = /\d[\d,]*(?:\.\d+)?/g;
+      let figure: RegExpExecArray | null;
+      while ((figure = figurePattern.exec(masked)) !== null) {
+        const value = numbersIn(figure[0])[0];
+        if (value === undefined) continue;
+        const owner = ownerAt(mentions, figure.index, figure.index + figure[0].length);
+        if (!owner || owner.facts.length === 0) continue;
+        const ownFigures = new Set(owner.facts.flatMap((fact) => numbersIn(fact.text)));
+        if (!ownFigures.has(value)) {
+          problems.push(`${value} next to ${owner.label}`);
+        }
+      }
+    }
+
+    const sidePattern = /\b(debit|credit)\b|\b(Dr|Cr)\b/g;
+    let side: RegExpExecArray | null;
+    while ((side = sidePattern.exec(segment.text)) !== null) {
+      if (/tax\s+$/i.test(segment.text.slice(0, side.index)) || /^\s+note\b/i.test(segment.text.slice(side.index + side[0].length))) continue;
+      const stated = side[1] ? side[1].toLowerCase() : side[2] === 'Dr' ? 'debit' : 'credit';
+      const owner = ownerAt(
+        mentions.filter((mention) => mention.facts.some((fact) => factSide(fact) !== null)),
+        side.index,
+        side.index + side[0].length,
+      );
+      const expected = owner
+        ? (owner.facts.map(factSide).find((value) => value !== null) ?? null)
+        : ledgerSides.length === 1
+          ? ledgerSides[0]
+          : null;
+      if (expected && stated !== expected) {
+        problems.push(`"${side[0]}" where the facts say the ${expected} side`);
+      }
+    }
+  }
+  return [...new Set(problems)];
+}
+
+// What must appear in a bullet for a cited issue fact to count as STATED
+// (2026-09-17): one of its identifiers, names or figures, or a word of its
+// concept. A catch-all "check the remaining findings" citing six facts used
+// to satisfy the every-finding-cited rule while saying none of them.
+function isFactStated(bulletText: string, fact: CoachingFact, knownNames: readonly string[]): boolean {
+  const phrases = [
+    ...identifiersIn(fact.text),
+    ...(ledgerSubjectOf(fact) ? [ledgerSubjectOf(fact) as string] : []),
+    ...knownNames.filter((name) => containsPhrase(fact.text, name)),
+  ];
+  if (phrases.some((phrase) => containsPhrase(bulletText, phrase))) return true;
+  const voucher = unmatchedVoucherOf(fact);
+  if (voucher && new RegExp(String.raw`\b(?:no\.?|number)\s*${voucher.position}\b`, 'i').test(bulletText)) return true;
+  const bulletFigures = new Set(numbersIn(bulletText));
+  if (numbersIn(fact.text).some((figure) => bulletFigures.has(figure))) return true;
+  if (CONCEPT_FAMILIES.some((family) => family.said.test(fact.text) && family.said.test(bulletText))) return true;
+  if (/not to have been recorded/.test(fact.text) && /\b(?:recorded|posted|entered|missing|missed)\b/i.test(bulletText)) return true;
+  if (/written answer/.test(fact.text) && /\b(?:written|answer|explanation|explained|reasoning)\b/i.test(bulletText)) return true;
+  if (fact.kind === 'missing' && /\b(?:arrived|missing|never|explanation|answer|part)\b/i.test(bulletText)) return true;
+  if (fact.kind === 'ledger' && /\bledgers?\b/i.test(bulletText)) return true;
+  return false;
+}
+
+// Known names a bullet uses. Single-word names ("Sales", "Rent") only count
+// when written capitalised as a ledger name, so "the sales invoice" stays
+// ordinary prose.
+function namesUsedIn(text: string, knownNames: readonly string[]): string[] {
+  const used: { name: string; start: number; end: number }[] = [];
+  for (const name of [...knownNames].sort((a, b) => b.length - a.length)) {
+    const singleWord = !/\s/.test(name);
+    for (const position of phrasePositions(text, name)) {
+      if (singleWord && text.slice(position.start, position.end) !== name) continue;
+      if (used.some((other) => position.start < other.end && other.start < position.end)) continue;
+      used.push({ name, ...position });
+    }
+  }
+  return [...new Set(used.map((entry) => entry.name))];
+}
+
+export type GroundingContext = { tbTieOut: boolean | null; knownNames?: readonly string[] };
 
 // The citation contract, checked in code (2026-09-16). Returns every
 // violation found, each phrased so it can be handed straight back to the
@@ -729,15 +1018,24 @@ export type GroundingContext = { tbTieOut: boolean | null };
 // tests. The rules:
 //  - every bullet cites at least one listed fact; went_well cites only
 //    praise/fixed facts, needs_work only issue-type facts;
-//  - every identifier and every number in a bullet occurs in the text of the
-//    facts that bullet cites;
+//  - every identifier, number and known ledger/party name in a bullet occurs
+//    in the text of the facts that bullet cites, and each figure, voucher
+//    type and debit/credit side sits against the fact it belongs to;
+//  - concept words (GST, TDS, bill references, narration, voucher type,
+//    ledger classification, amount, debit/credit) need a cited fact about
+//    that concept;
+//  - no spelled-out figures, dates in words, "respectively" across figures;
 //  - history words only in a bullet citing a fixed/still fact (or a fact
 //    whose own text uses history words); in opening_line only when a
 //    fixed/still fact exists;
-//  - every issue-type fact is cited at least once, so no finding is dropped;
+//  - needs_work carries no praise wording; went_well and opening_line carry
+//    no totality claims ("every entry", "perfect", "clean") while any finding
+//    exists;
+//  - every issue-type fact is cited at least once AND stated in the bullet
+//    citing it, so no finding is dropped;
 //  - opening_line keeps the score/verdict/Trial Balance rules and carries no
 //    numbers or identifiers;
-//  - no em dash anywhere.
+//  - no em dash or en dash anywhere.
 export function checkGrounding(
   output: CoachingModelOutput,
   facts: CoachingFact[],
@@ -747,6 +1045,8 @@ export function checkGrounding(
   const factsById = new Map(facts.map((fact) => [fact.id, fact]));
   const cited = new Set<string>();
   const hasHistoryFacts = facts.some((fact) => HISTORY_KINDS.has(fact.kind));
+  const hasIssueFacts = facts.some((fact) => ISSUE_KINDS.has(fact.kind));
+  const knownNames = context.knownNames ?? [];
 
   const sections = [
     { name: 'went_well', bullets: output.went_well, allowed: PRAISE_KINDS },
@@ -773,13 +1073,18 @@ export function checkGrounding(
               : `${where} cites ${id}, a ${fact.kind} fact. needs_work may not cite P or F facts.`,
           );
         }
-        cited.add(id);
+        if (section.name === 'needs_work' && ISSUE_KINDS.has(fact.kind)) {
+          cited.add(id);
+        }
         citedFacts.push(fact);
       }
 
-      const sourceText = citedFacts.map((fact) => fact.text).join(' ');
-      const allowedIdentifiers = new Set(identifiersIn(sourceText));
-      const unknownIdentifiers = [...new Set(identifiersIn(bullet.text).filter((id) => !allowedIdentifiers.has(id)))];
+      const sourceText = citedFacts.map((fact) => fact.text).join(' \n ');
+      // A lexical rule never rejects wording the cited fact itself uses.
+      const inFacts = (phrase: string) => sourceText.toLowerCase().includes(phrase.toLowerCase());
+
+      const allowedIdentifiers = new Set(identifiersIn(sourceText).map((id) => id.toLowerCase()));
+      const unknownIdentifiers = [...new Set(identifiersIn(bullet.text).filter((id) => !allowedIdentifiers.has(id.toLowerCase())))];
       if (unknownIdentifiers.length > 0) {
         violations.push(
           `${where} mentions ${unknownIdentifiers.join(', ')}, not written in the facts it cites. Copy identifiers exactly from a cited fact, never retype or invent one.`,
@@ -793,11 +1098,41 @@ export function checkGrounding(
           `${where} states the number(s) ${unknownNumbers.join(', ')}, not written in the facts it cites. Use only figures copied from a cited fact.`,
         );
       }
-      const misattributed = misattributedFigures(bullet.text, citedFacts);
+
+      const unknownNames = namesUsedIn(bullet.text, knownNames).filter((name) => !containsPhrase(sourceText, name));
+      if (unknownNames.length > 0) {
+        violations.push(
+          `${where} names ${unknownNames.join(', ')}, which the facts it cites do not name. Name only the ledgers and parties written in a cited fact.`,
+        );
+      }
+
+      const misattributed = misattributions(bullet.text, citedFacts);
       if (misattributed.length > 0) {
         violations.push(
-          `${where} puts a figure against the wrong ledger (${misattributed.join('; ')}). Each ledger's figure must come from that ledger's own fact.`,
+          `${where} puts a detail against the wrong fact (${misattributed.join('; ')}). Each ledger's or voucher's figure, type and side must come from that ledger's or voucher's own fact.`,
         );
+      }
+
+      if (RESPECTIVELY_PATTERN.test(bullet.text) && citedFacts.filter((fact) => numbersIn(fact.text).length > 0).length >= 2) {
+        violations.push(`${where} uses "respectively" across several facts' figures. Put each figure directly after the ledger or voucher it belongs to.`);
+      }
+
+      const spelled = SPELLED_NUMBER_PATTERN.exec(bullet.text);
+      if (spelled && !inFacts(spelled[0])) {
+        violations.push(`${where} writes a figure in words ("${spelled[0]}"). Copy figures in digits from a cited fact.`);
+      }
+      const wordedDate = WORDED_DATE_PATTERN.exec(bullet.text);
+      if (wordedDate) {
+        violations.push(`${where} writes a date in words ("${wordedDate[0]}"). Copy dates exactly from a cited fact.`);
+      }
+
+      for (const family of CONCEPT_FAMILIES) {
+        const match = family.bullet.exec(bullet.text);
+        if (match && citedFacts.length > 0 && !citedFacts.some(family.support)) {
+          violations.push(
+            `${where} talks about ${family.name} ("${match[0]}"), but none of the facts it cites is about ${family.name}. Keep each bullet to the concept its facts name.`,
+          );
+        }
       }
 
       const historyMatch = HISTORY_PATTERN.exec(bullet.text);
@@ -808,8 +1143,32 @@ export function checkGrounding(
         );
       }
 
-      if (bullet.text.includes(EM_DASH)) {
-        violations.push(`${where} contains an em dash. Use a colon, a comma or a full stop.`);
+      if (section.name === 'needs_work') {
+        const praise = NEEDS_WORK_PRAISE_PATTERN.exec(bullet.text);
+        if (praise && !inFacts(praise[0])) {
+          violations.push(`${where} says "${praise[0]}" about a finding. A needs_work bullet never calls the finding fine or correct.`);
+        }
+        for (const fact of citedFacts) {
+          if (ISSUE_KINDS.has(fact.kind) && !isFactStated(bullet.text, fact, knownNames)) {
+            violations.push(
+              `${where} cites ${fact.id} without saying anything from it. Name that fact's ledger, voucher, reference, figure or concept in the bullet, or give it its own bullet.`,
+            );
+          }
+        }
+      } else {
+        const overclaim = OVERCLAIM_PATTERN.exec(bullet.text);
+        const firstWord = overclaim?.[0].split(/\s+/)[0] ?? '';
+        const wholeField = citedFacts.every((fact) => !/\(|\bon\b.+\bwas handled correctly$/.test(fact.text));
+        if (overclaim && !inFacts(firstWord) && (hasIssueFacts || !wholeField)) {
+          violations.push(
+            `${where} claims "${overclaim[0]}", but ${hasIssueFacts ? 'there are findings in needs_work' : 'the praise it cites covers only some entries'}. Praise exactly what the cited facts praise.`,
+          );
+        }
+      }
+
+      const dash = dashViolation(bullet.text);
+      if (dash) {
+        violations.push(`${where} contains ${dash}. Use a colon, a comma or a full stop.`);
       }
     });
   }
@@ -821,12 +1180,16 @@ export function checkGrounding(
     );
   }
 
-  const openingIssue = checkOpeningLineFacts(output.opening_line, context);
+  const openingIssue = checkOpeningLineFacts(output.opening_line, { tbTieOut: context.tbTieOut, hasIssueFacts });
   if (openingIssue !== null) {
     violations.push(openingIssue);
   }
   if (numbersIn(output.opening_line).length > 0 || identifiersIn(output.opening_line).length > 0) {
     violations.push('Your opening_line contains a number or an identifier. It cites no fact, so it must contain neither.');
+  }
+  const openingNames = namesUsedIn(output.opening_line, knownNames).filter((name) => name.includes(' '));
+  if (openingNames.length > 0) {
+    violations.push(`Your opening_line names ${openingNames.join(', ')}. It cites no fact, so name no ledger or party in it.`);
   }
   const openingHistory = HISTORY_PATTERN.exec(output.opening_line);
   if (openingHistory && !hasHistoryFacts) {
@@ -834,8 +1197,9 @@ export function checkGrounding(
       `Your opening_line uses "${openingHistory[0]}", but there are no F or S facts. Say nothing about earlier attempts.`,
     );
   }
-  if (output.opening_line.includes(EM_DASH)) {
-    violations.push('Your opening_line contains an em dash. Use a colon, a comma or a full stop.');
+  const openingDash = dashViolation(output.opening_line);
+  if (openingDash) {
+    violations.push(`Your opening_line contains ${openingDash}. Use a colon, a comma or a full stop.`);
   }
 
   return violations;
@@ -850,36 +1214,62 @@ const SCORE_LANGUAGE_PATTERN = /\d\s*(?:%|percent\b)|\bscored?\b|\bscores\b|\bou
 // Verdict words in the opening line. "partial" and the fail family are banned
 // outright. "pass" is NOT: passing an entry is ordinary Indian accounting
 // usage ("you passed the journal correctly") and banning it would send clean
-// feedback into a pointless retry, so only its verdict shapes are caught.
-const VERDICT_LANGUAGE_PATTERN = /\bpartial(?:ly)?\b|\bfail(?:s|ed|ure|ing)?\b|\bpasses\b|\b(?:did|does|do)\s+not\s+pass\b|\bnot a pass\b/i;
+// feedback into a pointless retry, so only its verdict shapes are caught:
+// "passes", "did not pass", "a pass" and a bare "passed" with no entry after
+// it ("the batch passed", 2026-09-17).
+const VERDICT_LANGUAGE_PATTERN =
+  /\bpartial(?:ly)?\b|\bfail(?:s|ed|ure|ing)?\b|\bpasses\b|\b(?:did|does|do)\s+not\s+pass\b|\bnot a pass\b|\ba (?:clear |clean |solid )?pass\b|\bpassed\b(?!\s+(?:the|your|all|every|each|a|an|these|those|its|this|that|both|most|entries|entry|journals?|vouchers?|postings?))/i;
+
+// A Trial Balance described as matching when the tie-out did not (2026-09-17
+// audit: "Your Trial Balance matched and every entry is right").
+const TRIAL_BALANCE_MATCH_PATTERN =
+  /trial\s*balance\b[^.]*?\b(?:matched|matches|tied|ties|tallied|tallies|agreed|agrees|balanced|balances|squared|squares)\b|\b(?:matched|tied|tallied|agreed|balanced)\b[^.]*?\btrial\s*balance\b/i;
 
 // Returns a retry-feedback message when opening_line contradicts the computed
 // scoring facts or reaches for score/verdict language, null when it's clean.
-// Exported for tests.
-export function checkOpeningLineFacts(openingLine: string, signal: Pick<CoachingSignal, 'tbTieOut'>): string | null {
+// Exported for tests. hasIssueFacts is optional so a caller with no fact list
+// still gets the score, verdict and Trial Balance rules.
+export function checkOpeningLineFacts(
+  openingLine: string,
+  signal: Pick<CoachingSignal, 'tbTieOut'> & { hasIssueFacts?: boolean },
+): string | null {
   if (signal.tbTieOut === true && /trial\s*balance/i.test(openingLine)) {
     return 'Your opening_line attributes the result to the Trial Balance, but the Trial Balance tie-out MATCHED. Restate the opening_line without mentioning the Trial Balance.';
+  }
+  if (signal.tbTieOut === false && TRIAL_BALANCE_MATCH_PATTERN.test(openingLine)) {
+    return 'Your opening_line says the Trial Balance matched, but the Trial Balance tie-out did NOT match. Restate the opening_line without claiming it did.';
   }
   if (SCORE_LANGUAGE_PATTERN.test(openingLine)) {
     return 'Your opening_line states a score, a percentage or a mark. Learners are never shown one. Restate it saying what the batch showed, with no numbers about performance.';
   }
   if (VERDICT_LANGUAGE_PATTERN.test(openingLine)) {
-    return 'Your opening_line uses a verdict word ("partial", "fail", "passes"). Learners are never given a verdict. Restate it saying what went right and what the sections below cover.';
+    return 'Your opening_line uses a verdict word ("partial", "fail", "passes", "a pass"). Learners are never given a verdict. Restate it saying what went right and what the sections below cover.';
+  }
+  const overclaim = signal.hasIssueFacts ? OVERCLAIM_PATTERN.exec(openingLine) : null;
+  if (overclaim) {
+    return `Your opening_line claims "${overclaim[0]}", but there are findings in needs_work. Restate it without calling the batch complete, clean or perfect.`;
   }
   return null;
 }
 
 // Deterministic opening line used only when the model repeatedly produces a
 // factually-wrong one: plain and safe rather than clever, no score, no
-// verdict, no em dashes (learner-facing hard rule). These three lines must
+// verdict, no em dashes (learner-facing hard rule). These lines must
 // themselves survive checkOpeningLineFacts, since they are what replaces a
 // line that failed it.
-export function composeFallbackOpeningLine(signal: Pick<CoachingSignal, 'overallResult'>): string {
-  if (signal.overallResult === 'pass') {
-    return 'This batch came out clean. Here is what you got right.';
+//
+// Derived from the facts when they are given (2026-09-17): "This batch came
+// out clean" was chosen from overallResult alone and could sit above a
+// needs_work list, since a 'pass' can still carry findings.
+export function composeFallbackOpeningLine(
+  signal: Pick<CoachingSignal, 'overallResult'> & { hasIssueFacts?: boolean; hasPraiseFacts?: boolean },
+): string {
+  const hasIssues = signal.hasIssueFacts ?? signal.overallResult !== 'pass';
+  if (!hasIssues) {
+    return 'Nothing in this batch needs another look. Here is what you got right.';
   }
-  if (signal.overallResult === 'partial') {
-    return 'Good work on a lot of this. Some entries are right, and a few areas below are worth another look.';
+  if (signal.hasPraiseFacts ?? signal.overallResult === 'partial') {
+    return 'Some of this batch is in place, and the areas below are worth another look.';
   }
   return 'There is real ground to cover in this one. The areas below are where to start.';
 }
@@ -902,7 +1292,11 @@ export function composeFallbackCoaching(
   signal: Pick<CoachingSignal, 'overallResult'>,
 ): Omit<Coaching, 'next_note'> {
   return {
-    opening_line: composeFallbackOpeningLine(signal),
+    opening_line: composeFallbackOpeningLine({
+      overallResult: signal.overallResult,
+      hasIssueFacts: facts.some((fact) => ISSUE_KINDS.has(fact.kind)),
+      hasPraiseFacts: facts.some((fact) => PRAISE_KINDS.has(fact.kind)),
+    }),
     went_well: facts.filter((fact) => PRAISE_KINDS.has(fact.kind)).map((fact) => asSentence(fact.text)),
     needs_work: facts.filter((fact) => ISSUE_KINDS.has(fact.kind)).map((fact) => asSentence(fact.text)),
   };

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { checkBankStatementContent, checkVendorInvoiceContent } from './generate-source-document';
-import type { BankStatementLineInput } from '@/lib/llm/prompts/source-document';
+import {
+  checkVendorInvoiceContent,
+  missingBillNumbers,
+  stampVendorInvoiceFromKey,
+} from './generate-source-document';
+import { isValidGstin, partyIdentityFor } from './party-directory';
+import { COMPANY_DETAILS } from './company-details';
+import { VendorInvoiceContentSchema } from '@/lib/schemas/source-document';
+import type { GeneratedExercise } from '@/lib/schemas/exercise';
 import {
   deriveInvoiceFigures,
   extractTransactionDate,
@@ -203,93 +210,6 @@ describe('extractTransactionDate', () => {
   });
 });
 
-describe('checkBankStatementContent (Praveen Level 2 invisible bill reference, 2026-09-02)', () => {
-  const entry = (
-    sequence: number,
-    account: string,
-    drCr: 'Dr' | 'Cr',
-    amount: number,
-    voucherType: 'Receipt' | 'Payment' | 'Contra',
-    billReference: string | null,
-  ): BankStatementLineInput['entry'] => ({
-    sequence,
-    correct_account: account,
-    dr_cr: drCr,
-    amount,
-    voucher_type: voucherType,
-    gst_head: null,
-    gst_rate: null,
-    tds_section: null,
-    tds_rate: null,
-    tds_base: null,
-    bill_reference: billReference,
-    narration: null,
-    concept_tags: ['bill_by_bill_referencing'],
-    requires_source_document: true,
-    source_document_type: 'bank_statement',
-  });
-  const lines: BankStatementLineInput[] = [
-    {
-      entry: entry(7, 'Karnataka Emporium', 'Cr', 45000, 'Receipt', 'KE/2026/018 (part payment, ₹30,000 balance outstanding)'),
-      partyAccounts: ['Karnataka Emporium'],
-      transactionDescription: 'On 14-May-2026, a receipt from Karnataka Emporium landed in the bank: post it from the bank statement.',
-    },
-    {
-      entry: entry(8, 'Mehta & Associates', 'Dr', 35000, 'Payment', 'Against MA/2026/09'),
-      partyAccounts: ['Mehta & Associates'],
-      transactionDescription: 'On 16-May-2026, a payment to Mehta & Associates went out from the bank: post it from the bank statement.',
-    },
-  ];
-  const statement = (narrations: [string, string]) => ({
-    accountHolderName: 'Blossom Retail Pvt Ltd',
-    period: '14-May-2026 to 16-May-2026',
-    transactions: [
-      { date: '14-May-2026', narration: narrations[0], debit: null, credit: 45000, balance: 145000 },
-      { date: '16-May-2026', narration: narrations[1], debit: 35000, credit: null, balance: 110000 },
-    ],
-  });
-
-  it('accepts a statement whose narrations carry the bill references', () => {
-    expect(
-      checkBankStatementContent(
-        statement(['NEFT/N26050114/KARNATAKA EMPORIUM/KE/2026/018', 'NEFT/N26050116/MEHTA & ASSOCIATES/MA/2026/09']),
-        lines,
-      ),
-    ).toBeNull();
-  });
-
-  it('rejects the live failure: the reference the key demands is nowhere on the statement', () => {
-    const error = checkBankStatementContent(
-      statement(['NEFT/N26050114/KARNATAKA EMPORIUM/RCP', 'NEFT/N26050116/MEHTA & ASSOCIATES/PMT']),
-      lines,
-    );
-    expect(error).toContain('KE/2026/018');
-    expect(error).toContain('MA/2026/09');
-  });
-
-  it('rejects a line on the wrong side or for the wrong amount', () => {
-    const wrongSide = {
-      ...statement(['NEFT/KE/2026/018', 'NEFT/MA/2026/09']),
-      transactions: [
-        { date: '14-May-2026', narration: 'NEFT/KE/2026/018', debit: 45000, credit: null, balance: 100000 },
-        { date: '16-May-2026', narration: 'NEFT/MA/2026/09', debit: 35000, credit: null, balance: 65000 },
-      ],
-    };
-    expect(checkBankStatementContent(wrongSide, lines)).toContain('Exercise item 7 needs a statement line with credit exactly 45000');
-  });
-
-  it('rejects a line dated on a different day than the transaction', () => {
-    const wrongDate = {
-      ...statement(['NEFT/KE/2026/018', 'NEFT/MA/2026/09']),
-      transactions: [
-        { date: '15-May-2026', narration: 'NEFT/KE/2026/018', debit: null, credit: 45000, balance: 145000 },
-        { date: '16-May-2026', narration: 'NEFT/MA/2026/09', debit: 35000, credit: null, balance: 110000 },
-      ],
-    };
-    expect(checkBankStatementContent(wrongDate, lines)).toContain('must be dated exactly "14-May-2026"');
-  });
-});
-
 describe('deriveInvoiceFigures on a TDS purchase (Praveen Level 6 legal fee, 2026-09-03)', () => {
   it('names the vendor, not TDS Payable, and prints the gross fee as the total', () => {
     const figures = deriveInvoiceFigures([
@@ -317,7 +237,7 @@ describe('multi-leg invoices print one line per expense leg (Garima Level 5 MS-3
   const legs = [leg('Purchases', 'Dr', 35000), leg('Freight & Delivery Charges', 'Dr', 2000), leg('Input IGST', 'Dr', 6660, 'IGST'), leg('Mumbai Suppliers', 'Cr', 43660)];
   const input: VendorInvoiceInput = { legs, transactionDescription: 'On 10-Aug-2026, a purchase invoice arrives from Mumbai Suppliers covering goods and freight together on one bill: post it from the attached invoice.' };
   const liveContent: VendorInvoiceContent = {
-    vendorName: 'Mumbai Suppliers', vendorGSTIN: '27AABCT5055K1Z0', invoiceNumber: 'MS-3102', invoiceDate: '10-Aug-2026',
+    vendorName: 'Mumbai Suppliers', vendorGSTIN: '27AABCT5055K1Z4', invoiceNumber: 'MS-3102', invoiceDate: '10-Aug-2026',
     lineItems: [
       { description: 'Cotton fabric roll, 50 meters', quantity: 2, rate: 8500, amount: 17000 },
       { description: 'Freight and handling charges', quantity: 1, rate: 20000, amount: 20000 },
@@ -361,7 +281,7 @@ describe('a single expense leg prints a single line (Praveen MA/206, 2026-09-04)
   const serviceLegs = [leg('Legal & Professional Charges', 'Dr', 15000), leg('Input CGST', 'Dr', 1350, 'CGST'), leg('Input SGST', 'Dr', 1350, 'SGST'), leg('Mehta & Associates', 'Cr', 17700)];
   const input: VendorInvoiceInput = { legs: serviceLegs, transactionDescription: 'On 04-Oct-2026, an invoice arrives from Mehta & Associates for professional services rendered this month.' };
   const twoLines: VendorInvoiceContent = {
-    vendorName: 'Mehta & Associates', vendorGSTIN: '29AABCM1234F1Z5', invoiceNumber: 'MA/206', invoiceDate: '04-Oct-2026',
+    vendorName: 'Mehta & Associates', vendorGSTIN: '29AABCM1234F1ZT', invoiceNumber: 'MA/206', invoiceDate: '04-Oct-2026',
     lineItems: [
       { description: 'Professional consultation services', quantity: 1, rate: 10000, amount: 10000 },
       { description: 'Audit and compliance review', quantity: 1, rate: 5000, amount: 5000 },
@@ -383,5 +303,154 @@ describe('a single expense leg prints a single line (Praveen MA/206, 2026-09-04)
     const goods = [leg('Purchases', 'Dr', 15000), leg('Input CGST', 'Dr', 1350, 'CGST'), leg('Input SGST', 'Dr', 1350, 'SGST'), leg('Mehta & Associates', 'Cr', 17700)];
     expect(alignLineItemsToLegs(twoLines, deriveInvoiceFigures(goods))).toBe(twoLines);
     expect(checkVendorInvoiceContent(twoLines, { ...input, legs: goods })).toBeNull();
+  });
+});
+
+
+// Everything the vendor invoice prints comes from the key (2026-09-17).
+describe('stampVendorInvoiceFromKey (the PDF can never disagree with the key)', () => {
+  const legs: AnswerKeyEntry[] = [
+    leg({ correct_account: 'Purchases', dr_cr: 'Dr', amount: 35000, bill_reference: 'MS/990 (New Ref)' }),
+    leg({ correct_account: 'Freight & Delivery Charges', dr_cr: 'Dr', amount: 2000, bill_reference: 'MS/990 (New Ref)' }),
+    leg({ correct_account: 'Input IGST', dr_cr: 'Dr', amount: 6660, gst_head: 'IGST', gst_rate: 18, bill_reference: 'MS/990 (New Ref)' }),
+    leg({ correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 43660, bill_reference: 'MS/990 (New Ref)' }),
+  ];
+  const input: VendorInvoiceInput = {
+    legs,
+    transactionDescription: 'On 15-Jun-2025, an invoice arrived from Mumbai Suppliers (Ref MS/990): post it from the attached invoice.',
+  };
+  // What the model returned: passes the checks (tolerant name/number/date
+  // forms) but prints a variant name, number casing, ISO date, an invented
+  // GSTIN and quantities that do not multiply out.
+  const modelContent: VendorInvoiceContent = {
+    vendorName: 'Mumbai Suppliers Pvt Ltd',
+    vendorGSTIN: 'GSTIN-THE-MODEL-INVENTED',
+    invoiceNumber: ' ms/990 ',
+    invoiceDate: '2025-06-15',
+    lineItems: [
+      { description: 'Freight and handling', quantity: 3, rate: 500, amount: 2000 },
+      { description: 'Cotton fabric rolls', quantity: 7, rate: 5000, amount: 35000 },
+    ],
+    taxBreakup: { cgst_amount: 0, sgst_amount: null, igst_amount: 6660.004 },
+    totalAmount: 43660,
+  };
+
+  it('passes the checks first, then overwrites every printed fact from the key', () => {
+    expect(checkVendorInvoiceContent(modelContent, input)).toBeNull();
+    const stamped = stampVendorInvoiceFromKey(modelContent, input);
+    const vendor = partyIdentityFor('Mumbai Suppliers');
+    expect(stamped).toEqual({
+      vendorName: 'Mumbai Suppliers',
+      vendorGSTIN: vendor.gstin,
+      vendorAddress: vendor.address,
+      invoiceNumber: 'MS/990',
+      invoiceDate: '15-Jun-2025',
+      lineItems: [
+        { description: 'Cotton fabric rolls', quantity: 1, rate: 35000, amount: 35000, hsnSac: 'HSN 6304' },
+        { description: 'Freight and handling', quantity: 1, rate: 2000, amount: 2000, hsnSac: 'SAC 996511' },
+      ],
+      taxBreakup: { cgst_amount: null, sgst_amount: null, igst_amount: 6660 },
+      totalAmount: 43660,
+      buyerName: COMPANY_DETAILS.name,
+      buyerGSTIN: COMPANY_DETAILS.gstin,
+      buyerAddress: COMPANY_DETAILS.address,
+      placeOfSupply: 'Karnataka',
+      placeOfSupplyCode: '29',
+      reverseCharge: false,
+      taxRatePercent: 18,
+      amountInWords: 'Rupees Forty Three Thousand Six Hundred Sixty Only',
+    });
+    expect(isValidGstin(stamped.vendorGSTIN)).toBe(true);
+    expect(VendorInvoiceContentSchema.parse(stamped)).toEqual(stamped);
+  });
+
+  it('makes quantity x rate equal the amount on free-form goods lines', () => {
+    const goods = [
+      leg({ correct_account: 'Purchases', dr_cr: 'Dr', amount: 37000, bill_reference: 'MS/991' }),
+      leg({ correct_account: 'Input IGST', dr_cr: 'Dr', amount: 6660, gst_head: 'IGST', gst_rate: 18, bill_reference: 'MS/991' }),
+      leg({ correct_account: 'Mumbai Suppliers', dr_cr: 'Cr', amount: 43660, bill_reference: 'MS/991' }),
+    ];
+    const content: VendorInvoiceContent = {
+      ...modelContent,
+      invoiceNumber: 'MS/991',
+      lineItems: [
+        { description: 'Cotton', quantity: 4, rate: 5000, amount: 20000 },
+        { description: 'Polyester', quantity: 3, rate: 5000, amount: 17000 },
+      ],
+    };
+    const stamped = stampVendorInvoiceFromKey(content, { ...input, legs: goods });
+    expect(stamped.lineItems).toEqual([
+      { description: 'Cotton', quantity: 4, rate: 5000, amount: 20000, hsnSac: 'HSN 6304' },
+      { description: 'Polyester', quantity: 1, rate: 17000, amount: 17000, hsnSac: 'HSN 6304' },
+    ]);
+  });
+
+  it('prints a round-off leg as round off, and flags reverse charge from RCM ledgers', () => {
+    const rounded = [
+      leg({ correct_account: 'Rent', dr_cr: 'Dr', amount: 10000, bill_reference: 'HR/77' }),
+      leg({ correct_account: 'Input CGST', dr_cr: 'Dr', amount: 900.25, gst_head: 'CGST', gst_rate: 9, bill_reference: 'HR/77' }),
+      leg({ correct_account: 'Input SGST', dr_cr: 'Dr', amount: 900.25, gst_head: 'SGST', gst_rate: 9, bill_reference: 'HR/77' }),
+      leg({ correct_account: 'Hero Rentals', dr_cr: 'Cr', amount: 11800, bill_reference: 'HR/77' }),
+      leg({ correct_account: 'Round Off', dr_cr: 'Cr', amount: 0.5, bill_reference: 'HR/77' }),
+      leg({ correct_account: 'RCM Output CGST Payable', dr_cr: 'Cr', amount: 0, bill_reference: 'HR/77' }),
+    ];
+    const content: VendorInvoiceContent = {
+      ...modelContent,
+      vendorName: 'Hero Rentals',
+      invoiceNumber: 'HR/77',
+      lineItems: [{ description: 'Office rent', quantity: 1, rate: 10000, amount: 10000 }],
+      taxBreakup: { cgst_amount: 900.25, sgst_amount: 900.25, igst_amount: null },
+      totalAmount: 11800,
+    };
+    const stamped = stampVendorInvoiceFromKey(content, { ...input, legs: rounded });
+    expect(stamped.lineItems).toEqual([{ description: 'Office rent', quantity: 1, rate: 10000, amount: 10000, hsnSac: 'SAC 997212' }]);
+    expect(stamped.roundOff).toBe(-0.5);
+    expect(stamped.reverseCharge).toBe(true);
+  });
+});
+
+describe('invoice number comparison is honest (2026-09-17)', () => {
+  const withNumber = (number: string): VendorInvoiceInput => ({
+    ...INPUT,
+    legs: MULTI_LEG.map((entry) => ({ ...entry, bill_reference: number })),
+  });
+
+  it('no longer accepts INV-10-1 for INV-1-01 by stripping punctuation', () => {
+    expect(checkVendorInvoiceContent(content({ invoiceNumber: 'INV-10-1' }), withNumber('INV-1-01'))).toContain('must be exactly "INV-1-01"');
+  });
+
+  it('still tolerates case and surrounding whitespace', () => {
+    expect(checkVendorInvoiceContent(content({ invoiceNumber: ' inv-1-01 ' }), withNumber('INV-1-01'))).toBeNull();
+  });
+});
+
+describe('missingBillNumbers (a credit voucher must carry its own number)', () => {
+  const entry = (sequence: number, voucherType: string, account: string, drCr: 'Dr' | 'Cr', amount: number, ref: string | null) =>
+    leg({ sequence, voucher_type: voucherType, correct_account: account, dr_cr: drCr, amount, bill_reference: ref });
+
+  it('reports credit purchases and credit sales with no own number, never cash vouchers or other voucher types', () => {
+    const generated = {
+      transactions: [],
+      answer_key: {
+        entries: [
+          entry(1, 'Purchase', 'Purchases', 'Dr', 1000, null),
+          entry(1, 'Purchase', 'Deccan Traders', 'Cr', 1000, null),
+          entry(2, 'Sales', 'Karnataka Emporium', 'Dr', 2000, 'ADV-C01 (Advance)'),
+          entry(2, 'Sales', 'Sales', 'Cr', 2000, 'ADV-C01 (Advance)'),
+          entry(3, 'Sales', 'Cash', 'Dr', 500, null),
+          entry(3, 'Sales', 'Sales', 'Cr', 500, null),
+          entry(4, 'Purchase', 'Purchases', 'Dr', 800, null),
+          entry(4, 'Purchase', 'Cash', 'Cr', 800, null),
+          entry(5, 'Sales', 'Karnataka Emporium', 'Dr', 3000, 'ADV-C01 (Advance), INV-3001'),
+          entry(5, 'Sales', 'Sales', 'Cr', 3000, 'ADV-C01 (Advance), INV-3001'),
+          entry(6, 'Payment', 'Deccan Traders', 'Dr', 1000, null),
+          entry(6, 'Payment', 'HDFC Bank', 'Cr', 1000, null),
+        ],
+      },
+    } as unknown as GeneratedExercise;
+    expect(missingBillNumbers(generated)).toEqual([
+      { sequence: 1, voucherType: 'Purchase', party: 'Deccan Traders' },
+      { sequence: 2, voucherType: 'Sales', party: 'Karnataka Emporium' },
+    ]);
   });
 });

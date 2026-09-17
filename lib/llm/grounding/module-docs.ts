@@ -478,7 +478,7 @@ Full Payment, Partial Payment & Debit Note — Entries and Effect on P&L / Balan
 Payables is the money you owe suppliers, tracked ledger-by-ledger under Sundry Creditors — the mirror image of Receivables. Every credit purchase creates a payable; this module covers the three ways that balance changes afterwards: paying it off in full, paying part of it, and reducing it through a purchase return.
 For bill-by-bill tracking (the New Ref / Against Ref numbers below) to work, the supplier's ledger must have Maintain balances bill-by-bill set to Yes — covered in the Ledger Creation module.
 1. Full Payment
-Om Suppliers' invoice for ₹35,000 (Ref 5, raised 20-Mar-26) is paid off completely in one go.
+Om Suppliers' invoice for ₹35,000 (Ref 5, raised 20-Mar-24) is paid off completely in one go.
 Menu Path:  Gateway of Tally → Create → Payment   (or Alt+G [Go To] → Create Voucher → F5: Payment)
 Entry
 Account
@@ -491,7 +491,7 @@ Illustrative TallyPrime screen — Full Payment against Ref 5 (recreated to matc
 Effect on P&L:  None — the expense was already booked when the original Purchase entry was made. This payment simply clears the amount owed.
 Effect on Balance Sheet:  Om Suppliers' balance in Sundry Creditors goes to ₹0. Bank (Asset) decreases by ₹35,000.
 2. Partial Payment
-You owe Kavita Textiles ₹40,000 (Ref 8, raised 28-Mar-26) but only pay ₹25,000 for now — the remaining ₹15,000 stays payable against the same reference.
+You owe Kavita Textiles ₹40,000 (Ref 8, raised 28-Mar-24) but only pay ₹25,000 for now — the remaining ₹15,000 stays payable against the same reference.
 Entry
 Account
 Dr / Cr
@@ -553,7 +553,7 @@ Full Receipt, Partial Receipt & Credit Note — Entries and Effect on P&L / Bala
 Receivables is the money customers owe you, tracked ledger-by-ledger under Sundry Debtors. Every credit sale creates a receivable; this module covers the three ways that balance changes afterwards: getting paid in full, getting paid in part, and reducing it through a sales return.
 For bill-by-bill tracking (the New Ref / Against Ref numbers you'll see below) to work, the customer's ledger must have Maintain balances bill-by-bill set to Yes — covered in the Ledger Creation module.
 1. Full Receipt
-ABC Ltd's invoice for ₹11,800 (Ref 1, raised 1-Apr-26) is paid off completely in one go.
+ABC Ltd's invoice for ₹11,800 (Ref 1, raised 1-Apr-24) is paid off completely in one go.
 Menu Path:  Gateway of Tally → Create → Receipt   (or Alt+G [Go To] → Create Voucher → F6: Receipt)
 Entry
 Account
@@ -566,7 +566,7 @@ Illustrative TallyPrime screen — Full Receipt against Ref 1 (recreated to matc
 Effect on P&L:  None — the income was already booked when the original Sales entry was made. This receipt simply converts a receivable into cash.
 Effect on Balance Sheet:  ABC Ltd's balance in Sundry Debtors goes to ₹0. Bank (Asset) increases by ₹11,800.
 2. Partial Receipt
-Sunrise Enterprises owes ₹25,000 (Ref 6, raised 25-Mar-26) but only pays ₹15,000 for now — the remaining ₹10,000 stays outstanding against the same reference.
+Sunrise Enterprises owes ₹25,000 (Ref 6, raised 25-Mar-24) but only pays ₹15,000 for now — the remaining ₹10,000 stays outstanding against the same reference.
 Entry
 Account
 Dr / Cr

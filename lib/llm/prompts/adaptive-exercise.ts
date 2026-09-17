@@ -11,6 +11,7 @@ import {
   parseMonthLabel,
   type CalendarMonth,
 } from '@/lib/tutor/educational-dates';
+import { taxRulesSummaryFor } from '@/lib/tutor/tax-rules';
 
 export type AdaptiveExerciseParams = {
   targetConceptTag: ConceptTag;
@@ -58,6 +59,10 @@ export type AdaptiveExerciseParams = {
   // month-end notes sheet by code). The code overrides whatever the model
   // decides per transaction, so this only steers the text it writes.
   documentsMode?: boolean;
+  // Every invoice, bill, note and advance number the learner's keys have
+  // already raised (2026-09-17), so the model can avoid a collision instead
+  // of discovering it through a retry.
+  usedBillNumbers?: string[];
 };
 
 // House practice per concept, from the Karbon rulebook (2026-09-10): the
@@ -79,7 +84,7 @@ export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
   gst_classification:
     'Intra-state CGST plus SGST at half the rate each, inter-state IGST at the full rate, decided by the party state; Input on purchases, Output on sales; every GST figure is base times rate exactly.',
   tds_classification:
-    'TDS at booking on the taxable base, never the GST-inclusive total: 194J professional 10%, 194C contractor 1%/2% (30,000 single or 1,00,000 aggregate), 194I rent 10% (2,40,000 aggregate), 194H commission 5%; only once the year threshold is crossed for that payee; vendor credited net, TDS Payable per section.',
+    'TDS at booking on the taxable base, never the GST-inclusive total, at the section rate and only past the threshold in the TAX RULES block for this batch\'s financial year, on the running total for that payee; vendor credited net, TDS Payable per section. Tag tds_classification only on a voucher that carries a TDS leg.',
   bill_by_bill_referencing:
     'Every party leg carries a reference: New Ref when a bill is raised, Against Ref (each bill named) when it is settled, Advance for money before a bill, On Account only when no bill can be identified.',
   narration_discipline: 'Retired: narration is not scored beyond the bank reference on bank vouchers.',
@@ -99,7 +104,7 @@ export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
   gst_payment:
     'Do NOT write the payment: the system appends the payment of the previous month GST liability from the bank when one exists.',
   rcm_and_late_fee:
-    'Reverse charge (rulebook 13): a service from an unregistered supplier or a goods transport agency: Purchase Dr expense / Cr vendor (no vendor GST), plus a journal Dr Input CGST RCM and Dr Input SGST RCM / Cr Output CGST RCM and Cr Output SGST RCM for the tax the company pays itself. A late fee or interest on a delayed GST payment: Payment Dr GST Late Fee and Interest (indirect expense) / Cr bank.',
+    'Reverse charge (rulebook 13): a service from an unregistered supplier or a goods transport agency: Purchase Dr expense / Cr vendor (no vendor GST), plus a journal Dr Input CGST RCM and Dr Input SGST RCM / Cr Output CGST RCM and Cr Output SGST RCM for the tax the company pays itself (paid in cash at month end, never set off against input credit). Legal services from an advocate or a law firm are always reverse charge: the vendor bill shows no GST. A late fee or interest on a delayed GST payment: Payment Dr GST Late Fee and Interest (indirect expense) / Cr bank.',
   fixed_assets_depreciation:
     'A capital purchase goes to the asset ledger (Office Equipment, Furniture, Computers), never Purchases, with Input GST claimed in full in the month of purchase; depreciation at year end by journal Dr Depreciation / Cr the asset ledger at the stated rate.',
 };
@@ -121,6 +126,35 @@ the GST treatment below. A party's state never changes, so every new sale
 to or purchase from them MUST use the same treatment; do not relocate a
 party to another state.
 ${lines}
+
+`;
+}
+
+// Tax rules in force for the batch's month (2026-09-17 audit), written
+// from the same dated table the generation checks read (tax-rules.ts), so
+// FY 2024-25 and FY 2025-26 batches are told their own thresholds.
+function buildTaxRulesBlock(monthLabel: string): string {
+  const month = parseMonthLabel(monthLabel);
+  if (!month) return '';
+  return `TAX RULES (hard requirement; every figure is checked in code):
+${taxRulesSummaryFor({ day: 1, monthIndex: month.monthIndex, year: month.year })}
+
+`;
+}
+
+// Numbers already raised (2026-09-17 audit): a reused number is rejected,
+// so the model is shown the list rather than left to guess. The most
+// recent 150 are listed; the check covers all of them.
+const MAX_LISTED_BILL_NUMBERS = 150;
+function buildUsedBillNumbersBlock(usedBillNumbers: string[] | undefined): string {
+  if (!usedBillNumbers || usedBillNumbers.length === 0) return '';
+  const listed = usedBillNumbers.slice(-MAX_LISTED_BILL_NUMBERS);
+  return `DOCUMENT NUMBERS ALREADY USED (hard requirement): these invoice, bill, note and
+advance numbers exist in the books. Never raise any of them again (INV-18 and
+INV-018 count as the same number); every credit sale, purchase, credit note
+and debit note carries its own fresh number in bill_reference, and a number
+never contains a date:
+${listed.join(', ')}
 
 `;
 }
@@ -338,7 +372,7 @@ CGST or SGST leg is that head's own rate (9 for 18% GST, 6 for 12%, 2.5 for 5%);
 IGST leg it is the whole rate (18). tds_base and tds_rate on the TDS leg give the
 deduction: tds_base x tds_rate / 100 is the TDS leg's amount.
 
-${buildPartyStatesBlock(params.partyTaxClasses)}${buildOpenBillsBlock(params.openBills)}
+${buildTaxRulesBlock(params.exerciseMonthLabel)}${buildPartyStatesBlock(params.partyTaxClasses)}${buildUsedBillNumbersBlock(params.usedBillNumbers)}${buildOpenBillsBlock(params.openBills)}
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
 Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and
@@ -383,6 +417,11 @@ ${params.exerciseMonthLabel} — no other month, no other year, ever. The
 company's timeline advances exactly one month per module, computed by the
 system, and a batch never mixes months. Write each date explicitly in every
 transaction line (e.g. "On 01-${params.exerciseMonthLabel.slice(0, 3)}-${params.exerciseMonthLabel.slice(-4)}, ...").
+DATE FORMAT (hard requirement): write every date as DD-Mon-YYYY, exactly like
+01-${params.exerciseMonthLabel.slice(0, 3)}-${params.exerciseMonthLabel.slice(-4)}; never "5th June", "June 5, 2024", "2024-06-05",
+"05.06.2024" or "05/06/24", and never put a date inside a bill, invoice or note
+number. Every rupee figure and bill number written in a transaction line must
+be exactly the figure and reference its answer key carries.
 The learner's books begin ${BOOKS_BEGIN_LABEL}: a voucher dated before that, or in any
 other year, is REJECTED by the submission gate outright. Amounts are in
 Indian Rupees.${

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountNamesMatch, aliasFitsAccount, partyAccountsOf, tdsSectionOf } from './account-names';
+import { accountNamesMatch, aliasAcceptsLedger, aliasFitsAccount, classifyLedger, isTaxLedgerName, keyAccountSet, partyAccountsOf, tdsSectionOf } from './account-names';
 
 describe('aliasFitsAccount (returns require their own ledger, 2026-09-16)', () => {
   it('refuses a base ledger as an alias of a returns ledger, and a returns ledger as an alias of its base', () => {
@@ -79,5 +79,61 @@ describe('accountNamesMatch with TDS sections', () => {
 
   it('keeps TDS Receivable distinct from TDS Payable of the same section', () => {
     expect(accountNamesMatch('TDS Payable — u/s 194J', 'TDS Receivable — u/s 194J')).toBe(false);
+  });
+});
+
+describe('audit fixes: lenient matching must not equate different accounts (2026-09-17)', () => {
+  it('never equates a balance-sheet ledger with the expense or income head it accrues', () => {
+    expect(accountNamesMatch('Salary Payable', 'Salaries')).toBe(false);
+    expect(accountNamesMatch('Rent Payable', 'Rent')).toBe(false);
+    expect(accountNamesMatch('Prepaid Rent', 'Rent')).toBe(false);
+    expect(accountNamesMatch('Salary Advance', 'Salaries')).toBe(false);
+    expect(accountNamesMatch('Outstanding Salary', 'Outstanding Rent')).toBe(false);
+  });
+
+  it('keeps income and expense apart', () => {
+    expect(accountNamesMatch('Interest Paid', 'Interest')).toBe(true); // no direction on the bare name
+    expect(accountNamesMatch('Interest Paid', 'Interest Income')).toBe(false);
+    expect(accountNamesMatch('Discount Allowed', 'Discount Received')).toBe(false);
+    expect(aliasAcceptsLedger('Interest Paid', 'Interest', 'Interest Income')).toBe(false);
+    expect(aliasAcceptsLedger('Interest Received', 'Interest', 'Interest Income')).toBe(true);
+  });
+
+  it('does not read Bank Charges as the bank, nor IGST Payable as GST Payable', () => {
+    expect(accountNamesMatch('Bank Charges', 'Bank')).toBe(false);
+    expect(aliasAcceptsLedger('Bank Charges', 'Bank', 'HDFC Bank — 1234')).toBe(false);
+    expect(accountNamesMatch('IGST Payable', 'GST Payable')).toBe(false);
+  });
+
+  it('typo tolerance never equates two distinct accounts of the same key', () => {
+    expect(accountNamesMatch('Mehta Traders', 'Mehra Traders')).toBe(true);
+    const keyAccounts = keyAccountSet(['Mehra Traders', 'Mehta Traders', 'Purchases']);
+    expect(accountNamesMatch('Mehta Traders', 'Mehra Traders', { keyAccounts })).toBe(false);
+    expect(accountNamesMatch('Mehra Traders', 'Mehra Traders', { keyAccounts })).toBe(true);
+    expect(accountNamesMatch('Purchsaes', 'Purchases', { keyAccounts })).toBe(true);
+  });
+
+  it('keeps the accepted variations', () => {
+    expect(accountNamesMatch('Credit Sales A/c', 'Sales')).toBe(true);
+    expect(accountNamesMatch('Cash Sales A/c', 'Sales')).toBe(true);
+    expect(accountNamesMatch('SUSPENSE AC', 'Suspense')).toBe(true);
+    expect(accountNamesMatch('Deccan Traders Debtor', 'Deccan Traders')).toBe(true);
+    expect(accountNamesMatch('Accounts Payable', 'Outstanding Expenses')).toBe(true);
+    expect(accountNamesMatch('Expenses Payable', 'Outstanding Expenses')).toBe(true);
+    expect(accountNamesMatch('TDS Payable', 'TDS')).toBe(true);
+    expect(accountNamesMatch('Marketing collaterals', 'Marketing collaterals')).toBe(true);
+    expect(accountNamesMatch('Output CGST', 'CGST')).toBe(true);
+    expect(accountNamesMatch('Kolkata Emporium', 'Kolkata Traders')).toBe(false);
+    expect(accountNamesMatch('Sales Returns', 'Sales')).toBe(false);
+    expect(accountNamesMatch('TDS Receivable', 'TDS Payable')).toBe(false);
+  });
+
+  it('recognises tax ledgers by word, not by substring', () => {
+    expect(isTaxLedgerName('Kingston Traders')).toBe(false);
+    expect(isTaxLedgerName('Input CGST 9%')).toBe(true);
+    expect(isTaxLedgerName('GST@18%')).toBe(true);
+    expect(isTaxLedgerName('TDS194C Payable')).toBe(true);
+    expect(isTaxLedgerName('Outstanding TDS')).toBe(true);
+    expect(classifyLedger('Kingston Traders', new Set(['kingstontraders']))).toBe('balance_sheet');
   });
 });

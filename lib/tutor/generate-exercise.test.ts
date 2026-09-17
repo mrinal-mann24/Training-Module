@@ -839,3 +839,212 @@ describe('checkPartyTaxConsistency (Deccan Traders relocated to "Telangana", Yes
     expect(checkPartyTaxConsistency(purchase('Brand New Vendor', ['IGST']), known)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------- 2026-09-17 audit
+
+import { vi } from 'vitest';
+import { finalizeBatch, generateDiagnosticExercise, runGenerationChecks } from './generate-exercise';
+
+type AuditEntry = GeneratedExercise['answer_key']['entries'][number];
+const auditLeg = (sequence: number, voucherType: string, account: string, drCr: 'Dr' | 'Cr', amount: number, extra: Partial<AuditEntry> = {}): AuditEntry => ({
+  ...entry(sequence, [voucherType === 'Contra' ? 'contra_voucher_basics' : voucherType === 'Receipt' ? 'receipt_voucher_basics' : voucherType === 'Payment' ? 'payment_voucher_basics' : voucherType === 'Sales' ? 'sales_voucher_basics' : 'purchase_voucher_basics'] as ConceptTag[], voucherType),
+  correct_account: account,
+  dr_cr: drCr,
+  amount,
+  ...extra,
+});
+const auditBatch = (descriptions: string[], entries: AuditEntry[]): GeneratedExercise => ({
+  scenario: 'Batch: same company, continuing.',
+  transactions: descriptions.map((description, index) => ({ sequence: index + 1, description })),
+  difficulty_level: 'L1',
+  variant: 'A',
+  answer_key: { entries },
+});
+
+describe('cash feasibility walks dates, then sequence (2026-09-17 audit)', () => {
+  it('rejects a payment on the 2nd funded only by a receipt on the 31st (July, opening 1,000)', () => {
+    const july = auditBatch(
+      ['On 31-Jul-2024, Delhi Bazaar pays Rs 50,000.', 'On 02-Jul-2024, pay Mumbai Suppliers Rs 40,000.'],
+      [
+        auditLeg(1, 'Receipt', 'HDFC Bank — 1234', 'Dr', 50000),
+        auditLeg(1, 'Receipt', 'Delhi Bazaar', 'Cr', 50000),
+        auditLeg(2, 'Payment', 'Mumbai Suppliers', 'Dr', 40000),
+        auditLeg(2, 'Payment', 'HDFC Bank — 1234', 'Cr', 40000),
+      ],
+    );
+    const error = checkCashFeasibility(july, { cash: 0, bank: 1000 });
+    expect(error).toContain('transaction 2 (dated 02-Jul-2024)');
+    expect(checkCashFeasibility(july, { cash: 0, bank: 1000 }, { overdraftAllowed: true })).toBeNull();
+  });
+
+  it('rejects sequence 1 receipt on 25-May and sequence 2 payment on 10-May with opening 10,000', () => {
+    const may = auditBatch(
+      ['On 25-May-2024, receipt from Delhi Bazaar Rs 30,000.', 'On 10-May-2024, payment to Mumbai Suppliers Rs 25,000.'],
+      [
+        auditLeg(1, 'Receipt', 'HDFC Bank — 1234', 'Dr', 30000),
+        auditLeg(1, 'Receipt', 'Delhi Bazaar', 'Cr', 30000),
+        auditLeg(2, 'Payment', 'Mumbai Suppliers', 'Dr', 25000),
+        auditLeg(2, 'Payment', 'HDFC Bank — 1234', 'Cr', 25000),
+      ],
+    );
+    expect(checkCashFeasibility(may, { cash: 0, bank: 10000 })).toContain('Bank feasibility violated: transaction 2');
+  });
+
+  it('finalizeBatch checks the appended GST payment against the bank on its own date', () => {
+    const july = auditBatch(
+      ['On 25-Jul-2024, Delhi Bazaar pays Rs 50,000.'],
+      [auditLeg(1, 'Receipt', 'HDFC Bank — 1234', 'Dr', 50000), auditLeg(1, 'Receipt', 'Delhi Bazaar', 'Cr', 50000)],
+    );
+    const outcome = finalizeBatch(july, {
+      licenseMode: 'licensed',
+      month: { monthIndex: 6, year: 2024 },
+      cashPosition: { cash: 0, bank: 1000 },
+      monthEnd: {
+        priorKeys: [{ opening_balances: [{ account: 'GST Payable', dr_cr: 'Cr', amount: 40000 }], entries: [] }],
+        concepts: ['gst_payment'],
+        month: { monthIndex: 6, year: 2024 },
+        licenseMode: 'licensed',
+        bankAccount: 'HDFC Bank — 1234',
+        bankAfterBatch: 51000,
+      },
+    });
+    // The payment is on the 20th; the receipt that would fund it lands on the 25th.
+    expect(outcome.errors.join(' ')).toContain('transaction 2 (dated 20-Jul-2024)');
+  });
+
+  it('finalizeBatch reports a payment the whole batch cannot fund', () => {
+    const july = auditBatch(['On 05-Jul-2024, a cash sale.'], [auditLeg(1, 'Sales', 'Cash', 'Dr', 1000), auditLeg(1, 'Sales', 'Sales', 'Cr', 1000)]);
+    const outcome = finalizeBatch(july, {
+      licenseMode: 'educational',
+      month: { monthIndex: 6, year: 2024 },
+      cashPosition: { cash: 0, bank: 1000 },
+      monthEnd: {
+        priorKeys: [{ opening_balances: [{ account: 'GST Payable', dr_cr: 'Cr', amount: 40000 }], entries: [] }],
+        concepts: ['gst_payment'],
+        month: { monthIndex: 6, year: 2024 },
+        licenseMode: 'educational',
+        bankAccount: 'HDFC Bank — 1234',
+        bankAfterBatch: 1000,
+      },
+    });
+    expect(outcome.errors.join(' ')).toContain('GST payment infeasible');
+    expect(outcome.generated.transactions[0].description).toContain('02-Jul-2024');
+  });
+});
+
+describe('checkSettlementReferences per reference (2026-09-17 audit)', () => {
+  const openBills = [{ party: 'Deccan Traders', ref: 'DT/334', open: 69620, side: 'payable' as const }];
+
+  it('checks the bill next to an advance instead of skipping the whole reference', () => {
+    const batch = auditBatch(
+      ['On 05-Jun-2024, pay Deccan Traders.'],
+      [
+        auditLeg(1, 'Payment', 'Deccan Traders', 'Dr', 50000, { bill_reference: 'ADV-S03 (Advance), Against DT-9999' }),
+        auditLeg(1, 'Payment', 'HDFC Bank — 1234', 'Cr', 50000),
+      ],
+    );
+    expect(checkSettlementReferences(batch, openBills)).toContain('settles "DT-9999"');
+  });
+
+  it('gives a bill raised in the batch its real balance, less what the batch already paid', () => {
+    const batch = auditBatch(
+      ['On 03-Jun-2024, bill VV-556.', 'On 10-Jun-2024, part payment.', 'On 20-Jun-2024, another payment.'],
+      [
+        auditLeg(1, 'Purchase', 'Purchases', 'Dr', 17700),
+        auditLeg(1, 'Purchase', 'Vizag Vendors', 'Cr', 17700, { bill_reference: 'VV-556' }),
+        auditLeg(2, 'Payment', 'Vizag Vendors', 'Dr', 10000, { bill_reference: 'Against VV-556' }),
+        auditLeg(2, 'Payment', 'HDFC Bank — 1234', 'Cr', 10000),
+        auditLeg(3, 'Payment', 'Vizag Vendors', 'Dr', 10000, { bill_reference: 'Against VV-556' }),
+        auditLeg(3, 'Payment', 'HDFC Bank — 1234', 'Cr', 10000),
+      ],
+    );
+    expect(checkSettlementReferences(batch, [])).toContain('transaction 3 pays/receives 10000 against VV-556 for Vizag Vendors, but only 7700');
+  });
+
+  it('checks credit notes, debit notes and journals that settle bills', () => {
+    const batch = auditBatch(
+      ['On 05-Jun-2024, debit note.', 'On 06-Jun-2024, write off.'],
+      [
+        auditLeg(1, 'Debit Note', 'Deccan Traders', 'Dr', 80000, { bill_reference: 'DN-12, Against DT/334' }),
+        auditLeg(1, 'Debit Note', 'Purchase Returns', 'Cr', 80000),
+        auditLeg(2, 'Journal', 'Bad Debts Written Off', 'Dr', 5000),
+        auditLeg(2, 'Journal', 'Delhi Bazaar', 'Cr', 5000, { bill_reference: 'Against INV-404' }),
+      ],
+    );
+    const message = checkSettlementReferences(batch, openBills);
+    expect(message).toContain('transaction 1 pays/receives 80000 against DT/334');
+    expect(message).toContain('transaction 2 allocates a journal against "INV-404"');
+  });
+});
+
+describe('fillBillReferencesFromText word capture (2026-09-17 audit)', () => {
+  const purchase = (description: string) =>
+    auditBatch([description], [auditLeg(1, 'Purchase', 'Advertisement & Marketing', 'Dr', 10000), auditLeg(1, 'Purchase', 'Signage Advertising', 'Cr', 10000)]);
+
+  it('never reads "billboard-advertising" or "inventory-related" as bill numbers', () => {
+    expect(fillBillReferencesFromText(purchase('On 05-Jun-2024, billboard-advertising for inventory-related promotion.')).answer_key.entries[0].bill_reference).toBeNull();
+  });
+
+  it('keeps every bill a line names', () => {
+    const filled = fillBillReferencesFromText(purchase('On 05-Jun-2024, bills SA-101 and SA-102 arrived.'));
+    expect(filled.answer_key.entries[0].bill_reference).toBe('SA-101, SA-102');
+  });
+});
+
+describe('runGenerationChecks shares the hard checks (2026-09-17 audit)', () => {
+  const context = {
+    month: { label: 'June 2024', monthIndex: 5, year: 2024 },
+    cashPosition: { cash: 10000, bank: 100000 },
+    openBills: [],
+    partyTaxClasses: new Map(),
+    priorRefs: new Set<string>(),
+    tdsHistory: new Map(),
+    documentsMode: false,
+    companyName: 'Blossom Retail Pvt Ltd',
+    stateCodeOf: () => '29',
+    payeeTypeOf: () => 'other' as const,
+  };
+
+  it('passes a clean batch and rejects a non-canonical date and a text/key mismatch', () => {
+    const clean = auditBatch(
+      ['On 05-Jun-2024, sell goods to Karnataka Emporium, invoice INV-5001, Rs 10,000 plus CGST Rs 900 and SGST Rs 900, total Rs 11,800.'],
+      [
+        auditLeg(1, 'Sales', 'Karnataka Emporium', 'Dr', 11800, { bill_reference: 'INV-5001' }),
+        auditLeg(1, 'Sales', 'Sales', 'Cr', 10000),
+        auditLeg(1, 'Sales', 'Output CGST', 'Cr', 900, { gst_head: 'CGST', gst_rate: 9 }),
+        auditLeg(1, 'Sales', 'Output SGST', 'Cr', 900, { gst_head: 'SGST', gst_rate: 9 }),
+      ],
+    );
+    expect(runGenerationChecks(clean, context).hard).toEqual([]);
+    const messy = { ...clean, transactions: [{ sequence: 1, description: 'On June 5, 2024, sell goods to Karnataka Emporium, invoice INV-5002, Rs 10,000.' }] };
+    const hard = runGenerationChecks(messy, context).hard.join(' ');
+    expect(hard).toContain('Date format violated');
+    expect(hard).toContain('names INV-5002');
+  });
+});
+
+describe('generateDiagnosticExercise runs the hard checks with retry (2026-09-17 audit)', () => {
+  const good = auditBatch(
+    ['On 03-Apr-2024, receive Rs 5,000 from Delhi Bazaar into the bank.'],
+    [auditLeg(1, 'Receipt', 'HDFC Bank — 1234', 'Dr', 5000), auditLeg(1, 'Receipt', 'Delhi Bazaar', 'Cr', 5000)],
+  );
+  const undated = { ...good, transactions: [{ sequence: 1, description: 'Receive Rs 5,000 from Delhi Bazaar into the bank.' }] };
+
+  it('retries a batch that fails a hard check and persists the one that passes', async () => {
+    const complete = vi.fn().mockResolvedValueOnce(undated).mockResolvedValueOnce(good);
+    const persist = vi.fn().mockResolvedValue({ id: 'exercise-1' });
+    const result = await generateDiagnosticExercise({} as never, 'learner-1', 'licensed', { complete, persist });
+    expect(result).toEqual({ id: 'exercise-1' });
+    expect(complete).toHaveBeenCalledTimes(2);
+    const retryMessages = complete.mock.calls[1][0].messages as { content: string }[];
+    expect(retryMessages.some((message) => message.content.includes('carries no date'))).toBe(true);
+    expect(persist).toHaveBeenCalledWith({}, 'learner-1', good);
+  });
+
+  it('never persists a batch that keeps failing', async () => {
+    const complete = vi.fn().mockResolvedValue(undated);
+    const persist = vi.fn();
+    await expect(generateDiagnosticExercise({} as never, 'learner-1', 'licensed', { complete, persist })).rejects.toThrow('failed validation after 3 attempts');
+    expect(persist).not.toHaveBeenCalled();
+  });
+});

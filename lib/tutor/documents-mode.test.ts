@@ -3,6 +3,7 @@ import type { ConceptTag, GeneratedExercise } from '@/lib/schemas/exercise';
 import {
   applyDocumentsMode,
   checkMonthEndNoteDetails,
+  checkSalesInvoicesBuildable,
   buildSalesInvoiceContent,
   documentTypeForVoucher,
   isDocumentsModeUnlocked,
@@ -115,7 +116,7 @@ describe('buildSalesInvoiceContent', () => {
     expect(content.invoiceNumber).toBe('INV-062');
     expect(content.invoiceDate).toBe('03-Mar-2025');
     expect(content.isCashMemo).toBe(false);
-    expect(content.lineItems).toEqual([{ description: 'Trading goods as per order', quantity: 1, rate: 60000, amount: 60000 }]);
+    expect(content.lineItems).toEqual([{ description: 'Trading goods as per order', quantity: 1, rate: 60000, amount: 60000, hsnSac: 'HSN 6304' }]);
     expect(content.taxBreakup).toEqual({ cgst_amount: 5400, sgst_amount: 5400, igst_amount: null });
     expect(content.totalAmount).toBe(70800);
     expect(content.placeOfSupply).toBe('Karnataka');
@@ -150,6 +151,36 @@ describe('buildSalesInvoiceContent', () => {
     expect(content.buyerName).toBe('Cash (walk-in customer)');
     expect(content.invoiceNumber).toBe('CM-250305-02');
     expect(content.totalAmount).toBe(2360);
+  });
+
+  it('prints the Rule 46 particulars: place of supply code, reverse charge, rate, amount in words (2026-09-17)', () => {
+    const legs = batch().answer_key.entries.filter((e) => e.sequence === 1);
+    const content = buildSalesInvoiceContent(legs, batch().transactions[0].description, COMPANY);
+    expect(content.placeOfSupplyCode).toBe('29');
+    expect(content.reverseCharge).toBe(false);
+    expect(content.taxRatePercent).toBe(18);
+    expect(content.amountInWords).toBe('Rupees Seventy Thousand Eight Hundred Only');
+    expect(content.sellerGSTIN).toBe('29AABCB1234H1Z5');
+  });
+
+  it('gives a customer the same identity whatever GST the sale charges (one party, one GSTIN)', () => {
+    const intra = buildSalesInvoiceContent(batch().answer_key.entries.filter((e) => e.sequence === 1), batch().transactions[0].description, COMPANY);
+    const igstLegs = [
+      leg(8, 'Sales', 'Karnataka Emporium', 'Dr', 70800, { bill_reference: 'INV-063' }),
+      leg(8, 'Sales', 'Sales', 'Cr', 60000, { bill_reference: 'INV-063' }),
+      leg(8, 'Sales', 'Output IGST', 'Cr', 10800, { bill_reference: 'INV-063', gst_head: 'IGST' }),
+    ];
+    const inter = buildSalesInvoiceContent(igstLegs, 'On 04-Mar-2025, you raise Sales Invoice INV-063.', COMPANY);
+    expect(inter.buyerGSTIN).toBe(intra.buyerGSTIN);
+    expect(inter.buyerAddress).toBe(intra.buyerAddress);
+    expect(inter.placeOfSupply).toBe('Karnataka');
+  });
+
+  it('refuses a credit sale with no invoice number of its own instead of printing a CM number (2026-09-17)', () => {
+    const legs = batch().answer_key.entries.filter((e) => e.sequence === 1).map((e) => ({ ...e, bill_reference: null }));
+    expect(() => buildSalesInvoiceContent(legs, batch().transactions[0].description, COMPANY)).toThrow(/credit sale to Karnataka Emporium has no invoice number/);
+    const unnumbered = { ...batch(), answer_key: { entries: batch().answer_key.entries.map((e) => (e.sequence === 1 ? { ...e, bill_reference: null } : e)) } };
+    expect(checkSalesInvoicesBuildable(unnumbered, COMPANY)).toMatch(/no invoice number of its own/);
   });
 
   it('refuses legs that do not add up', () => {

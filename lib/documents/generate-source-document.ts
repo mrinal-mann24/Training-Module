@@ -1,14 +1,10 @@
 import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
-import type { BankStatementContent } from '@/lib/schemas/source-document';
 import {
-  buildBankStatementBatchPrompt,
-  buildBankStatementBatchRetryPrompt,
   buildVendorInvoicePrompt,
   buildVendorInvoiceRetryPrompt,
   deriveInvoiceFigures,
   extractTransactionDate,
   formatInvoiceDate,
-  type BankStatementLineInput,
   type VendorInvoiceFigures,
   type VendorInvoiceInput,
 } from '@/lib/llm/prompts/source-document';
@@ -17,28 +13,30 @@ import {
   type GeneratedSourceDocument,
   type VendorInvoiceContent,
 } from '@/lib/schemas/source-document';
-import { partyDetailsFor } from '@/lib/documents/party-directory';
-import { documentNumberOf } from '@/lib/db/queries/company';
+import type { AnswerKeyEntry, GeneratedExercise } from '@/lib/schemas/exercise';
+import { partyIdentityFor } from '@/lib/documents/party-directory';
+import { COMPANY_DETAILS } from '@/lib/documents/company-details';
+import {
+  amountInWords,
+  formatHsnSac,
+  hsnSacFor,
+  reverseChargeFromLegs,
+  taxRatePercentOf,
+} from '@/lib/documents/gst-invoice-fields';
+import { documentNumberOf, partyLegOf } from '@/lib/db/queries/company';
 
-// The invoice's GST regime, read off the legs: IGST → inter-state,
-// CGST/SGST → intra-state, no GST leg → unknown (the directory decides).
-function interStateOf(legs: VendorInvoiceInput['legs']): boolean | null {
-  const heads = legs.map((leg) => leg.gst_head).filter((head): head is NonNullable<typeof head> => head !== null);
-  if (heads.length === 0) return null;
-  return heads.some((head) => head === 'IGST');
-}
-
-// Vendor identity comes from the party directory, never the model
-// (2026-09-09): the same vendor prints the same GSTIN and address on every
-// invoice, and the address always agrees with the GST charged.
-function stampVendorIdentity(content: VendorInvoiceContent, legs: VendorInvoiceInput['legs']): VendorInvoiceContent {
-  const party = partyDetailsFor(content.vendorName, interStateOf(legs));
-  return { ...content, vendorGSTIN: party.gstin, vendorAddress: party.address };
-}
+// The old LLM-written bank statement path (generateBankStatementDocument,
+// checkBankStatementContent and their prompts) was deleted on 2026-09-17:
+// the statement has been built by code since 2026-09-03
+// (build-bank-statement.ts) and nothing called it any more.
 
 const MAX_ATTEMPTS = 3;
 
 const AMOUNT_TOLERANCE = 0.01;
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 function amountMatches(actual: number | null, expected: number | null): boolean {
   if (expected === null) {
@@ -52,6 +50,46 @@ function sortedAmounts(values: number[]): string {
   return [...values].sort((a, b) => a - b).map((value) => value.toFixed(2)).join('|');
 }
 
+function referenceOf(legs: ReadonlyArray<AnswerKeyEntry>): string | null {
+  return legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
+}
+
+// Credit sales and credit purchases whose key carries no number of their
+// own (2026-09-17). Such a voucher used to print a CM-yymmdd-seq "tax
+// invoice" (sales) or a number the model invented (purchases), which the
+// learner then allocated against and the key could not score. The
+// generation checks call this and reject the batch; the document builders
+// throw on the same condition as a backstop. A cash sale/purchase (no party
+// leg) needs no number: a cash memo is numbered by code.
+export type MissingBillNumber = { sequence: number; voucherType: 'Sales' | 'Purchase'; party: string };
+
+export function missingBillNumbersInLegs(legs: ReadonlyArray<AnswerKeyEntry>): MissingBillNumber | null {
+  if (legs.length === 0) return null;
+  const voucherType = legs[0].voucher_type.trim().toLowerCase();
+  if (voucherType !== 'sales' && voucherType !== 'purchase') return null;
+  const party = partyLegOf([...legs], legs[0].voucher_type);
+  if (!party) return null;
+  if (documentNumberOf(referenceOf(legs))) return null;
+  return {
+    sequence: legs[0].sequence,
+    voucherType: voucherType === 'sales' ? 'Sales' : 'Purchase',
+    party: party.correct_account,
+  };
+}
+
+export function missingBillNumbers(generated: GeneratedExercise): MissingBillNumber[] {
+  const bySequence = new Map<number, AnswerKeyEntry[]>();
+  for (const entry of generated.answer_key.entries) {
+    const legs = bySequence.get(entry.sequence) ?? [];
+    legs.push(entry);
+    bySequence.set(entry.sequence, legs);
+  }
+  return [...bySequence.values()]
+    .map((legs) => missingBillNumbersInLegs(legs))
+    .filter((missing): missing is MissingBillNumber => missing !== null)
+    .sort((a, b) => a.sequence - b.sequence);
+}
+
 // A goods purchase may print several stock lines (cotton, polyester) that all
 // post to Purchases. A service or expense bill may not: Praveen posted
 // MA/206's two printed lines ("Professional consultation 10,000", "Audit and
@@ -59,6 +97,8 @@ function sortedAmounts(values: number[]): string {
 // and was scored AMOUNT_WRONG + ACCOUNT_WRONG against a key with one
 // 15,000 leg (2026-09-04). One expense leg, one printed line.
 const GOODS_ACCOUNT_PATTERN = /\b(purchase|purchases|goods|stock|material|materials|inventory)\b/i;
+
+const ROUND_OFF_PATTERN = /round(?:ing)?[\s-]*off/i;
 
 function singleLineRequired(figures: VendorInvoiceFigures): boolean {
   return figures.baseLines.length === 1 && !GOODS_ACCOUNT_PATTERN.test(figures.baseLines[0].account);
@@ -116,12 +156,20 @@ export function alignLineItemsToLegs(content: VendorInvoiceContent, figures: Ven
   return { ...content, lineItems };
 }
 
-// Deterministic figure/date validation for a generated invoice — the same
-// role the line-count check plays for the bank statement. Every delivered
-// invoice in the first live intern batches contradicted its answer key
-// (wrong totals, missing IGST, all dated "2024-01-15"); with this check a
-// document-vs-answer-key contradiction can no longer be rendered at all.
-// Exported for tests.
+// The printed invoice number compared honestly (2026-09-17): trimmed,
+// whitespace-collapsed, case-insensitive, and nothing else. Stripping every
+// punctuation mark accepted "INV-10-1" for "INV-1-01".
+function sameDocumentNumber(printed: string, expected: string): boolean {
+  const canonical = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase();
+  return canonical(printed) === canonical(expected);
+}
+
+// Deterministic figure/date validation for a generated invoice. Every
+// delivered invoice in the first live intern batches contradicted its answer
+// key (wrong totals, missing IGST, all dated "2024-01-15"); with this check a
+// document-vs-answer-key contradiction is retried. Whatever passes is then
+// overwritten from the key anyway (stampVendorInvoiceFromKey), so the model
+// only ever contributes line wording. Exported for tests.
 export function checkVendorInvoiceContent(
   content: VendorInvoiceContent,
   input: VendorInvoiceInput,
@@ -179,12 +227,9 @@ export function checkVendorInvoiceContent(
   // and the key scores (2026-09-11): a different number on the paper would
   // fail every settlement that quotes it.
   // Its own number, never the advance the bill adjusts (2026-09-15).
-  const expectedNumber = documentNumberOf(input.legs.find((leg) => leg.bill_reference)?.bill_reference);
-  if (expectedNumber) {
-    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalize(content.invoiceNumber) !== normalize(expectedNumber)) {
-      violations.push(`invoiceNumber is "${content.invoiceNumber}" but must be exactly "${expectedNumber}".`);
-    }
+  const expectedNumber = documentNumberOf(referenceOf(input.legs));
+  if (expectedNumber && !sameDocumentNumber(content.invoiceNumber, expectedNumber)) {
+    violations.push(`invoiceNumber is "${content.invoiceNumber}" but must be exactly "${expectedNumber}".`);
   }
 
   return violations.length > 0 ? violations.join(' ') : null;
@@ -199,6 +244,79 @@ function isoDate(value: string): { day: number; monthIndex: number; year: number
     : null;
 }
 
+type LineItem = VendorInvoiceContent['lineItems'][number];
+
+// Quantity × rate must equal the amount the line prints; a line that does
+// not multiply out becomes 1 × amount.
+function consistentLine(item: LineItem): LineItem {
+  const amount = round2(item.amount);
+  const multiplies = item.quantity > 0 && Math.abs(item.quantity * item.rate - amount) < AMOUNT_TOLERANCE;
+  return multiplies ? { ...item, amount } : { ...item, quantity: 1, rate: amount, amount };
+}
+
+// Everything the PDF prints comes from the key or from code (2026-09-17):
+// vendor name (the key's party ledger), GSTIN and address (that party's one
+// identity), bill number, date, every figure, and the Rule 46 particulars.
+// The model's content survives only as line wording, after it passed
+// checkVendorInvoiceContent. Exported for tests.
+export function stampVendorInvoiceFromKey(content: VendorInvoiceContent, input: VendorInvoiceInput): VendorInvoiceContent {
+  const figures = deriveInvoiceFigures(input.legs);
+  const vendor = partyIdentityFor(figures.vendorAccount);
+  const date = extractTransactionDate(input.transactionDescription);
+  const legLines = figures.baseLines.filter((line) => !ROUND_OFF_PATTERN.test(line.account));
+
+  let lineItems: LineItem[];
+  if (legLines.length >= 2 || (legLines.length === 1 && singleLineRequired(figures))) {
+    // One printed line per expense leg, the leg's own amount; the wording of
+    // the model line carrying that amount is kept.
+    const unclaimed = [...content.lineItems];
+    lineItems = legLines.map((line) => {
+      const index = unclaimed.findIndex((item) => Math.abs(item.amount - line.amount) < AMOUNT_TOLERANCE);
+      const description = index === -1 ? line.account : unclaimed.splice(index, 1)[0].description;
+      const amount = round2(line.amount);
+      return { description, quantity: 1, rate: amount, amount, hsnSac: formatHsnSac(hsnSacFor(line.account)) };
+    });
+  } else {
+    // One goods leg (several stock lines allowed, their sum already checked)
+    // or a single-leg key: the model's lines, made to multiply out.
+    const hsnSac = legLines.length === 1 ? formatHsnSac(hsnSacFor(legLines[0].account)) : undefined;
+    lineItems = content.lineItems
+      .filter((item) => !ROUND_OFF_PATTERN.test(item.description))
+      .map((item) => ({ ...consistentLine(item), ...(hsnSac ? { hsnSac } : {}) }));
+  }
+
+  const cgst = figures.cgst === null ? null : round2(figures.cgst);
+  const sgst = figures.sgst === null ? null : round2(figures.sgst);
+  const igst = figures.igst === null ? null : round2(figures.igst);
+  const total = round2(figures.total);
+  const taxable = round2(lineItems.reduce((sum, item) => sum + item.amount, 0));
+  const hasRoundOff = input.legs.some((leg) => ROUND_OFF_PATTERN.test(leg.correct_account));
+  const roundOff = hasRoundOff ? round2(total - taxable - (cgst ?? 0) - (sgst ?? 0) - (igst ?? 0)) : null;
+
+  return {
+    vendorName: figures.vendorAccount,
+    vendorGSTIN: vendor.gstin,
+    vendorAddress: vendor.address,
+    // A credit purchase always has the key's number (generateVendorInvoiceDocument
+    // refuses otherwise); a cash purchase keeps the model's.
+    invoiceNumber: documentNumberOf(referenceOf(input.legs)) ?? content.invoiceNumber.trim(),
+    invoiceDate: date ? formatInvoiceDate(date) : content.invoiceDate,
+    lineItems,
+    taxBreakup: { cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst },
+    totalAmount: total,
+    ...(roundOff !== null ? { roundOff } : {}),
+    buyerName: input.companyName ?? COMPANY_DETAILS.name,
+    buyerGSTIN: COMPANY_DETAILS.gstin,
+    buyerAddress: COMPANY_DETAILS.address,
+    // Goods and services received at our Karnataka premises.
+    placeOfSupply: COMPANY_DETAILS.state,
+    placeOfSupplyCode: COMPANY_DETAILS.stateCode,
+    reverseCharge: reverseChargeFromLegs(input.legs),
+    taxRatePercent: taxRatePercentOf(taxable, { cgst, sgst, igst }),
+    amountInWords: amountInWords(total),
+  };
+}
+
 // Generates one vendor invoice, grounded on the transaction's complete leg
 // set + description and validated figure-by-figure against them. Same
 // bounded validate-and-retry pattern as every LLM call in this codebase.
@@ -206,6 +324,13 @@ export async function generateVendorInvoiceDocument(
   learnerId: string,
   input: VendorInvoiceInput,
 ): Promise<GeneratedSourceDocument> {
+  const missing = missingBillNumbersInLegs(input.legs);
+  if (missing) {
+    throw new Error(
+      `Vendor invoice for transaction ${missing.sequence}: the key gives the credit purchase from ${missing.party} no bill number of its own, and a number the model invents could never be allocated against.`,
+    );
+  }
+
   let lastError: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -240,7 +365,7 @@ export async function generateVendorInvoiceDocument(
         lastError = figureError;
         continue;
       }
-      return { ...parsed.data, content: stampVendorIdentity(content, input.legs) };
+      return { doc_type: 'vendor_invoice', content: stampVendorInvoiceFromKey(content, input) };
     }
 
     lastError = parsed.error.message;
@@ -248,161 +373,5 @@ export async function generateVendorInvoiceDocument(
 
   throw new Error(
     `Vendor invoice generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
-  );
-}
-
-// Generates ONE combined bank statement for all of a batch's bank-side
-// transactions — a real statement is a single period document listing every
-// movement, never one PDF per transaction (live intern feedback,
-// 2026-09-01). Same bounded validate-and-retry pattern as above; the result
-// is additionally checked to carry exactly one line per input transaction so
-// a statement that silently drops or invents lines is retried, not rendered.
-// The statement must carry what the answer key expects the learner to read
-// off it. Live 2026-09-02 (Praveen, Level 2): the key demanded bill reference
-// "KE/2026/018" on a receipt, but the statement line only said
-// "NEFT/N26050114/KARNATAKA EMPORIUM/RCP" — the number existed nowhere the
-// learner could see, so a correct posting was BILL_REFERENCE_WRONG and the
-// coaching quoted an invisible invoice back at him. Each key transaction must
-// map to exactly one statement line on the right side, for the right amount,
-// on its own date, whose narration contains the bill reference (annotations
-// like "(part payment, …)" and the "Against" prefix are not part of the ref).
-const BANK_LEDGER_PATTERN = /\b(bank|hdfc|icici|sbi|axis|kotak)\b/i;
-
-function normalizeToken(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function billReferenceTokens(billReference: string): string[] {
-  // Parentheticals are stripped BEFORE splitting: "KE/2026/018 (part payment,
-  // ₹30,000 balance outstanding)" carries a comma inside the annotation, and
-  // splitting first shredded it into non-references (caught by the test).
-  return billReference
-    .replace(/\([^)]*\)/g, '')
-    .split(/[,;]/)
-    .map((ref) => ref.replace(/^\s*against\s+/i, ''))
-    .map(normalizeToken)
-    .filter((ref) => ref.length > 0);
-}
-
-function statementSideFor(entry: BankStatementLineInput['entry']): 'debit' | 'credit' {
-  // Money direction from the bank's statement: bank leg Dr = money in
-  // (credit on the statement), bank leg Cr = money out (debit). The flagged
-  // entry may be the bank leg itself or its counter-leg.
-  const bankLegIsDebit = BANK_LEDGER_PATTERN.test(entry.correct_account)
-    ? entry.dr_cr === 'Dr'
-    : entry.dr_cr === 'Cr';
-  return bankLegIsDebit ? 'credit' : 'debit';
-}
-
-export function checkBankStatementContent(
-  content: BankStatementContent,
-  lines: BankStatementLineInput[],
-): string | null {
-  const violations: string[] = [];
-  const claimed = new Set<number>();
-
-  for (const line of lines) {
-    const side = statementSideFor(line.entry);
-    const index = content.transactions.findIndex((transaction, i) => {
-      if (claimed.has(i)) {
-        return false;
-      }
-      const amount = side === 'debit' ? transaction.debit : transaction.credit;
-      return amount !== null && Math.abs(amount - line.entry.amount) < AMOUNT_TOLERANCE;
-    });
-    if (index === -1) {
-      violations.push(
-        `Exercise item ${line.entry.sequence} needs a statement line with ${side} exactly ${line.entry.amount} (and the other column null), but none was found.`,
-      );
-      continue;
-    }
-    claimed.add(index);
-    const transaction = content.transactions[index];
-
-    const expectedDate = extractTransactionDate(line.transactionDescription);
-    if (expectedDate) {
-      const printed = extractTransactionDate(transaction.date) ?? isoDate(transaction.date);
-      if (
-        !printed ||
-        printed.year !== expectedDate.year ||
-        printed.monthIndex !== expectedDate.monthIndex ||
-        printed.day !== expectedDate.day
-      ) {
-        violations.push(
-          `Exercise item ${line.entry.sequence}'s statement line is dated "${transaction.date}" but must be dated exactly "${formatInvoiceDate(expectedDate)}" (the transaction's own date).`,
-        );
-      }
-    }
-
-    if (line.entry.bill_reference) {
-      const narration = normalizeToken(transaction.narration);
-      const missing = billReferenceTokens(line.entry.bill_reference).filter((ref) => !narration.includes(ref));
-      if (missing.length > 0) {
-        violations.push(
-          `Exercise item ${line.entry.sequence}'s narration "${transaction.narration}" must contain the bill reference "${line.entry.bill_reference}" verbatim (the learner can only allocate against a reference they can see).`,
-        );
-      }
-    }
-  }
-
-  return violations.length === 0 ? null : violations.join(' ');
-}
-
-export async function generateBankStatementDocument(
-  learnerId: string,
-  lines: BankStatementLineInput[],
-  // The statement's account holder — pinned to the learner's real company so
-  // the PDF never invents one (live 2026-09-01: "Bank Statement — ABC
-  // Trading Co." on a Blossom Retail batch).
-  companyName: string,
-): Promise<GeneratedSourceDocument> {
-  let lastError: string | null = null;
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { messages, jsonSchema } =
-      lastError === null
-        ? buildBankStatementBatchPrompt(lines, companyName)
-        : buildBankStatementBatchRetryPrompt(lines, companyName, lastError);
-
-    const raw = await getTracedStructuredCompletion({
-      messages,
-      jsonSchema,
-      traceName: 'source-document-generation',
-      learnerId,
-      callType: 'source-document-generation',
-      // Documents are simple structured content — a faster model (set via
-      // OPENROUTER_DOCUMENT_MODEL) cuts the batch tail dramatically; falls
-      // back to the main OPENROUTER_MODEL when unset.
-      model: process.env.OPENROUTER_DOCUMENT_MODEL,
-      extraMetadata: {
-        docType: 'bank_statement',
-        transactionSequences: lines.map((line) => line.entry.sequence).join(','),
-      },
-    });
-
-    const parsed = GeneratedSourceDocumentSchema.safeParse(raw);
-
-    if (parsed.success) {
-      if (parsed.data.doc_type !== 'bank_statement') {
-        lastError = `Expected doc_type "bank_statement", got "${parsed.data.doc_type}".`;
-        continue;
-      }
-      if (parsed.data.content.transactions.length !== lines.length) {
-        lastError = `The statement has ${parsed.data.content.transactions.length} line(s) but ${lines.length} transaction(s) were provided — produce exactly one statement line per listed transaction.`;
-        continue;
-      }
-      const contentError = checkBankStatementContent(parsed.data.content, lines);
-      if (contentError) {
-        lastError = contentError;
-        continue;
-      }
-      return parsed.data;
-    }
-
-    lastError = parsed.error.message;
-  }
-
-  throw new Error(
-    `Bank statement generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
   );
 }

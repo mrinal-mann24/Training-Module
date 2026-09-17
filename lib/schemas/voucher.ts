@@ -6,6 +6,10 @@ export type DrOrCr = (typeof DR_CR_VALUES)[number];
 const BillAllocationSchema = z.object({
   name: z.string(),
   amount: z.number(),
+  // Tally's BILLTYPE ("New Ref", "Agst Ref", "Advance", "On Account"),
+  // additive 2026-09-17. Absent when the export carries no BILLTYPE tag
+  // (hand-built fixtures, older exports); the scorer never fails on it.
+  billType: z.string().optional(),
 });
 export type BillAllocation = z.infer<typeof BillAllocationSchema>;
 

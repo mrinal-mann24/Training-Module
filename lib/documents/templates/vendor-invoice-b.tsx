@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Format B — "boxed classic": Times-Roman, full outer border, centered
 // letterhead, ruled column grid. Same VendorInvoiceContent as every other
@@ -166,6 +167,7 @@ export function VendorInvoiceDocumentB({ content }: Props) {
             </View>
           </View>
 
+          <VendorInvoiceParticulars content={content} />
           <View style={styles.footerRow}>
             <Text>E. &amp; O.E.</Text>
             <Text>For {content.vendorName}, Authorised Signatory</Text>

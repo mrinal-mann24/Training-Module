@@ -35,7 +35,20 @@ const VendorInvoiceLineItemSchema = z.object({
   quantity: z.number(),
   rate: z.number(),
   amount: z.number(),
+  // Rule 46 (2026-09-17): "HSN 6304" / "SAC 997212", set by code from the
+  // ledger (lib/documents/gst-invoice-fields.ts). Optional so stored
+  // documents from before still parse and re-render.
+  hsnSac: z.string().optional(),
 });
+
+// Rule 46 particulars shared by both invoice kinds (2026-09-17). All
+// optional: documents stored before this still parse and render as before.
+const GstParticularsSchema = {
+  placeOfSupplyCode: z.string().optional(),
+  reverseCharge: z.boolean().optional(),
+  taxRatePercent: z.number().nullable().optional(),
+  amountInWords: z.string().optional(),
+};
 
 // Raw stated figures as they'd appear printed on the invoice — not a
 // classification. A learner still has to determine CGST+SGST vs. IGST
@@ -58,6 +71,14 @@ export const VendorInvoiceContentSchema = z.object({
   lineItems: z.array(VendorInvoiceLineItemSchema).min(1),
   taxBreakup: TaxBreakupSchema,
   totalAmount: z.number(),
+  // Stamped by code after generation (2026-09-17): the recipient block (our
+  // company), place of supply, and a round-off line when the key posts one.
+  buyerName: z.string().optional(),
+  buyerGSTIN: z.string().optional(),
+  buyerAddress: z.string().optional(),
+  placeOfSupply: z.string().optional(),
+  roundOff: z.number().nullable().optional(),
+  ...GstParticularsSchema,
 });
 export type VendorInvoiceContent = z.infer<typeof VendorInvoiceContentSchema>;
 
@@ -94,6 +115,7 @@ export const SalesInvoiceContentSchema = z.object({
   lineItems: z.array(VendorInvoiceLineItemSchema).min(1),
   taxBreakup: TaxBreakupSchema,
   totalAmount: z.number(),
+  ...GstParticularsSchema,
 });
 export type SalesInvoiceContent = z.infer<typeof SalesInvoiceContentSchema>;
 

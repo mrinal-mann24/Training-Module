@@ -20,6 +20,10 @@ export type BuiltBankStatement = {
   referenceBySequence: Map<number, string>;
 };
 
+// Separator between the several bills one bank movement settles, in both the
+// statement narration and the key narration.
+export const BILL_SEPARATOR = ' & ';
+
 type BankMovement = {
   sequence: number;
   date: { day: number; monthIndex: number; year: number };
@@ -32,10 +36,15 @@ type BankMovement = {
 
 const CASH_LEDGER_PATTERN = /^cash\b|cash-in-hand/i;
 
+// "&" is spelled AND (2026-09-17): the statement uses " & " only to separate
+// the bills one movement settles, and the scorer's reference pattern
+// (score-submission.ts KEY_BANK_REFERENCE) has no "&" in its character
+// class, so "MEHTA & ASSOCIATES" left the whole narration unrecognised.
 function counterpartyCode(name: string): string {
   return name
     .toUpperCase()
-    .replace(/[^A-Z0-9 &]/g, ' ')
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 24);
@@ -103,8 +112,10 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
       voucherType: legs[0].voucher_type,
       party: party?.correct_account ?? null,
       // Every bill the movement settles (a multi-bill payment names each
-      // one, rulebook 6.4), joined so the narration regex still reads it.
-      billReference: reference ? (splitBillReferences(reference).join('/') || null) : null,
+      // one, rulebook 6.4). Joined with " & " (2026-09-17): "/" made
+      // "MS/990/MS/991" unreadable as two bills, since references carry "/"
+      // themselves. The bills are the final segment after the party.
+      billReference: reference ? (splitBillReferences(reference).join(BILL_SEPARATOR) || null) : null,
     });
   }
 
@@ -118,10 +129,19 @@ export function collectBankMovements(generated: GeneratedExercise): BankMovement
 // ONE statement covering every bank movement in the batch (a real statement
 // lists everything, and the balance column only holds if nothing is
 // skipped), walked from the company's real opening bank balance.
+//
+// Never a negative balance (2026-09-17 audit): the rows are sorted by date,
+// then sequence, and the generator's feasibility walk now uses the same
+// order after the month-end journals and redating, so a batch that passed
+// cannot print an overdraft here. The company has no overdraft facility; a
+// negative row is a generation bug, so it throws instead of printing a
+// statement no bank would issue. Pass overdraftAllowed only for an account
+// that really is an OD/CC account.
 export function buildBankStatementContent(params: {
   companyName: string;
   openingBankBalance: number;
   generated: GeneratedExercise;
+  overdraftAllowed?: boolean;
 }): BuiltBankStatement | null {
   const movements = collectBankMovements(params.generated);
   if (movements.length === 0) {
@@ -134,6 +154,11 @@ export function buildBankStatementContent(params: {
     const reference = bankReferenceFor(movement);
     referenceBySequence.set(movement.sequence, reference);
     balance = round2(balance + (movement.inflow ? movement.amount : -movement.amount));
+    if (balance < -0.005 && !params.overdraftAllowed) {
+      throw new Error(
+        `Bank statement would go negative (${balance}) at transaction ${movement.sequence} on ${formatInvoiceDate(movement.date)}; the account has no overdraft.`,
+      );
+    }
     return {
       date: formatInvoiceDate(movement.date),
       narration: reference,

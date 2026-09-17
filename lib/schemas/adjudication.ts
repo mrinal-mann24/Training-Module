@@ -13,6 +13,10 @@ import { SCORED_FIELDS } from '@/lib/schemas/scoring';
 export const AdjudicationVerdictSchema = z.object({
   sequence: z.number().int().positive(),
   field: z.enum(SCORED_FIELDS),
+  // The expected leg an account finding is about (2026-09-17): dismissals
+  // are keyed per leg, so excusing one leg's naming never clears another
+  // leg of the same transaction. Null for voucher-level fields.
+  leg: z.number().int().nonnegative().nullable().optional(),
   verdict: z.enum(['uphold', 'dismiss']),
   // Internal-only: stored nowhere learner-facing; exists so a human reviewing
   // traces can audit why a finding was dismissed.

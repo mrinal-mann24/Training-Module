@@ -345,3 +345,55 @@ describe('educational post-generation pipeline produces only allowed dates', () 
     }
   });
 });
+
+// ---------------------------------------------------------------- 2026-09-17 audit
+
+import { checkCanonicalDateFormat, dateTokensIn } from './educational-dates';
+
+describe('identifiers are never redated (2026-09-17 audit)', () => {
+  it('leaves date-shaped runs inside document numbers alone', () => {
+    const text = 'On 15-Jun-2024, bills MS/12/06/2024, KE/15-06-2024 and INV-12-Jun-2024 arrived, and Invoice No. 17 Jun 2024.';
+    expect(redateDescription(text, JUNE_2024)).toBe(
+      'On 02-Jun-2024, bills MS/12/06/2024, KE/15-06-2024 and INV-12-Jun-2024 arrived, and Invoice No. 17 Jun 2024.',
+    );
+    expect(dateTokensIn(text).filter((token) => token.embedded)).toHaveLength(4);
+  });
+});
+
+describe('other date shapes are recognised and redated (2026-09-17 audit)', () => {
+  it('handles "5th June 2024", "June 5, 2024", "2024-06-05", "05.06.2024" and "15/06/24"', () => {
+    expect(redateDescription('On 5th June 2024, paid.', JUNE_2024)).toBe('On 2nd June 2024, paid.');
+    expect(redateDescription('On June 5, 2024, paid.', JUNE_2024)).toBe('On June 2, 2024, paid.');
+    expect(redateDescription('On 2024-06-05, paid.', JUNE_2024)).toBe('On 2024-06-02, paid.');
+    expect(redateDescription('On 05.06.2024, paid.', JUNE_2024)).toBe('On 02.06.2024, paid.');
+    expect(redateDescription('On 15/06/24, paid.', JUNE_2024)).toBe('On 02/06/24, paid.');
+  });
+
+  it('asserts over the scenario prose and the narrations too', () => {
+    const batch = batchOf(['On 01-May-2024, contra.']);
+    const withProse: GeneratedExercise = {
+      ...batch,
+      scenario: 'Month opens with a note dated 15-May-2024.',
+      answer_key: { ...batch.answer_key, entries: batch.answer_key.entries.map((entry) => ({ ...entry, narration: 'Deposited on 20-May-2024.' })) },
+    };
+    const message = checkEducationalDates(withProse, MAY_2024);
+    expect(message).toContain('the scenario is dated 15-May-2024');
+    expect(message).toContain('the narration of transaction 1 is dated 20-May-2024');
+    const redated = enforceEducationalDates(withProse, MAY_2024);
+    expect(redated.scenario).toContain('02-May-2024');
+    expect(redated.answer_key.entries[0].narration).toBe('Deposited on 31-May-2024.');
+  });
+});
+
+describe('checkCanonicalDateFormat (2026-09-17 audit)', () => {
+  it('accepts DD-Mon-YYYY only and rejects dates inside identifiers', () => {
+    expect(checkCanonicalDateFormat(batchOf(['On 05-Jun-2024, paid.', 'On 5-Jun-2024, paid.']))).toBeNull();
+    const message = checkCanonicalDateFormat(
+      batchOf(['On June 5, 2024, paid.', 'On 05/06/2024, paid.', 'On 05-Jun-2024, bill MS/12/06/2024.'], 'Batch dated 2024-06-01.'),
+    );
+    expect(message).toContain('transaction 1 writes the date "June 5, 2024"');
+    expect(message).toContain('transaction 2 writes the date "05/06/2024"');
+    expect(message).toContain('transaction 3 has a date inside an identifier');
+    expect(message).toContain('the scenario writes the date "2024-06-01"');
+  });
+});

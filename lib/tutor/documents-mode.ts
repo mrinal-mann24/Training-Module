@@ -10,7 +10,8 @@ import {
 import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
 import { COMPANY_DETAILS } from '@/lib/documents/company-details';
 import { buildSalesRegisterContent } from '@/lib/documents/build-sales-register';
-import { partyDetailsFor } from '@/lib/documents/party-directory';
+import { partyIdentityFor } from '@/lib/documents/party-directory';
+import { amountInWords, formatHsnSac, hsnSacFor, reverseChargeFromLegs, taxRatePercentOf } from '@/lib/documents/gst-invoice-fields';
 
 // Documents mode (2026-09-09). Once a learner has mastered enough concepts,
 // a batch stops spelling entries out in text: every transaction is
@@ -132,7 +133,7 @@ export function checkSalesInvoicesBuildable(generated: GeneratedExercise, compan
     }
   }
   if (problems.length === 0) return null;
-  return `Sales invoices cannot be printed from the key: ${problems.join(' ')} Give every sale a date, one debited customer (or Cash) leg, credited sales lines and GST legs that add up to the customer total; put a discount or round-off inside the line amounts.`;
+  return `Sales invoices cannot be printed from the key: ${problems.join(' ')} Give every sale a date, one debited customer (or Cash) leg, credited sales lines and GST legs that add up to the customer total; put a discount or round-off inside the line amounts; give every credit sale its own invoice number in bill_reference.`;
 }
 
 function counterpartyOf(legs: Entry[], voucherType: string): string | null {
@@ -190,10 +191,27 @@ export function buildSalesInvoiceContent(
 
   const isCashMemo = CASH_LEDGER_PATTERN.test(party.correct_account);
   const stamp = `${String(date.year).slice(-2)}${String(date.monthIndex + 1).padStart(2, '0')}${String(date.day).padStart(2, '0')}`;
-  // Buyer block from the party directory (2026-09-09): a fixed address and
-  // GSTIN per customer, in a state that agrees with the GST charged. A
+  // The invoice's own number, never the advance it adjusts (Praveen's June:
+  // "ADV-C01 (Advance), INV-3001" printed as ADV-C01).
+  // Only a true cash sale is numbered by code (2026-09-17): a credit sale
+  // with no number used to print as a Tax Invoice "CM-yymmdd-seq", a number
+  // the learner then allocated the receipt against and the key never knew.
+  const ownNumber = documentNumberOf(referenceOf(legs));
+  if (!isCashMemo && !ownNumber) {
+    throw new Error(`Sales invoice for transaction ${sequence}: the credit sale to ${party.correct_account} has no invoice number of its own in the key.`);
+  }
+  // Buyer block from the customer's one identity (2026-09-17): the same
+  // GSTIN, state and address in every month, whatever GST the sale charges
+  // (the generation checks keep the tax head consistent with the state). A
   // walk-in cash sale has no buyer details and is supplied in our own state.
-  const buyer = isCashMemo ? null : partyDetailsFor(party.correct_account, igst !== null);
+  const buyer = isCashMemo ? null : partyIdentityFor(party.correct_account);
+  const lineItems = baseLegs.map((leg) => ({
+    description: lineDescriptionFor(leg.correct_account, options.serviceSupply === true),
+    quantity: 1,
+    rate: round2(leg.amount),
+    amount: round2(leg.amount),
+    ...optionalHsnSac(leg.correct_account, options.serviceSupply === true),
+  }));
   return {
     sellerName: companyName,
     sellerGSTIN: COMPANY_DETAILS.gstin,
@@ -202,20 +220,23 @@ export function buildSalesInvoiceContent(
     buyerAddress: buyer?.address,
     buyerGSTIN: buyer?.gstin ?? null,
     placeOfSupply: buyer?.state ?? COMPANY_DETAILS.state,
-    // The invoice's own number, never the advance it adjusts (Praveen's June:
-    // "ADV-C01 (Advance), INV-3001" printed as ADV-C01).
-    invoiceNumber: documentNumberOf(referenceOf(legs)) ?? `CM-${stamp}-${String(sequence).padStart(2, '0')}`,
+    placeOfSupplyCode: buyer?.stateCode ?? COMPANY_DETAILS.stateCode,
+    invoiceNumber: ownNumber ?? `CM-${stamp}-${String(sequence).padStart(2, '0')}`,
     invoiceDate: formatInvoiceDate(date),
     isCashMemo,
-    lineItems: baseLegs.map((leg) => ({
-      description: lineDescriptionFor(leg.correct_account, options.serviceSupply === true),
-      quantity: 1,
-      rate: round2(leg.amount),
-      amount: round2(leg.amount),
-    })),
+    lineItems,
     taxBreakup: { cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst },
     totalAmount: total,
+    // Rule 46 particulars (2026-09-17).
+    reverseCharge: reverseChargeFromLegs(legs),
+    taxRatePercent: taxRatePercentOf(base, { cgst, sgst, igst }),
+    amountInWords: amountInWords(total),
   };
+}
+
+function optionalHsnSac(account: string, serviceSupply: boolean): { hsnSac?: string } {
+  const code = formatHsnSac(hsnSacFor(account, { serviceSupply }));
+  return code ? { hsnSac: code } : {};
 }
 
 // The learner-facing line for a document-backed transaction: date, party,

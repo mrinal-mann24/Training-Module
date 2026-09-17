@@ -5,6 +5,11 @@
 // Rulebook, replacing the placeholder that stood in for it until
 // 2026-08-19. Regenerate by re-running the extraction against a new
 // Rulebook version; do not hand-edit the string.
+// One exception (2026-09-17): the worked examples' 2026-style references
+// (N26..., OS/26/450, Jul-26, JV-2607-...) were re-dated to 2024 to match the
+// re-dated training pack, so grounded hints and Q&A that quote them do not
+// point learners at a year their books never contain. Re-apply after any
+// re-extraction.
 export const RULEBOOK_TEXT = `Karbon VA — House Practices Rulebook
 v0.2 — full rebuild
 Standard practices for Virtual Accountant team members. All new joiners are expected to follow these unless explicitly overridden by the reviewer. This document is the seed for the coaching-loop rulebook — Claude coaches interns against these rules during bootcamp and beyond.
@@ -141,9 +146,9 @@ Per-voucher-type standard
 Voucher type
 What narration must add
 Payment / Receipt / Contra
-Bank statement narration (paste verbatim) + party name. Example: NEFT/N26041501/DECCAN/PMT — Deccan Traders. For cash: Cash — <party>. Party is kept even when redundant with ledger — protects the direct-expense case where no Creditor holds party name.
+Bank statement narration (paste verbatim) + party name. Example: NEFT/N24041501/DECCAN/PMT — Deccan Traders. For cash: Cash — <party>. Party is kept even when redundant with ledger — protects the direct-expense case where no Creditor holds party name.
 Journal (F7)
-The 'why' of the adjustment. If correction, cite original voucher #. Example: Salary payable for Jul-26 — not yet paid / Reversing JV-2607-0034 — wrong TDS section applied.
+The 'why' of the adjustment. If correction, cite original voucher #. Example: Salary payable for Jul-24 — not yet paid / Reversing JV-2407-0034 — wrong TDS section applied.
 Sales / Purchase / Credit Note / Debit Note
 Nature (if not in stock item) + PO ref / unusual commercial term. Skip entirely if standard entry.
 Narration must NOT be:
@@ -198,43 +203,43 @@ Four cases. All use standard Payment (F5) voucher with bill-by-bill Against Ref.
 Account
 Dr
 Cr
-Om Suppliers A/c (Against Ref: OS/26/450)
+Om Suppliers A/c (Against Ref: OS/24/450)
 35,000
 HDFC Bank — 1234 A/c
 35,000
-Narration: NEFT/N26070298765/OMSUPP — Om Suppliers
+Narration: NEFT/N24070298765/OMSUPP — Om Suppliers
 6.2 Case 2 — Normal payment, WITH TDS (booked at Purchase entry earlier)
 Vendor ledger holds net amount already. Pay net.
 Account
 Dr
 Cr
-CA Rakesh & Co A/c (Against Ref: CA/26/045)
+CA Rakesh & Co A/c (Against Ref: CA/24/045)
 81,000
 HDFC Bank A/c
 81,000
-Narration: NEFT/N26070345678/CARAKESH — CA Rakesh & Co
+Narration: NEFT/N24070345678/CARAKESH — CA Rakesh & Co
 6.3 Case 3 — Partial payment
 Account
 Dr
 Cr
-Om Suppliers A/c (Against Ref: OS/26/450)
+Om Suppliers A/c (Against Ref: OS/24/450)
 25,000
 HDFC Bank A/c
 25,000
-Narration: NEFT/N26070312345/OMSUPP — Om Suppliers — part payment
+Narration: NEFT/N24070312345/OMSUPP — Om Suppliers — part payment
 6.4 Case 4 — Multiple bills, single payment
 Account
 Dr
 Cr
-Om Suppliers A/c (Against Ref: OS/26/440)
+Om Suppliers A/c (Against Ref: OS/24/440)
 30,000
-Om Suppliers A/c (Against Ref: OS/26/450)
+Om Suppliers A/c (Against Ref: OS/24/450)
 40,000
-Om Suppliers A/c (Against Ref: OS/26/455)
+Om Suppliers A/c (Against Ref: OS/24/455)
 30,000
 HDFC Bank A/c
 1,00,000
-Narration: NEFT/N26070312345/OMSUPP — Om Suppliers — 3 bills
+Narration: NEFT/N24070312345/OMSUPP — Om Suppliers — 3 bills
 House rule: even in a single payment across bills, each allocation must reference its own bill. Do not merge into a single 'on account' credit.
 7. Receipt against sales invoice
 Mirror of payments. Same discipline.
@@ -459,7 +464,7 @@ HDFC Bank A/c
 1,00,000
 Narration: NEFT/26042401/BHARATMAC — Bharat Machinery Ltd — advance for equipment order
 Step 2 — Purchase voucher when bill is received (F9)
-Bill BM/26/012 for ₹5,90,000 (Machinery ₹5,00,000 + Input CGST ₹45,000 + Input SGST ₹45,000):
+Bill BM/24/012 for ₹5,90,000 (Machinery ₹5,00,000 + Input CGST ₹45,000 + Input SGST ₹45,000):
 Account
 Dr
 Cr
@@ -469,7 +474,7 @@ Input CGST @9% A/c
 45,000
 Input SGST @9% A/c
 45,000
-Bharat Machinery A/c (Against Ref ADV-01 ₹1,00,000 + New Ref BM/26/012 ₹4,90,000)
+Bharat Machinery A/c (Against Ref ADV-01 ₹1,00,000 + New Ref BM/24/012 ₹4,90,000)
 5,90,000
 End position: Advance cleared. Creditor outstanding ₹4,90,000. Input GST claimed ₹90,000. Machinery capitalised. No JV.
 10.2 TDS on advance paid (for services with TDS applicable)

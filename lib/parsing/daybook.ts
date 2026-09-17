@@ -19,6 +19,11 @@ function decodeTallyXml(buffer: Buffer): string {
 const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
+  // Every tag value stays the text Tally wrote (2026-09-17). With value
+  // parsing on, a bill reference "001" arrived as the number 1 and a ledger
+  // named "0123" as 123, so the scorer compared mangled names. Amounts are
+  // converted explicitly in parseTallyAmount instead.
+  parseTagValue: false,
   isArray: (tagName: string) =>
     tagName === 'TALLYMESSAGE' ||
     tagName === 'VOUCHER' ||
@@ -60,10 +65,15 @@ export function parseDayBookXml(buffer: Buffer): ParsedDayBook {
     );
   }
 
+  // Optional (memorandum-style, ISOPTIONAL Yes) and cancelled (ISCANCELLED
+  // Yes) vouchers are not postings: Tally keeps them out of the books, so
+  // they are dropped here, before scoring AND before the submission gate
+  // counts vouchers, keeping both on the same set (2026-09-17).
   const vouchers = messages
     .map((message) => message['VOUCHER'])
     .filter((voucher): voucher is Record<string, unknown>[] => Array.isArray(voucher))
     .flat()
+    .filter((voucher) => !isYes(voucher['ISOPTIONAL']) && !isYes(voucher['ISCANCELLED']))
     .map(normalizeVoucher);
 
   const result = { vouchers };
@@ -73,6 +83,31 @@ export function parseDayBookXml(buffer: Buffer): ParsedDayBook {
   }
 
   return parsed.data;
+}
+
+function isYes(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'yes';
+}
+
+// Tally writes amounts as plain signed decimals ("-5000.00"). A value that
+// is not a number used to surface as the opaque "unexpected structure"
+// (NaN failed the schema); it now names the ledger (2026-09-17). Thousands
+// separators and spaces are tolerated.
+function parseTallyAmount(raw: unknown, context: string): number {
+  if (raw === undefined || raw === null) return 0;
+  const text = String(raw).replace(/[,\s]/g, '');
+  if (text.length === 0) return 0;
+  const amount = Number(text);
+  if (!Number.isFinite(amount)) {
+    throw new DayBookParseError(
+      `The Day Book file could not be read — the amount "${String(raw).trim()}" on ${context} is not a number. Re-export the Day Book from Tally and upload it again.`,
+    );
+  }
+  return amount;
+}
+
+function textOf(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
 }
 
 function extractTallyMessages(root: unknown): Record<string, unknown>[] {
@@ -108,9 +143,9 @@ function normalizeVoucher(voucher: Record<string, unknown>): {
   narration: string;
   ledgerEntries: LedgerEntry[];
 } {
-  const voucherType = String(voucher['VOUCHERTYPENAME'] ?? voucher['@_VCHTYPE'] ?? '');
-  const date = String(voucher['DATE'] ?? '');
-  const narration = String(voucher['NARRATION'] ?? '');
+  const voucherType = textOf(voucher['VOUCHERTYPENAME'] ?? voucher['@_VCHTYPE']);
+  const date = textOf(voucher['DATE']);
+  const narration = textOf(voucher['NARRATION']);
 
   // Tally exports invoice-mode vouchers (Sales/Purchase in Invoice view)
   // with legs under LEDGERENTRIES.LIST, but accounting-mode vouchers
@@ -159,8 +194,8 @@ function normalizeVoucher(voucher: Record<string, unknown>): {
 // sign decides whenever the amount is non-zero; the flag is the fallback
 // for a zero leg.
 function normalizeLedgerEntry(entry: Record<string, unknown>): LedgerEntry {
-  const ledgerName = String(entry['LEDGERNAME'] ?? '');
-  const amount = Number(entry['AMOUNT'] ?? 0);
+  const ledgerName = textOf(entry['LEDGERNAME']);
+  const amount = parseTallyAmount(entry['AMOUNT'], `ledger "${ledgerName}"`);
   const isDeemedPositive = String(entry['ISDEEMEDPOSITIVE'] ?? '') === 'Yes';
   const drOrCr = amount < 0 ? 'Dr' : amount > 0 ? 'Cr' : isDeemedPositive ? 'Dr' : 'Cr';
 
@@ -182,9 +217,22 @@ function normalizeLedgerEntry(entry: Record<string, unknown>): LedgerEntry {
 // export's references parsed as empty until the 2026-08-20 pilot
 // calibration exposed it.) An empty <BILLALLOCATIONS.LIST> </...> parses as
 // a whitespace string and is skipped.
-function extractBillAllocations(raw: unknown): { name: string; amount: number }[] {
+// BILLTYPE is read into billType when present (2026-09-17, additive).
+type ParsedAllocation = { name: string; amount: number; billType?: string };
+
+function allocationOf(record: Record<string, unknown>): ParsedAllocation {
+  const allocation: ParsedAllocation = {
+    name: textOf(record['NAME']),
+    amount: parseTallyAmount(record['AMOUNT'], `bill "${textOf(record['NAME'])}"`),
+  };
+  const billType = textOf(record['BILLTYPE']).trim();
+  if (billType.length > 0) allocation.billType = billType;
+  return allocation;
+}
+
+function extractBillAllocations(raw: unknown): ParsedAllocation[] {
   const lists = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  const allocations: { name: string; amount: number }[] = [];
+  const allocations: ParsedAllocation[] = [];
 
   for (const item of lists) {
     if (typeof item !== 'object' || item === null) {
@@ -192,10 +240,7 @@ function extractBillAllocations(raw: unknown): { name: string; amount: number }[
     }
     const record = item as Record<string, unknown>;
     if (record['NAME'] !== undefined) {
-      allocations.push({
-        name: String(record['NAME'] ?? ''),
-        amount: Number(record['AMOUNT'] ?? 0),
-      });
+      allocations.push(allocationOf(record));
       continue;
     }
     // Legacy fixture shape: an inner BILLALLOCATIONS element (kept so the
@@ -203,11 +248,8 @@ function extractBillAllocations(raw: unknown): { name: string; amount: number }[
     const inner = record['BILLALLOCATIONS'];
     const innerEntries = Array.isArray(inner) ? inner : inner ? [inner] : [];
     for (const entry of innerEntries) {
-      const innerRecord = entry as Record<string, unknown>;
-      allocations.push({
-        name: String(innerRecord['NAME'] ?? ''),
-        amount: Number(innerRecord['AMOUNT'] ?? 0),
-      });
+      if (typeof entry !== 'object' || entry === null) continue;
+      allocations.push(allocationOf(entry as Record<string, unknown>));
     }
   }
 

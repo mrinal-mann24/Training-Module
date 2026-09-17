@@ -619,10 +619,11 @@ export async function requestHint(exerciseId: string): Promise<RequestHintResult
 
   const serviceRoleClient = createServiceRoleClient();
 
-  const [exercise, answerKey, rung] = await Promise.all([
+  const [exercise, answerKey, rung, profile] = await Promise.all([
     getLatestExercise(supabase, user.id),
     getExerciseAnswerKey(serviceRoleClient, exerciseId),
     determineNextRung(supabase, user.id, exerciseId),
+    getLearnerProfile(supabase, user.id),
   ]);
 
   if (!exercise || exercise.id !== exerciseId || !answerKey) {
@@ -647,6 +648,9 @@ export async function requestHint(exerciseId: string): Promise<RequestHintResult
       // Authored packs carry their content in files, ~100 transactions —
       // hint steps must never solve arbitrary entries from them.
       packMode: exercise.packFiles.length > 0,
+      // Educational Mode posting days (2026-09-17): the hint may suggest no
+      // other day of the month.
+      licenseMode: profile?.license_mode ?? null,
     });
   } catch (error) {
     return {
@@ -772,15 +776,18 @@ export async function askQuestion(question: string): Promise<AskQuestionResult> 
     redirect('/login');
   }
 
-  const exercise = await getLatestExercise(supabase, user.id);
+  const [exercise, profile] = await Promise.all([getLatestExercise(supabase, user.id), getLearnerProfile(supabase, user.id)]);
 
   // Answer + persist the exchange (lib/chat/answer-learner-question.ts, shared
-  // with Smart Send routing).
+  // with Smart Send routing). Transactions and license mode (2026-09-17) let
+  // code refuse to work the current exercise and hold Educational Mode dates.
   return answerLearnerQuestion({
     supabase,
     learnerId: user.id,
     question: trimmed,
     exerciseScenario: exercise?.scenario ?? null,
+    exerciseTransactions: exercise?.transactions ?? [],
+    licenseMode: profile?.license_mode ?? null,
   });
 }
 

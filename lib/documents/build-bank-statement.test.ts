@@ -63,11 +63,39 @@ describe('buildBankStatementContent (statement written by code from the key, 202
   });
 
   it('prints a bank-shaped reference carrying the bill number, unique per line', () => {
-    const { content, referenceBySequence } = buildBankStatementContent({ companyName: 'X', openingBankBalance: 0, generated })!;
+    const { content, referenceBySequence } = buildBankStatementContent({ companyName: 'X', openingBankBalance: 100000, generated })!;
     expect(content.transactions[1].narration).toBe('NEFT/N26060803/KOLKATA EMPORIUM/KE-305');
     expect(content.transactions[2].narration).toBe('NEFT/N26062104/VIZAG VENDORS/VV-556');
     expect(content.transactions[0].narration).toBe('CASH WITHDRAWAL/CW26060101/CASH');
     expect(new Set(referenceBySequence.values()).size).toBe(3);
+  });
+
+  it('separates several settled bills with " & " and spells a party "&" as AND (2026-09-17)', () => {
+    // "MS/990/MS/991" could not be read as two bills, and "&" in a party
+    // name fell outside the scorer's reference pattern.
+    const multi = {
+      ...generated,
+      transactions: [{ sequence: 9, description: 'On 25-Jun-2026, a payment to Mehta & Associates went out from the bank.' }],
+      answer_key: {
+        entries: [
+          leg(9, 'Mehta & Associates', 'Dr', 30000, 'Payment', 'Against MS/990, Against MS/991 (part)'),
+          leg(9, 'HDFC Bank — 1234', 'Cr', 30000, 'Payment', 'Against MS/990, Against MS/991 (part)'),
+        ],
+      },
+    } as unknown as GeneratedExercise;
+    const built = buildBankStatementContent({ companyName: 'X', openingBankBalance: 50000, generated: multi })!;
+    expect(built.content.transactions[0].narration).toBe('NEFT/N26062509/MEHTA AND ASSOCIATES/MS/990 & MS/991');
+    const payment = applyBankReferences(multi, built.referenceBySequence).answer_key.entries[0];
+    expect(payment.narration).toBe(
+      'Paid Rs 30,000 to Mehta & Associates via bank, Ref NEFT/N26062509/MEHTA AND ASSOCIATES/MS/990 & MS/991, against MS/990 & MS/991.',
+    );
+  });
+
+  it('never prints a negative balance unless the account has an overdraft (2026-09-17 audit)', () => {
+    // Opening 0 and a 10,000 withdrawal on the 1st: no bank would issue that row.
+    expect(() => buildBankStatementContent({ companyName: 'X', openingBankBalance: 0, generated })).toThrow(/would go negative/);
+    const od = buildBankStatementContent({ companyName: 'X', openingBankBalance: 0, generated, overdraftAllowed: true })!;
+    expect(od.content.transactions[0].balance).toBe(-10000);
   });
 
   it('returns null when the batch touches no bank ledger', () => {
@@ -78,7 +106,7 @@ describe('buildBankStatementContent (statement written by code from the key, 202
 
 describe('applyBankReferences (key narration carries the same reference as the statement)', () => {
   it('rewrites narrations on statement sequences only', () => {
-    const built = buildBankStatementContent({ companyName: 'X', openingBankBalance: 0, generated })!;
+    const built = buildBankStatementContent({ companyName: 'X', openingBankBalance: 100000, generated })!;
     const applied = applyBankReferences(generated, built.referenceBySequence);
     const receipt = applied.answer_key.entries.find((e) => e.sequence === 3)!;
     expect(receipt.narration).toBe('Received Rs 25,000 from Kolkata Emporium via bank, Ref NEFT/N26060803/KOLKATA EMPORIUM/KE-305, against KE-305.');

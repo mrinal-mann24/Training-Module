@@ -11,8 +11,20 @@ import type {
   LedgerFinding,
   CompositeMatch,
 } from '@/lib/schemas/scoring';
+import { isBankLedger, parseBillReferences } from '@/lib/db/queries/company';
 import { findLedgerFindings } from './ledger-findings';
-import { accountNamesMatch, aliasFitsAccount, classifyLedger, gstHeadOf, normalizeAccountName, partyAccountsOf } from './account-names';
+import {
+  accountNamesMatch,
+  aliasAcceptsLedger,
+  aliasFitsAccount,
+  classifyLedger,
+  gstHeadOf,
+  isTaxLedgerName,
+  keyAccountSet,
+  normalizeAccountName,
+  partyAccountsOf,
+  type AccountMatchOptions,
+} from './account-names';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -49,13 +61,57 @@ const FIELD_WEIGHT: Record<ScoredField, number> = {
 // note debited to "Credit Sales A/c" on a Sales Returns leg is ACCOUNT_WRONG.
 // The voucher is still paired with its transaction through the party leg,
 // amounts and type, so only the account field is flagged.
-function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry): boolean {
-  if (accountNamesMatch(entry.ledgerName, leg.correct_account)) {
+// Name matching plus the batch's advance references (2026-09-17), threaded
+// through every diff so the scorer and the adjudicator judge alike.
+export type ScoringOptions = AccountMatchOptions & { advanceReferences?: ReadonlySet<string> };
+
+// Aliases go through aliasAcceptsLedger (2026-09-17): the ledger must not
+// contradict the account itself (a payable for an expense head, "Interest
+// Paid" for Interest Income), and the key's own accounts are passed so typo
+// tolerance never equates two distinct accounts of the batch.
+function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry, options: ScoringOptions = {}): boolean {
+  if (accountNamesMatch(entry.ledgerName, leg.correct_account, options)) {
     return true;
   }
-  return (leg.account_aliases ?? []).some(
-    (alias) => aliasFitsAccount(alias, leg.correct_account) && accountNamesMatch(entry.ledgerName, alias),
-  );
+  return (leg.account_aliases ?? []).some((alias) => aliasAcceptsLedger(entry.ledgerName, alias, leg.correct_account, options));
+}
+
+// Voucher types by their base (2026-09-17). Tally lets a company create its
+// own types ("GST Sales", "Sales - Local") under a base type, and the Day
+// Book export names only the custom type: VOUCHERTYPENAME and VCHTYPE carry
+// the custom name, OBJVIEW / PERSISTEDVIEW only the entry view ("Invoice
+// Voucher View"), never the parent. Exact comparison marked every such
+// voucher VOUCHER_TYPE_WRONG and skipped the GST side check. A custom name
+// maps to its base when it names exactly one base type; a "... Return(s)"
+// type is the note Tally uses for it. Anything else stays as written.
+const BASE_TYPE_WORDS: Record<string, string> = {
+  sales: 'sales', sale: 'sales',
+  purchase: 'purchase', purchases: 'purchase',
+  payment: 'payment', payments: 'payment',
+  receipt: 'receipt', receipts: 'receipt',
+  contra: 'contra',
+  journal: 'journal', journals: 'journal',
+};
+
+export function baseVoucherType(voucherType: string): string {
+  const name = voucherType.trim().toLowerCase().replace(/\s+/g, ' ');
+  const words = name.split(/[^a-z]+/).filter((word) => word.length > 0);
+  const bases = new Set<string>();
+  const joined = ` ${words.join(' ')} `;
+  if (joined.includes(' credit note ')) bases.add('credit note');
+  if (joined.includes(' debit note ')) bases.add('debit note');
+  for (const word of words) {
+    if (BASE_TYPE_WORDS[word]) bases.add(BASE_TYPE_WORDS[word]);
+  }
+  if (words.some((word) => word === 'return' || word === 'returns')) {
+    if (bases.size === 1 && bases.has('sales')) return 'credit note';
+    if (bases.size === 1 && bases.has('purchase')) return 'debit note';
+  }
+  return bases.size === 1 ? [...bases][0] : name;
+}
+
+function sameVoucherType(a: string, b: string): boolean {
+  return baseVoucherType(a) === baseVoucherType(b);
 }
 
 const GST_HEAD_PATTERNS: { pattern: RegExp; head: 'IGST' | 'CGST' | 'SGST' }[] = [
@@ -97,7 +153,7 @@ function collectGstFromLedgerEntries(entries: LedgerEntry[]): {
 // GST was one of the pilot reviewer's explicit findings — head-only checking
 // cannot catch it, since the head (CGST) is right and only the side is wrong.
 function expectedGstSide(voucherType: string): 'input' | 'output' | null {
-  const type = voucherType.trim().toLowerCase();
+  const type = baseVoucherType(voucherType);
   // A receipt carries GST only for a service advance (rulebook 9B: Output
   // GST on Advance), so any GST on a receipt is output-side.
   if (type === 'sales' || type === 'credit note' || type === 'receipt') {
@@ -112,18 +168,6 @@ function expectedGstSide(voucherType: string): 'input' | 'output' | null {
 function inferTdsFromLedgerEntries(entries: LedgerEntry[]): { amount: number } | null {
   const tdsEntry = entries.find((entry) => TDS_LEDGER_PATTERN.test(entry.ledgerName));
   return tdsEntry ? { amount: tdsEntry.amount } : null;
-}
-
-function collectBillReferences(entries: LedgerEntry[]): string[] {
-  const names: string[] = [];
-  for (const entry of entries) {
-    for (const allocation of entry.billAllocations) {
-      if (allocation.name.trim().length > 0) {
-        names.push(allocation.name);
-      }
-    }
-  }
-  return names;
 }
 
 // A transaction's answer key is real double-entry: one Dr leg + one Cr leg
@@ -146,7 +190,7 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function consolidateExpectedLegs(legs: AnswerKeyEntry[]): AnswerKeyEntry[] {
+export function consolidateExpectedLegs(legs: AnswerKeyEntry[]): AnswerKeyEntry[] {
   const merged: AnswerKeyEntry[] = [];
   for (const leg of legs) {
     const existing = merged.find(
@@ -177,22 +221,14 @@ function consolidateLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
   return merged;
 }
 
-function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs: AnswerKeyEntry[]): VoucherDiff[] {
-  const diffs: VoucherDiff[] = [];
-  const sequence = expectedLegs[0].sequence;
+// Pairs each (consolidated) expected leg with a (consolidated) posted entry.
+// Exported for the adjudicator, which needs the same pairing to know which
+// posted ledger a dismissed account finding is about.
+export type LegPairing = { entries: LedgerEntry[]; legs: AnswerKeyEntry[]; assigned: Map<number, LedgerEntry>; leftover: LedgerEntry[] };
 
-  if (!voucher) {
-    diffs.push({
-      voucherRef: sequence,
-      field: 'account',
-      expected_masked: true,
-      is_correct: false,
-      error_code: 'VOUCHER_MISSING',
-    });
-    return diffs;
-  }
-
-  const unmatchedEntries = consolidateLedgerEntries(voucher.ledgerEntries);
+export function pairLegsToEntries(voucher: Voucher, expectedLegs: AnswerKeyEntry[], options: ScoringOptions = {}): LegPairing {
+  const entries = consolidateLedgerEntries(voucher.ledgerEntries);
+  const unmatchedEntries = [...entries];
   const consolidated = consolidateExpectedLegs(expectedLegs);
 
   // Pair expected legs to posted entries in two passes. Pass 1 claims an
@@ -216,18 +252,56 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   });
   consolidated.forEach((leg, index) => {
     if (assigned.has(index)) return;
-    const matchIndex = unmatchedEntries.findIndex((entry) => accountNamesMatch(entry.ledgerName, leg.correct_account));
+    const matchIndex = unmatchedEntries.findIndex((entry) => accountNamesMatch(entry.ledgerName, leg.correct_account, options));
     if (matchIndex !== -1) {
       assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
     }
   });
   consolidated.forEach((leg, index) => {
     if (assigned.has(index)) return;
-    const matchIndex = unmatchedEntries.findIndex((entry) => legMatchesEntry(entry, leg));
+    const matchIndex = unmatchedEntries.findIndex((entry) => legMatchesEntry(entry, leg, options));
     if (matchIndex !== -1) {
       assigned.set(index, unmatchedEntries.splice(matchIndex, 1)[0]);
     }
   });
+  return { entries, legs: consolidated, assigned, leftover: unmatchedEntries };
+}
+
+// The weight a transaction is worth when every field is scored: account,
+// side and amount per consolidated leg, plus voucher type, GST, TDS, bill
+// reference and (when the key names a statement reference) narration.
+function transactionWeight(expectedLegs: AnswerKeyEntry[]): number {
+  const legs = consolidateExpectedLegs(expectedLegs).length;
+  const perLeg = FIELD_WEIGHT.account + FIELD_WEIGHT.dr_cr + FIELD_WEIGHT.amount;
+  const voucherLevel = FIELD_WEIGHT.voucher_type + FIELD_WEIGHT.gst + FIELD_WEIGHT.tds + FIELD_WEIGHT.bill_reference;
+  const narration = expectedLegs.some((leg) => KEY_BANK_REFERENCE.test(leg.narration ?? '')) ? FIELD_WEIGHT.narration : 0;
+  return legs * perLeg + voucherLevel + narration;
+}
+
+function diffVoucherAgainstAnswerKey(
+  voucher: Voucher | undefined,
+  expectedLegs: AnswerKeyEntry[],
+  options: ScoringOptions = {},
+): VoucherDiff[] {
+  const diffs: VoucherDiff[] = [];
+  const sequence = expectedLegs[0].sequence;
+
+  if (!voucher) {
+    // A missing voucher costs the full weight of what the transaction would
+    // have been scored on (2026-09-17). At one standard weight, skipping a
+    // hard voucher scored better than attempting it and getting a leg wrong.
+    diffs.push({
+      voucherRef: sequence,
+      field: 'account',
+      expected_masked: true,
+      is_correct: false,
+      error_code: 'VOUCHER_MISSING',
+      weight: transactionWeight(expectedLegs),
+    });
+    return diffs;
+  }
+
+  const { legs: consolidated, assigned } = pairLegsToEntries(voucher, expectedLegs, options);
 
   for (const [index, expectedLeg] of consolidated.entries()) {
     const matchingEntry = assigned.get(index);
@@ -238,15 +312,38 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
       expected_masked: true,
       is_correct: matchingEntry !== undefined,
       error_code: matchingEntry === undefined ? 'ACCOUNT_WRONG' : null,
+      leg: index,
     });
 
-    const drCrCorrect = matchingEntry !== undefined && matchingEntry.drOrCr === expectedLeg.dr_cr;
+    if (matchingEntry === undefined) {
+      // No posted entry belongs to this leg, so there is no side or amount
+      // to judge (2026-09-17). Scoring them as wrong as well charged one
+      // slip three times; they are recorded as not scored (weight 0) and the
+      // account error is the whole penalty. Voucher-basics concepts still
+      // fail on the account diff.
+      for (const field of ['dr_cr', 'amount'] as const) {
+        diffs.push({
+          voucherRef: sequence,
+          field,
+          expected_masked: true,
+          is_correct: true,
+          vacuously_correct: true,
+          error_code: null,
+          leg: index,
+          weight: 0,
+        });
+      }
+      continue;
+    }
+
+    const drCrCorrect = matchingEntry.drOrCr === expectedLeg.dr_cr;
     diffs.push({
       voucherRef: sequence,
       field: 'dr_cr',
       expected_masked: true,
       is_correct: drCrCorrect,
-      error_code: matchingEntry === undefined ? null : drCrCorrect ? null : 'DR_CR_REVERSED',
+      error_code: drCrCorrect ? null : 'DR_CR_REVERSED',
+      leg: index,
     });
 
     // GST/TDS-named legs (the set-off JV, a TDS deposit) don't get amount-
@@ -254,16 +351,17 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
     // single upstream slip would cascade into a wall of AMOUNT_WRONGs here.
     // Presence and direction still score; the aggregate effect is covered by
     // the per-voucher gst/tds checks and the (tax-exempt) TB tie-out.
-    const taxLeg = /gst|tds/i.test(expectedLeg.correct_account);
-    const amountCorrect =
-      matchingEntry !== undefined && (taxLeg || amountsMatch(matchingEntry.amount, expectedLeg.amount));
+    // Tax ledgers by word (2026-09-17): "Kingston Traders" holds "gst".
+    const taxLeg = isTaxLedgerName(expectedLeg.correct_account);
+    const amountCorrect = taxLeg || amountsMatch(matchingEntry.amount, expectedLeg.amount);
     diffs.push({
       voucherRef: sequence,
       field: 'amount',
       expected_masked: true,
       is_correct: amountCorrect,
-      vacuously_correct: taxLeg && matchingEntry !== undefined ? true : undefined,
-      error_code: matchingEntry === undefined ? null : amountCorrect ? null : 'AMOUNT_WRONG',
+      vacuously_correct: taxLeg ? true : undefined,
+      error_code: amountCorrect ? null : 'AMOUNT_WRONG',
+      leg: index,
     });
   }
 
@@ -274,23 +372,9 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
   // GST expected" and flagged every correct GST posting as GST_UNEXPECTED
   // (Garima's Level 2: 6 of 6 taxed transactions, 2026-09-02). The
   // transaction's expectation is whichever leg states one.
-  const gstLeg = expectedLegs.find((leg) => leg.gst_head !== null) ?? expectedLegs[0];
-  const tdsLeg = expectedLegs.find((leg) => leg.tds_section !== null) ?? expectedLegs[0];
-  // Likewise the bill reference: generated keys often carry it on the
-  // party leg only (Praveen's Level 6: "Mumbai Suppliers" MS/812, first
-  // leg Purchases null — 2026-09-03), so reading legs[0] skipped the check.
-  const referenceLeg = expectedLegs.find((leg) => leg.bill_reference !== null) ?? expectedLegs[0];
-  const expected = {
-    ...expectedLegs[0],
-    gst_head: gstLeg.gst_head,
-    gst_rate: gstLeg.gst_rate,
-    tds_section: tdsLeg.tds_section,
-    tds_rate: tdsLeg.tds_rate,
-    tds_base: tdsLeg.tds_base,
-    bill_reference: referenceLeg.bill_reference,
-  };
+  const expected = voucherLevelExpectation(expectedLegs);
 
-  const voucherTypeCorrect = voucher.voucherType.trim().toLowerCase() === expected.voucher_type.trim().toLowerCase();
+  const voucherTypeCorrect = sameVoucherType(voucher.voucherType, expected.voucher_type);
   diffs.push({
     voucherRef: sequence,
     field: 'voucher_type',
@@ -299,9 +383,9 @@ function diffVoucherAgainstAnswerKey(voucher: Voucher | undefined, expectedLegs:
     error_code: voucherTypeCorrect ? null : 'VOUCHER_TYPE_WRONG',
   });
 
-  diffs.push(diffGst(voucher, expected, expectedLegs, sequence));
-  diffs.push(diffTds(voucher, expected, expectedLegs, sequence));
-  diffs.push(diffBillReference(voucher, expected, sequence));
+  diffs.push(diffGst(voucher, expected, expectedLegs, sequence, options));
+  diffs.push(diffTds(voucher, expected, expectedLegs, sequence, options));
+  diffs.push(diffBillReference(voucher, expectedLegs, sequence, options));
   // Narration is scored for ONE thing only (2026-09-10 meeting): a bank
   // voucher's narration must carry the bank statement's transaction
   // reference, copied as printed. Nothing else about narration is judged,
@@ -350,8 +434,8 @@ function diffBankReference(voucher: Voucher, expectedLegs: AnswerKeyEntry[], vou
 // account is a TDS Payable ledger, and the GST set-off JV's legs are all
 // GST ledgers — flagging those as "unexpected GST/TDS" penalized correct
 // postings (pilot calibration, 2026-08-20).
-function entriesBeyondExpectedLegs(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): LedgerEntry[] {
-  return voucher.ledgerEntries.filter((entry) => !expectedLegs.some((leg) => legMatchesEntry(entry, leg)));
+function entriesBeyondExpectedLegs(voucher: Voucher, expectedLegs: AnswerKeyEntry[], options: ScoringOptions = {}): LedgerEntry[] {
+  return voucher.ledgerEntries.filter((entry) => !expectedLegs.some((leg) => legMatchesEntry(entry, leg, options)));
 }
 
 function diffGst(
@@ -359,9 +443,10 @@ function diffGst(
   expected: AnswerKeyEntry,
   expectedLegs: AnswerKeyEntry[],
   voucherRef: number,
+  options: ScoringOptions = {},
 ): VoucherDiff {
   const actualGst = collectGstFromLedgerEntries(
-    expected.gst_head === null ? entriesBeyondExpectedLegs(voucher, expectedLegs) : voucher.ledgerEntries,
+    expected.gst_head === null ? entriesBeyondExpectedLegs(voucher, expectedLegs, options) : voucher.ledgerEntries,
   );
 
   if (expected.gst_head === null) {
@@ -473,9 +558,10 @@ function diffTds(
   expected: AnswerKeyEntry,
   expectedLegs: AnswerKeyEntry[],
   voucherRef: number,
+  options: ScoringOptions = {},
 ): VoucherDiff {
   const actualTds = inferTdsFromLedgerEntries(
-    expected.tds_section === null ? entriesBeyondExpectedLegs(voucher, expectedLegs) : voucher.ledgerEntries,
+    expected.tds_section === null ? entriesBeyondExpectedLegs(voucher, expectedLegs, options) : voucher.ledgerEntries,
   );
 
   if (expected.tds_section === null) {
@@ -500,81 +586,203 @@ function diffTds(
   };
 }
 
-// A voucher can carry several allocations (a payment split across bills, an
-// advance applied plus a New Ref balance) and the key's bill_reference may
-// name several refs — correct when ANY submitted allocation matches ANY
-// expected ref (normalized containment, so "INV-025" matches "INV-025 dt
-// 04-May"). First-allocation-only exact comparison under-credited real
-// submissions (pilot calibration, 2026-08-20).
-// Reference words that name a Tally allocation TYPE, not a bill number:
-// "New Ref", "Agst Ref", "Advance", "On Account" (compared after
-// normalizeAccountName, so no spaces or punctuation).
-const PLACEHOLDER_REFERENCE = /^(newref|newreference|agstref|againstref|advance|onaccount)$/;
+// Bill references (rewritten 2026-09-17). The old rule accepted a match when
+// either normalised string CONTAINED the other and when ANY one reference
+// overlapped: a posted "1", "0" or "INV" passed for INV-001, INV-010 for a
+// key INV-01, DT-115 for DT-11; "MS-B1, MS-B2, MS-B3 (part)" passed on MS-B1
+// alone; an allocation on the bank leg counted; and "INV-18" failed against
+// "INV-018". References are now TOKENS compared for exact equality after
+// formatting is removed:
+//   - annotations go: "(part)", "(bal)", "(Advance)", "dt 04-May", the
+//     "Agst Ref" / "New Ref" / "Against" / "Ref" prefixes (parseBillReferences
+//     in company.ts splits a key string and strips the prefixes);
+//   - case and punctuation are ignored, and leading zeros inside a numeric
+//     group are dropped: INV-18 = INV-018 = inv 018, but INV-1-01 stays
+//     INV-1-1 and never equals INV-11 (groups keep their boundaries);
+//   - the reference words "New Ref", "Agst Ref", "Advance", "On Account"
+//     alone are types, not numbers.
+// Every expected reference must be allocated on the PARTY leg of the voucher
+// (the leg the key's party sits on; or the legs carrying references when no
+// party can be told). A reference allocated there that the key does not name
+// is wrong too (money set against the wrong bill), with one exception: an
+// advance, i.e. a reference the batch raises as an advance, or an allocation
+// Tally typed "Advance". Pack seq 87 applies advance ADV-01 against INV-009
+// while its key string names only INV-009, and the reviewer's note says that
+// is the correct posting. Allocations on other legs are ignored. BILLTYPE is
+// read but never required: an expected reference is satisfied by its number
+// whatever type the learner chose (so an advance may be New Ref or Advance),
+// and an "On Account" allocation is not a reference.
+const PLACEHOLDER_REFERENCE = /^(NEWREF|NEWREFERENCE|AGSTREF|AGAINSTREF|ADVANCE|ONACCOUNT|REF|NA|NIL)$/;
 
-function diffBillReference(voucher: Voucher, expected: AnswerKeyEntry, voucherRef: number): VoucherDiff {
-  if (expected.bill_reference === null) {
-    return {
-      voucherRef,
-      field: 'bill_reference',
-      expected_masked: true,
-      is_correct: true,
-      error_code: null,
-    };
+// A bank ledger or Cash carrying a reference is never the party.
+const CASH_LEDGER = /^cash\b|cash-in-hand/i;
+
+export function canonicalBillReference(reference: string): string | null {
+  const bare = reference
+    .replace(/\([^)]*\)/g, ' ')
+    .trim()
+    // "Ref INV-012", "Ref: 45", "Reference No. 7" (never "REF-001" itself)
+    .replace(/^ref(?:erence)?(?:[.:]|\s)+/i, '')
+    // "INV-025 dt 04-May", "INV-7 dated 4/5": a date after the number
+    .replace(/(?<=\S)\s+(?:dt\.?|dated)\s*[:-]?\s*\d.*$/i, '')
+    .replace(/(?<![a-z])(?:no|number|num)\b\.?/gi, ' ')
+    .replace(/#/g, ' ');
+  const groups = bare.toUpperCase().match(/[A-Z]+|\d+/g);
+  if (!groups) return null;
+  const canonical = groups.map((group) => (/^\d+$/.test(group) ? group.replace(/^0+(?=\d)/, '') : group)).join('-');
+  return PLACEHOLDER_REFERENCE.test(canonical.replace(/-/g, '')) ? null : canonical;
+}
+
+// The tokens a key's bill_reference (or a learner's allocation name) names.
+export function billReferenceTokens(reference: string | null | undefined): Set<string> {
+  const tokens = new Set<string>();
+  for (const parsed of parseBillReferences(reference)) {
+    if (parsed.kind === 'on_account') continue;
+    const canonical = canonicalBillReference(parsed.ref);
+    if (canonical) tokens.add(canonical);
+  }
+  return tokens;
+}
+
+type AllocationTokens = { tokens: Set<string>; advanceTokens: Set<string>; allocations: number };
+
+function allocationTokens(entries: LedgerEntry[]): AllocationTokens {
+  const tokens = new Set<string>();
+  const advanceTokens = new Set<string>();
+  let allocations = 0;
+  for (const entry of entries) {
+    for (const allocation of entry.billAllocations) {
+      const billType = allocation.billType?.trim() ?? '';
+      if (/^on\s*account$/i.test(billType)) {
+        allocations += 1;
+        continue;
+      }
+      if (allocation.name.trim().length === 0) continue;
+      allocations += 1;
+      for (const token of billReferenceTokens(allocation.name)) {
+        tokens.add(token);
+        if (/^advance$/i.test(billType)) advanceTokens.add(token);
+      }
+    }
+  }
+  return { tokens, advanceTokens, allocations };
+}
+
+// Every reference the batch marks as an advance ("(Advance)", ADV-...).
+export function advanceReferencesOf(answerKey: AnswerKey): Set<string> {
+  const advances = new Set<string>();
+  for (const entry of answerKey.entries) {
+    for (const parsed of parseBillReferences(entry.bill_reference)) {
+      if (parsed.kind !== 'advance') continue;
+      const canonical = canonicalBillReference(parsed.ref);
+      if (canonical) advances.add(canonical);
+    }
+  }
+  return advances;
+}
+
+// The consolidated legs whose posted entries must carry the references.
+export function referenceLegIndexes(legs: AnswerKeyEntry[]): Set<number> {
+  // The party is found by side and name whichever leg the key stamped the
+  // reference on (generated keys stamp only one leg, packs every leg).
+  const parties = partyAccountsOf(legs.map((leg) => ({ ...leg, bill_reference: leg.bill_reference ?? '' })));
+  const party = new Set<number>();
+  legs.forEach((leg, index) => {
+    const name = leg.correct_account;
+    if (parties.has(normalizeAccountName(name)) && !isBankLedger(name) && !CASH_LEDGER.test(name)) party.add(index);
+  });
+  if (party.size > 0) return party;
+  const withReference = new Set<number>();
+  legs.forEach((leg, index) => {
+    if (leg.bill_reference !== null) withReference.add(index);
+  });
+  return withReference;
+}
+
+// The posted entries a transaction's references are read from: the entries
+// paired with its party legs, plus any entry left unpaired on a party leg's
+// side (a party posted under a wrong name still carries its allocations; the
+// account finding covers the name).
+export function referenceEntries(pairing: LegPairing): LedgerEntry[] {
+  const indexes = referenceLegIndexes(pairing.legs);
+  const sides = new Set([...indexes].map((index) => pairing.legs[index].dr_cr));
+  const paired = [...indexes].map((index) => pairing.assigned.get(index)).filter((entry): entry is LedgerEntry => entry !== undefined);
+  return [...paired, ...pairing.leftover.filter((entry) => sides.has(entry.drOrCr))];
+}
+
+// A credit or debit note may carry either its own number or the number of
+// the bill it is raised against. The key uses both conventions (the pack's
+// credit note seq 43 names INV-001, the invoice it reverses; debit note seq
+// 51 names DN-M1, the note itself), so either is accepted, but only when the
+// key LINKS the two: the other number must appear in the key's narration
+// ("Debit note DN-M1 against MS-B1"). Pack seq 51's narration names only
+// DN-M1, so an allocation "Agst Ref MS-B1" there stays BILL_REFERENCE_WRONG:
+// nothing in the key says DN-M1 was raised against MS-B1 (2026-09-17).
+const NARRATION_REFERENCE = /\b[A-Z]{1,6}\d*(?:[-/][A-Z0-9]+)+\b/g;
+
+function linkedNoteReferences(expectedLegs: AnswerKeyEntry[], expectedTokens: Set<string>): Set<string> {
+  const type = baseVoucherType(expectedLegs[0].voucher_type);
+  const linked = new Set<string>();
+  if (type !== 'credit note' && type !== 'debit note') return linked;
+  for (const leg of expectedLegs) {
+    for (const match of (leg.narration ?? '').matchAll(NARRATION_REFERENCE)) {
+      if (!/\d/.test(match[0])) continue;
+      const canonical = canonicalBillReference(match[0]);
+      if (canonical && !expectedTokens.has(canonical)) linked.add(canonical);
+    }
+  }
+  return linked;
+}
+
+function covers(posted: Set<string>, required: Set<string>): boolean {
+  return required.size > 0 && [...required].every((token) => posted.has(token));
+}
+
+export function billReferencesCorrect(
+  expectedLegs: AnswerKeyEntry[],
+  posted: Pick<AllocationTokens, 'tokens' | 'advanceTokens'>,
+  advanceReferences: ReadonlySet<string> = new Set(),
+): boolean {
+  const expectedTokens = new Set<string>();
+  for (const leg of expectedLegs) {
+    for (const token of billReferenceTokens(leg.bill_reference)) expectedTokens.add(token);
+  }
+  const linked = linkedNoteReferences(expectedLegs, expectedTokens);
+  const nothingExtra = [...posted.tokens].every(
+    (token) => expectedTokens.has(token) || linked.has(token) || advanceReferences.has(token) || posted.advanceTokens.has(token),
+  );
+  return nothingExtra && (covers(posted.tokens, expectedTokens) || covers(posted.tokens, linked));
+}
+
+function diffBillReference(
+  voucher: Voucher,
+  expectedLegs: AnswerKeyEntry[],
+  voucherRef: number,
+  options: ScoringOptions = {},
+): VoucherDiff {
+  const correct: VoucherDiff = { voucherRef, field: 'bill_reference', expected_masked: true, is_correct: true, error_code: null };
+  if (expectedLegs.every((leg) => leg.bill_reference === null)) {
+    return correct;
   }
 
-  const actualReferences = collectBillReferences(voucher.ledgerEntries);
-  if (actualReferences.length === 0) {
-    return {
-      voucherRef,
-      field: 'bill_reference',
-      expected_masked: true,
-      is_correct: false,
-      error_code: 'BILL_REFERENCE_MISSING',
-    };
+  const posted = allocationTokens(referenceEntries(pairLegsToEntries(voucher, expectedLegs, options)));
+  if (posted.allocations === 0) {
+    return { ...correct, is_correct: false, error_code: 'BILL_REFERENCE_MISSING' };
   }
 
-  // Generated keys annotate references — "BR-205 (New Ref)", "Against DT-114
-  // (Partial)" — and comparing the whole string meant a learner's correct
-  // "BR-205" never matched (Garima's Level 2: 7 false BILL_REFERENCE_WRONGs,
-  // 2026-09-02). Only the reference itself is compared: parentheticals and
-  // the "Against" prefix are annotations, not part of the ref.
-  // Parentheticals are stripped BEFORE splitting: an annotation such as
-  // "(part payment, ₹30,000 balance outstanding)" carries its own comma.
-  const expectedRefs = expected.bill_reference
-    .replace(/\([^)]*\)/g, '')
-    .split(/[,;]/)
-    .map((ref) => ref.replace(/^\s*against\s+/i, ''))
-    .map((ref) => normalizeAccountName(ref))
-    .filter((ref) => ref.length > 0)
-    .filter((ref) => !PLACEHOLDER_REFERENCE.test(ref));
   // The key named only a reference TYPE ("New Ref (advance)") because the
   // brief gave no bill number — a suspense reclassified as a customer
   // advance (Praveen's February #12, 2026-09-07). Any allocation the learner
   // created is then the right answer; there is no number to compare.
-  if (expectedRefs.length === 0) {
-    return {
-      voucherRef,
-      field: 'bill_reference',
-      expected_masked: true,
-      is_correct: true,
-      error_code: null,
-    };
+  const expectedTokens = expectedLegs.flatMap((leg) => [...billReferenceTokens(leg.bill_reference)]);
+  if (expectedTokens.length === 0) {
+    return correct;
   }
-  const referenceCorrect = actualReferences.some((actual) => {
-    const normalizedActual = normalizeAccountName(actual);
-    return expectedRefs.some(
-      (ref) => normalizedActual === ref || normalizedActual.includes(ref) || ref.includes(normalizedActual),
-    );
-  });
-  return {
-    voucherRef,
-    field: 'bill_reference',
-    expected_masked: true,
-    is_correct: referenceCorrect,
-    error_code: referenceCorrect ? null : 'BILL_REFERENCE_WRONG',
-  };
-}
 
+  return billReferencesCorrect(expectedLegs, posted, options.advanceReferences)
+    ? correct
+    : { ...correct, is_correct: false, error_code: 'BILL_REFERENCE_WRONG' };
+}
 
 function amountsMatch(actual: number, expected: number): boolean {
   return Math.abs(actual - expected) < 0.005;
@@ -594,7 +802,7 @@ function computeWeightedScore(diffs: VoucherDiff[], penaltyWeight = 0): number {
   let earnedWeight = 0;
 
   for (const diff of diffs) {
-    const weight = FIELD_WEIGHT[diff.field];
+    const weight = diff.weight ?? FIELD_WEIGHT[diff.field];
     totalWeight += weight;
     if (diff.is_correct) {
       earnedWeight += weight;
@@ -981,19 +1189,28 @@ function computeConceptResults(
 // scored against the wrong key (added 2026-08-19 for the 98-voucher pack
 // diagnostic, where positional drift would cascade through the whole month).
 //
-// Greedy by similarity: expected transactions are processed in sequence
-// order; each takes the highest-scoring unused voucher (account-name matches
-// are the strongest signal, then amount, then voucher type). Ties break on
-// daybook position, which preserves the old positional behavior exactly when
-// vouchers are indistinguishable.
+// Best score first over ALL pairs (2026-09-17). The earlier greedy pass let
+// each transaction, in key order, take its best unused voucher, so an
+// earlier transaction could take a voucher that was a far better fit for a
+// later one: two Deccan Traders payments of 5,000 against DT/102 and DT/103
+// posted in the other order were crossed, and an omitted sale took the same
+// party's receipt. Every eligible (transaction, voucher) pair is now scored
+// and pairs are accepted highest score first, ties broken by key order and
+// then Day Book order (which preserves the old positional behaviour exactly
+// when vouchers are indistinguishable).
 //
-// Generic ledger legs (Sales, Purchase, Cash, a bank, a GST/TDS head) prove
-// nothing about WHICH transaction a voucher is — nearly every purchase
-// voucher matches a "Purchases Dr" leg. Only a distinctive party/expense leg
-// identifies a transaction, so generic matches score low and a pairing needs
-// MIN_MATCH_SCORE of accumulated evidence (a distinctive account match, or
-// amounts plus corroboration) to count at all. Without the bar, a
-// transaction the learner never posted greedily stole whichever unused
+// Signals: a distinctive account on the same side (strongest account
+// signal), the same account on the other side (weaker), a generic account,
+// matching amounts, the base voucher type, and two strong identifiers: a
+// bill reference token the key names, and the statement reference or
+// number the key's narration carries. The key has no date, so dates play no
+// part (an Educational Mode export collapses them anyway).
+//
+// Generic ledger legs (Sales, Purchase, Cash, any bank, a GST/TDS head)
+// prove nothing about WHICH transaction a voucher is. A pair is eligible
+// only when the voucher type matches OR a distinctive leg matches on the
+// same side, and it needs MIN_MATCH_SCORE of accumulated evidence. Without
+// the bar, a transaction the learner never posted stole whichever unused
 // voucher shared a generic "Purchase" leg, and every field of that innocent
 // voucher was then flagged against the wrong key — the live 2026-08-31 pilot
 // evaluation told the learner to "re-check GST on AI-201" when the truth was
@@ -1003,19 +1220,38 @@ function computeConceptResults(
 // voucher only when the submission has at most as many vouchers as the key
 // has transactions (a short drill, where position is meaningful); on a pack
 // export with extra vouchers it reports VOUCHER_MISSING instead.
-const GENERIC_LEDGER_PATTERN = /^(sales|purchases?|cash|bank|hdfc|output|input|c?gst|sgst|igst|tds|suspense|sales returns?|purchase returns?)\b/i;
+const GENERIC_LEDGER_PATTERN = /^(sales|purchases?|cash|bank|output|input|c?gst|sgst|igst|tds|suspense|sales returns?|purchase returns?)\b/i;
+
+function isGenericLedger(name: string): boolean {
+  return GENERIC_LEDGER_PATTERN.test(name) || isBankLedger(name) || isTaxLedgerName(name) || CASH_LEDGER.test(name);
+}
 
 const DISTINCTIVE_ACCOUNT_SCORE = 4;
+const OPPOSITE_SIDE_ACCOUNT_SCORE = 2;
 const GENERIC_ACCOUNT_SCORE = 1;
 const AMOUNT_SCORE = 1;
 const VOUCHER_TYPE_SCORE = 1;
+const REFERENCE_SCORE = 4;
 const MIN_MATCH_SCORE = 4;
+
+// Statement identifiers in a key narration: the documents-mode stamp
+// (N24042601) and any run of 8+ digits (a UPI/NEFT number).
+function narrationIdentifiers(expectedLegs: AnswerKeyEntry[]): string[] {
+  const identifiers = new Set<string>();
+  for (const leg of expectedLegs) {
+    const narration = leg.narration ?? '';
+    for (const match of narration.matchAll(/\b(?:N|CD|CW)\d{8}\b/gi)) identifiers.add(match[0].toLowerCase());
+    for (const match of narration.matchAll(/\d{8,}/g)) identifiers.add(match[0]);
+  }
+  return [...identifiers];
+}
 
 export function matchVouchersToTransactions(
   vouchers: Voucher[],
   transactionGroups: AnswerKeyEntry[][],
+  options: ScoringOptions = {},
 ): (Voucher | undefined)[] {
-  return matchVouchersToTransactionsDetailed(vouchers, transactionGroups).matched;
+  return matchVouchersToTransactionsDetailed(vouchers, transactionGroups, options).matched;
 }
 
 export type VoucherMatching = {
@@ -1027,56 +1263,81 @@ export type VoucherMatching = {
 export function matchVouchersToTransactionsDetailed(
   vouchers: Voucher[],
   transactionGroups: AnswerKeyEntry[][],
+  options: ScoringOptions = {},
 ): VoucherMatching {
   const used = new Set<number>();
 
-  function similarity(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): number {
+  const signals = transactionGroups.map((expectedLegs) => ({
+    references: new Set(expectedLegs.flatMap((leg) => [...billReferenceTokens(leg.bill_reference)])),
+    identifiers: narrationIdentifiers(expectedLegs),
+  }));
+  const postedReferences = vouchers.map((voucher) => allocationTokens(voucher.ledgerEntries).tokens);
+
+  function similarity(voucherIndex: number, transactionIndex: number): number | null {
+    const voucher = vouchers[voucherIndex];
+    const expectedLegs = transactionGroups[transactionIndex];
     let score = 0;
+    let distinctiveSameSide = false;
     for (const leg of expectedLegs) {
-      if (voucher.ledgerEntries.some((entry) => legMatchesEntry(entry, leg))) {
-        score += GENERIC_LEDGER_PATTERN.test(leg.correct_account)
-          ? GENERIC_ACCOUNT_SCORE
-          : DISTINCTIVE_ACCOUNT_SCORE;
+      const matches = voucher.ledgerEntries.filter((entry) => legMatchesEntry(entry, leg, options));
+      if (matches.length > 0) {
+        if (isGenericLedger(leg.correct_account)) {
+          score += GENERIC_ACCOUNT_SCORE;
+        } else if (matches.some((entry) => entry.drOrCr === leg.dr_cr)) {
+          score += DISTINCTIVE_ACCOUNT_SCORE;
+          distinctiveSameSide = true;
+        } else {
+          score += OPPOSITE_SIDE_ACCOUNT_SCORE;
+        }
       }
       if (voucher.ledgerEntries.some((entry) => amountsMatch(entry.amount, leg.amount))) {
         score += AMOUNT_SCORE;
       }
     }
-    if (voucher.voucherType.trim().toLowerCase() === expectedLegs[0].voucher_type.trim().toLowerCase()) {
+    const typeMatches = sameVoucherType(voucher.voucherType, expectedLegs[0].voucher_type);
+    if (!typeMatches && !distinctiveSameSide) {
+      return null;
+    }
+    if (typeMatches) {
       score += VOUCHER_TYPE_SCORE;
+    }
+    const { references, identifiers } = signals[transactionIndex];
+    if ([...references].some((token) => postedReferences[voucherIndex].has(token))) {
+      score += REFERENCE_SCORE;
+    }
+    const narration = voucher.narration.toLowerCase();
+    if (identifiers.some((identifier) => narration.includes(identifier))) {
+      score += REFERENCE_SCORE;
     }
     return score;
   }
 
   const positionalFallbackAllowed = vouchers.length <= transactionGroups.length;
 
-  // Two passes. Pass 1 matches every transaction it can on evidence
-  // (accounts, amounts, type). Pass 2 hands the still-unmatched transactions
-  // a positional fallback from the vouchers still unused. Doing the fallback
-  // inside pass 1 let one MISSING voucher swallow the next transaction's
-  // true voucher positionally, which then cascaded down the whole batch:
-  // Garima's Level 4 export lacked transaction 7 and previewed at 73% with
-  // five voucher-type errors that were not hers (2026-09-03).
+  // Two passes. Pass 1 matches every transaction it can on evidence. Pass 2
+  // hands the still-unmatched transactions a positional fallback from the
+  // vouchers still unused. Doing the fallback inside pass 1 let one MISSING
+  // voucher swallow the next transaction's true voucher positionally, which
+  // then cascaded down the whole batch: Garima's Level 4 export lacked
+  // transaction 7 and previewed at 73% with five voucher-type errors that
+  // were not hers (2026-09-03).
   const assigned: (number | undefined)[] = transactionGroups.map(() => undefined);
 
-  transactionGroups.forEach((expectedLegs, index) => {
-    let bestIndex = -1;
-    let bestScore = MIN_MATCH_SCORE - 1;
-    for (let i = 0; i < vouchers.length; i++) {
-      if (used.has(i)) {
-        continue;
+  const candidates: { score: number; transaction: number; voucher: number }[] = [];
+  transactionGroups.forEach((_, transaction) => {
+    for (let voucher = 0; voucher < vouchers.length; voucher++) {
+      const score = similarity(voucher, transaction);
+      if (score !== null && score >= MIN_MATCH_SCORE) {
+        candidates.push({ score, transaction, voucher });
       }
-      const score = similarity(vouchers[i], expectedLegs);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      }
-    }
-    if (bestIndex !== -1) {
-      used.add(bestIndex);
-      assigned[index] = bestIndex;
     }
   });
+  candidates.sort((a, b) => b.score - a.score || a.transaction - b.transaction || a.voucher - b.voucher);
+  for (const candidate of candidates) {
+    if (assigned[candidate.transaction] !== undefined || used.has(candidate.voucher)) continue;
+    assigned[candidate.transaction] = candidate.voucher;
+    used.add(candidate.voucher);
+  }
 
   if (positionalFallbackAllowed) {
     transactionGroups.forEach((_, index) => {
@@ -1119,8 +1380,6 @@ const MAX_COMPOSITE_ERRONEOUS = 60;
 const MAX_COMPOSITE_UNUSED = 20;
 const COMPOSITE_TOLERANCE = 1;
 
-const TAX_LEDGER_PATTERN = /gst|tds/i;
-
 function signedAmount(entry: LedgerEntry): number {
   return entry.drOrCr === 'Dr' ? entry.amount : -entry.amount;
 }
@@ -1129,7 +1388,7 @@ function errorCount(diffs: VoucherDiff[]): number {
   return diffs.filter((diff) => !diff.is_correct).length;
 }
 
-function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[]): boolean {
+function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[], options: ScoringOptions = {}): boolean {
   const expected = new Map<string, { leg: AnswerKeyEntry; net: number }>();
   for (const leg of legs) {
     const key = normalizeAccountName(leg.correct_account);
@@ -1154,7 +1413,7 @@ function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[]): bo
   for (const [key, { leg }] of expected) {
     if (actualByAccount.has(key)) continue;
     for (let i = remaining.length - 1; i >= 0; i--) {
-      if (legMatchesEntry(remaining[i], leg)) {
+      if (legMatchesEntry(remaining[i], leg, options)) {
         actualByAccount.set(key, (actualByAccount.get(key) ?? 0) + signedAmount(remaining[i]));
         remaining.splice(i, 1);
       }
@@ -1171,7 +1430,7 @@ function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[]): bo
   // by diffGst/diffTds on the merged voucher, never here.
   const leftover = new Map<string, number>();
   for (const entry of remaining) {
-    if (TAX_LEDGER_PATTERN.test(entry.ledgerName)) continue;
+    if (isTaxLedgerName(entry.ledgerName)) continue;
     const key = normalizeAccountName(entry.ledgerName);
     leftover.set(key, (leftover.get(key) ?? 0) + signedAmount(entry));
   }
@@ -1182,8 +1441,7 @@ function ledgerEffectMatches(entries: LedgerEntry[], legs: AnswerKeyEntry[]): bo
 // the net side and amount, bill allocations carried over, the type taken
 // from whichever part carries the expected voucher type.
 function mergeVouchers(parts: Voucher[], expectedType: string): Voucher {
-  const primary =
-    parts.find((part) => part.voucherType.trim().toLowerCase() === expectedType.trim().toLowerCase()) ?? parts[0];
+  const primary = parts.find((part) => sameVoucherType(part.voucherType, expectedType)) ?? parts[0];
   const byLedger = new Map<string, { name: string; signed: number; allocations: LedgerEntry['billAllocations'] }>();
   for (const part of parts) {
     for (const entry of part.ledgerEntries) {
@@ -1227,19 +1485,24 @@ function voucherLevelExpectation(expectedLegs: AnswerKeyEntry[]): AnswerKeyEntry
   };
 }
 
-function diffsForCombinedVoucher(voucher: Voucher, expectedLegs: AnswerKeyEntry[], allLegs: AnswerKeyEntry[]): VoucherDiff[] {
+function diffsForCombinedVoucher(
+  voucher: Voucher,
+  expectedLegs: AnswerKeyEntry[],
+  allLegs: AnswerKeyEntry[],
+  options: ScoringOptions = {},
+): VoucherDiff[] {
   const sequence = expectedLegs[0].sequence;
   const diffs: VoucherDiff[] = [];
-  for (let i = 0; i < consolidateExpectedLegs(expectedLegs).length; i++) {
+  for (let leg = 0; leg < consolidateExpectedLegs(expectedLegs).length; leg++) {
     for (const field of ['account', 'dr_cr', 'amount'] as const) {
-      diffs.push({ voucherRef: sequence, field, expected_masked: true, is_correct: true, error_code: null });
+      diffs.push({ voucherRef: sequence, field, expected_masked: true, is_correct: true, error_code: null, leg });
     }
   }
   diffs.push({ voucherRef: sequence, field: 'voucher_type', expected_masked: true, is_correct: true, error_code: null });
   const expected = voucherLevelExpectation(expectedLegs);
-  diffs.push(diffGst(voucher, expected, allLegs, sequence));
-  diffs.push(diffTds(voucher, expected, allLegs, sequence));
-  diffs.push(diffBillReference(voucher, expected, sequence));
+  diffs.push(diffGst(voucher, expected, allLegs, sequence, options));
+  diffs.push(diffTds(voucher, expected, allLegs, sequence, options));
+  diffs.push(diffBillReference(voucher, expectedLegs, sequence, options));
   const bankReferenceDiff = diffBankReference(voucher, expectedLegs, sequence);
   if (bankReferenceDiff) {
     diffs.push(bankReferenceDiff);
@@ -1255,7 +1518,12 @@ type CompositeState = {
   composites: CompositeMatch[];
 };
 
-function resolveComposites(vouchers: Voucher[], transactionGroups: AnswerKeyEntry[][], state: CompositeState): void {
+function resolveComposites(
+  vouchers: Voucher[],
+  transactionGroups: AnswerKeyEntry[][],
+  state: CompositeState,
+  options: ScoringOptions = {},
+): void {
   const erroneous = () => transactionGroups.map((_, index) => index).filter((index) => errorCount(state.diffs[index]) > 0);
   const unused = () => vouchers.map((_, index) => index).filter((index) => !state.used.has(index));
   if (erroneous().length === 0 || erroneous().length > MAX_COMPOSITE_ERRONEOUS || unused().length > MAX_COMPOSITE_UNUSED) {
@@ -1272,9 +1540,9 @@ function resolveComposites(vouchers: Voucher[], transactionGroups: AnswerKeyEntr
         : unused().flatMap((a, i, all) => all.slice(i + 1).map((b) => [a, b] as [number, number]));
     for (const [a, b] of parts) {
       const pieces = [vouchers[a], vouchers[b]];
-      if (!ledgerEffectMatches(pieces.flatMap((piece) => piece.ledgerEntries), legs)) continue;
+      if (!ledgerEffectMatches(pieces.flatMap((piece) => piece.ledgerEntries), legs, options)) continue;
       const merged = mergeVouchers(pieces, legs[0].voucher_type);
-      const diffs = diffVoucherAgainstAnswerKey(merged, legs);
+      const diffs = diffVoucherAgainstAnswerKey(merged, legs, options);
       if (errorCount(diffs) >= errorCount(state.diffs[index])) continue;
       state.matched[index] = merged;
       state.matchedIndexes[index] = a;
@@ -1299,9 +1567,9 @@ function resolveComposites(vouchers: Voucher[], transactionGroups: AnswerKeyEntr
         (index): index is number => index !== undefined,
       );
       for (const voucherIndex of voucherCandidates) {
-        if (!ledgerEffectMatches(vouchers[voucherIndex].ledgerEntries, allLegs)) continue;
-        const firstDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[first], allLegs);
-        const secondDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[second], allLegs);
+        if (!ledgerEffectMatches(vouchers[voucherIndex].ledgerEntries, allLegs, options)) continue;
+        const firstDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[first], allLegs, options);
+        const secondDiffs = diffsForCombinedVoucher(vouchers[voucherIndex], transactionGroups[second], allLegs, options);
         if (errorCount(firstDiffs) + errorCount(secondDiffs) >= errorCount(state.diffs[first]) + errorCount(state.diffs[second])) continue;
         for (const index of [first, second]) {
           const previous = state.matchedIndexes[index];
@@ -1380,6 +1648,38 @@ function groupAnswerKeyEntriesBySequence(entries: AnswerKeyEntry[]): AnswerKeyEn
   return [...bySequence.entries()].sort(([a], [b]) => a - b).map(([, group]) => group);
 }
 
+// The key's own accounts, passed to every name comparison so typo tolerance
+// never equates two distinct accounts of the batch (2026-09-17).
+export function answerKeyMatchOptions(answerKey: AnswerKey): ScoringOptions {
+  return {
+    keyAccounts: keyAccountSet(answerKey.entries.map((entry) => entry.correct_account)),
+    advanceReferences: advanceReferencesOf(answerKey),
+  };
+}
+
+function matchAndDiff(vouchers: Voucher[], transactionGroups: AnswerKeyEntry[][], answerKey: AnswerKey): CompositeState {
+  const options = answerKeyMatchOptions(answerKey);
+  const matching = matchVouchersToTransactionsDetailed(vouchers, transactionGroups, options);
+  const state: CompositeState = {
+    matchedIndexes: [...matching.matchedIndexes],
+    matched: [...matching.matched],
+    used: new Set(matching.usedIndexes),
+    diffs: transactionGroups.map((expectedLegs, index) => diffVoucherAgainstAnswerKey(matching.matched[index], expectedLegs, options)),
+    composites: [],
+  };
+  resolveComposites(vouchers, transactionGroups, state, options);
+  return state;
+}
+
+// The voucher each transaction was actually scored against, after split and
+// combined postings are resolved (a split transaction's entry is the merged
+// voucher). The adjudicator shows the judge exactly this (2026-09-17), not
+// the one-to-one match that composite resolution may have replaced.
+export function resolveScoredVouchers(dayBook: ParsedDayBook, answerKey: AnswerKey): (Voucher | undefined)[] {
+  const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
+  return matchAndDiff(dayBook.vouchers, transactionGroups, answerKey).matched;
+}
+
 // Pure function, no LLM call — see Unit 06 spec's boundary: correctness is
 // computed deterministically here, never judged by an LLM. Diffs the parsed
 // Day Book vouchers against the exercise's hidden answer key transaction-by-
@@ -1396,15 +1696,7 @@ export function scoreSubmission(
   options: { previousTrialBalance?: ParsedTrialBalance | null; firstMonthOfFinancialYear?: boolean } = {},
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
-  const matching = matchVouchersToTransactionsDetailed(dayBook.vouchers, transactionGroups);
-  const state: CompositeState = {
-    matchedIndexes: [...matching.matchedIndexes],
-    matched: [...matching.matched],
-    used: new Set(matching.usedIndexes),
-    diffs: transactionGroups.map((expectedLegs, index) => diffVoucherAgainstAnswerKey(matching.matched[index], expectedLegs)),
-    composites: [],
-  };
-  resolveComposites(dayBook.vouchers, transactionGroups, state);
+  const state = matchAndDiff(dayBook.vouchers, transactionGroups, answerKey);
   const perVoucherDiffs = state.diffs.flat();
 
   const unmatchedVouchers = describeUnmatchedVouchers(dayBook.vouchers, state.used);

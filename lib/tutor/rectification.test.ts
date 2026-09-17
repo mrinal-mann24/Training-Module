@@ -116,6 +116,76 @@ describe('classifyRectification', () => {
   });
 });
 
+// 2026-09-17: rounds of one exercise, and batches interleaved with them.
+describe('classifyRectification with correction rounds', () => {
+  it('compares a correction round with the previous round of the same exercise', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'pass', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-02', result: 'fail', exercise_id: 'exercise-may' }),
+      attempt({ created_at: '2026-01-03', result: 'fail', exercise_id: 'exercise-may' }),
+      attempt({ created_at: '2026-01-04', result: 'pass', exercise_id: 'exercise-may' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-may')).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'FIXED',
+      prior: 'previous-round',
+    });
+  });
+
+  it('compares round 0 of a new batch with the final round of the previous batch', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-02', result: 'fail', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-03', result: 'fail', exercise_id: 'exercise-may' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-may')).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'STILL_FAILING',
+      prior: 'earlier-batch',
+    });
+  });
+
+  it('a previous batch fixed in its correction rounds is not reported as still failing on the next batch', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-02', result: 'pass', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-03', result: 'fail', exercise_id: 'exercise-may' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-may')).toBeNull();
+  });
+
+  it('a late round of an older batch compares with its own previous round, not the newer batch', () => {
+    const attempts = [
+      attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-april' }),
+      attempt({ created_at: '2026-01-02', result: 'fail', exercise_id: 'exercise-may' }),
+      attempt({ created_at: '2026-01-03', result: 'pass', exercise_id: 'exercise-april' }),
+    ];
+
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-april')).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'FIXED',
+      prior: 'previous-round',
+    });
+    // Without an explicit exercise id the newest row's exercise is used.
+    expect(classifyRectification(CONCEPT, attempts)).toEqual({
+      conceptTag: CONCEPT,
+      classification: 'FIXED',
+      prior: 'previous-round',
+    });
+    // May still sits after April in the timeline, and April's final round passed.
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-may')).toBeNull();
+  });
+
+  it('returns null when the named exercise never tested the concept', () => {
+    const attempts = [attempt({ created_at: '2026-01-01', result: 'fail', exercise_id: 'exercise-april' })];
+
+    expect(classifyRectification(CONCEPT, attempts, 'exercise-may')).toBeNull();
+  });
+});
+
 describe('classifyRectificationsForExercise', () => {
   it('classifies multiple concepts touched by one exercise and drops the ones with no classification', () => {
     const gst: ConceptTag = 'gst_classification';

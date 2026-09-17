@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { recomputeMastery, checkReinforcement, selectWeakConcept, CLEAN_HELP_STEP_THRESHOLD } from './mastery';
+import {
+  recomputeMastery,
+  checkReinforcement,
+  selectWeakConcept,
+  collapseCorrectionRounds,
+  CLEAN_HELP_STEP_THRESHOLD,
+} from './mastery';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 import type { ConceptTag } from '@/lib/schemas/exercise';
 
@@ -288,5 +294,169 @@ describe('selectWeakConcept', () => {
     // concept should be picked over the developing one.
     expect(target?.conceptTag).not.toBe('sales_voucher_basics');
     expect(target?.reason).toBe('not_started_or_developing');
+  });
+});
+
+// 2026-09-17: correction rounds append a full set of concept_attempts rows per
+// re-submission of the SAME exercise. The rules count exercises, not uploads.
+describe('correction rounds count as one attempt per exercise', () => {
+  function round(exerciseId: string, roundIndex: number, result: 'pass' | 'fail', extra: Partial<ConceptAttempt> = {}) {
+    const createdAt = `${exerciseId}-r${roundIndex}`;
+    return attempt({
+      id: `attempt-${createdAt}`,
+      created_at: createdAt,
+      exercise_id: exerciseId,
+      submission_id: `submission-${createdAt}`,
+      result,
+      ...extra,
+    });
+  }
+
+  it('four passing rounds of one exercise do not master a concept', () => {
+    const attempts = [0, 1, 2, 3].map((index) => round('2026-02-ex', index, 'pass'));
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(1);
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('developing');
+  });
+
+  it('a once-only concept is still mastered by one clean exercise, not by its rounds', () => {
+    const onceOnly: ConceptTag = 'rcm_and_late_fee';
+    const attempts = [0, 1, 2, 3].map((index) => round('2026-02-ex', index, 'pass', { concept_tag: onceOnly }));
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(1);
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('mastered');
+  });
+
+  it('three failing rounds of one exercise do not escalate or trigger reinforcement', () => {
+    const attempts = [0, 1, 2].map((index) => round('2026-02-ex', index, 'fail'));
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.escalation_changes[0].escalation_active).toBe(false);
+    expect(checkReinforcement(attempts, CONCEPT).reinforcementActive).toBe(false);
+  });
+
+  it('three different failed exercises still escalate, however many rounds each had', () => {
+    const attempts = [
+      round('2026-02-a', 0, 'fail'),
+      round('2026-02-a', 1, 'fail'),
+      round('2026-03-b', 0, 'fail'),
+      round('2026-04-c', 0, 'fail'),
+      round('2026-04-c', 1, 'fail'),
+      round('2026-04-c', 2, 'fail'),
+    ];
+
+    expect(recomputeMastery({ attempts, currentMastery: new Map() }).escalation_changes[0].escalation_active).toBe(true);
+    expect(checkReinforcement(attempts, CONCEPT).reinforcementActive).toBe(true);
+  });
+
+  it('a clean streak across three different exercises still masters', () => {
+    const attempts = [round('2026-02-a', 0, 'pass'), round('2026-03-b', 0, 'pass'), round('2026-04-c', 0, 'pass')];
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(3);
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('mastered');
+  });
+
+  it('the latest round wins: a later failing round overrides an earlier pass', () => {
+    const attempts = [round('2026-02-a', 0, 'pass'), round('2026-03-b', 0, 'pass'), round('2026-03-b', 1, 'fail')];
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].last_attempt_result).toBe('fail');
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(0);
+  });
+
+  it('keeps the help depth of the latest round', () => {
+    const [effective] = collapseCorrectionRounds([
+      round('2026-02-a', 0, 'pass', { hint_rungs_used: 0 }),
+      round('2026-02-a', 1, 'pass', { hint_rungs_used: CLEAN_HELP_STEP_THRESHOLD }),
+    ]);
+
+    expect(effective.hint_rungs_used).toBe(CLEAN_HELP_STEP_THRESHOLD);
+    expect(effective.id).toBe('attempt-2026-02-a-r1');
+  });
+
+  it('is order-independent and leaves the raw rows untouched', () => {
+    const attempts = [round('2026-02-a', 1, 'pass'), round('2026-03-b', 0, 'pass'), round('2026-02-a', 0, 'fail')];
+    const snapshot = structuredClone(attempts);
+
+    const effective = collapseCorrectionRounds(attempts);
+
+    expect(effective.map((row) => [row.exercise_id, row.result, row.corrected])).toEqual([
+      ['2026-02-a', 'pass', true],
+      ['2026-03-b', 'pass', false],
+    ]);
+    expect(attempts).toEqual(snapshot);
+  });
+
+  // Decision 2026-09-17: a pass reached only through the correction loop is
+  // not clean. It breaks the streak (like a help-heavy pass) but is not a
+  // fail for escalation or reinforcement.
+  it('a pass after correction resets the streak instead of extending it', () => {
+    const attempts = [
+      round('2026-02-a', 0, 'pass'),
+      round('2026-03-b', 0, 'pass'),
+      round('2026-04-c', 0, 'fail'),
+      round('2026-04-c', 1, 'pass'),
+    ];
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(0);
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('developing');
+    expect(patch.concept_mastery_deltas[0].last_attempt_result).toBe('pass');
+  });
+
+  it('corrected passes interleaved with clean ones never master a concept', () => {
+    const attempts = [
+      round('2026-02-a', 0, 'pass'),
+      round('2026-03-b', 0, 'fail'),
+      round('2026-03-b', 1, 'pass'),
+      round('2026-04-c', 0, 'pass'),
+      round('2026-05-d', 0, 'fail'),
+      round('2026-05-d', 1, 'pass'),
+      round('2026-06-e', 0, 'pass'),
+    ];
+
+    const patch = recomputeMastery({ attempts, currentMastery: new Map() });
+
+    expect(patch.concept_mastery_deltas[0].consecutive_clean_count).toBe(1);
+    expect(patch.concept_mastery_deltas[0].new_status).toBe('developing');
+  });
+
+  it('a pass after correction does not count as a failure for escalation or reinforcement', () => {
+    const attempts = [
+      round('2026-02-a', 0, 'fail'),
+      round('2026-03-b', 0, 'fail'),
+      round('2026-03-b', 1, 'fail'),
+      round('2026-03-b', 2, 'pass'),
+      round('2026-04-c', 0, 'fail'),
+      round('2026-04-c', 1, 'pass'),
+    ];
+
+    expect(recomputeMastery({ attempts, currentMastery: new Map() }).escalation_changes[0].escalation_active).toBe(false);
+    expect(checkReinforcement(attempts, CONCEPT).reinforcementActive).toBe(false);
+  });
+
+  it('recompute over rounds is idempotent and independent of row order', () => {
+    const attempts = [
+      round('2026-02-a', 0, 'fail'),
+      round('2026-02-a', 1, 'pass'),
+      round('2026-03-b', 0, 'pass'),
+      round('2026-03-b', 1, 'pass'),
+    ];
+
+    const first = recomputeMastery({ attempts, currentMastery: new Map() });
+    const again = recomputeMastery({ attempts, currentMastery: new Map() });
+    const reversed = recomputeMastery({ attempts: [...attempts].reverse(), currentMastery: new Map() });
+
+    expect(again).toEqual(first);
+    expect(reversed).toEqual(first);
   });
 });

@@ -22,8 +22,89 @@ const ACCOUNT_FAMILIES: RegExp[] = [
   /^(outstanding|accrued|accounts payable|expenses? payable)/i,
 ];
 
+// The family words themselves; what is left after removing them (and the
+// filler words) is what makes an accrual ledger specific.
+const FAMILY_WORDS = new Set(['outstanding', 'accrued', 'payable', 'payables', 'account', 'accounts', 'expense', 'expenses', 'exp']);
+
+// A family only equates a GENERIC accrual ledger with another member
+// (2026-09-17): "Outstanding Salary" and "Outstanding Rent" both start with
+// "outstanding" and were read as one account, though each is a specific
+// accrual. One side must carry nothing beyond the family words.
 function sameAccountFamily(a: string, b: string): boolean {
-  return ACCOUNT_FAMILIES.some((family) => family.test(a.trim()) && family.test(b.trim()));
+  if (!ACCOUNT_FAMILIES.some((family) => family.test(a.trim()) && family.test(b.trim()))) return false;
+  const specific = (name: string) => rawTokens(name).filter((token) => !FAMILY_WORDS.has(token) && !FILLER_TOKENS.has(token));
+  return specific(a).length === 0 || specific(b).length === 0;
+}
+
+function rawTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/a\/c/g, ' ac ')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 0);
+}
+
+// Tax ledgers by word, never by substring (2026-09-17): "Kingston Traders"
+// contains "gst" and was treated as a tax ledger (skipped from amount
+// checks, excluded from the party set). CGST/SGST/IGST/UTGST/GST and TDS
+// count only as words of their own ("GST@18%", "TDS194C" still count).
+const TAX_WORD = /(?<![a-z])(?:[csi]|ut)?gst(?![a-z])|(?<![a-z])tds(?![a-z])/i;
+
+export function isTaxLedgerName(name: string): boolean {
+  return TAX_WORD.test(name);
+}
+
+// Balance-sheet markers (2026-09-17). "payable" is a filler word for the
+// token comparison, so "Salary Payable" read as "Salaries" and "Rent
+// Payable" as "Rent": an accrual posted to the expense head. A name carrying
+// one of these words is never the same account as a name without one.
+const BALANCE_SHEET_MARKERS = new Set([
+  'payable', 'payables', 'outstanding', 'receivable', 'receivables', 'advance', 'advances', 'prepaid', 'accrued',
+]);
+
+function hasBalanceSheetMarker(name: string): boolean {
+  return rawTokens(name).some((token) => BALANCE_SHEET_MARKERS.has(token));
+}
+
+// For two tax ledgers "TDS Payable" and plain "TDS" name the same liability;
+// only receivable (an asset: TDS deducted by customers) against payable
+// separates them.
+function markersDisagree(a: string, b: string): boolean {
+  if (isTaxLedgerName(a) && isTaxLedgerName(b)) {
+    const receivable = (name: string) => rawTokens(name).some((token) => token === 'receivable' || token === 'receivables');
+    return receivable(a) !== receivable(b);
+  }
+  return hasBalanceSheetMarker(a) !== hasBalanceSheetMarker(b);
+}
+
+// Income against expense (2026-09-17): the alias "Interest" of Interest
+// Income accepted "Interest Paid" by containment, and "Discount Allowed" is
+// not "Discount Received". Only an income word against an expense word
+// conflicts; a name with neither ("Rent") agrees with both.
+const INCOME_WORDS = new Set(['income', 'incomes', 'received', 'receipt', 'receipts', 'earned', 'revenue']);
+const EXPENSE_WORDS = new Set(['paid', 'expense', 'expenses', 'exp', 'allowed']);
+
+function directionOf(name: string): 'income' | 'expense' | null {
+  const tokens = rawTokens(name);
+  const income = tokens.some((token) => INCOME_WORDS.has(token));
+  const expense = tokens.some((token) => EXPENSE_WORDS.has(token));
+  return income === expense ? null : income ? 'income' : 'expense';
+}
+
+export function directionsConflict(a: string, b: string): boolean {
+  const first = directionOf(a);
+  const second = directionOf(b);
+  return first !== null && second !== null && first !== second;
+}
+
+// Which tax a name is about: its GST head, plain "gst", or "tds". "IGST
+// Payable" is not "GST Payable" (2026-09-17: containment equated them).
+function taxIdentityOf(name: string): string | null {
+  const head = gstHeadOf(name);
+  if (head) return head;
+  if (/(?<![a-z])(?:ut)?gst(?![a-z])/i.test(name)) return 'gst';
+  if (/(?<![a-z])tds(?![a-z])/i.test(name)) return 'tds';
+  return null;
 }
 
 // Small edit-distance for typo tolerance ("Elecrticity Charges" — a real
@@ -125,7 +206,6 @@ export function aliasFitsAccount(alias: string, account: string): boolean {
 // restarted by Tally at each new financial year.
 export type LedgerKind = 'balance_sheet' | 'profit_and_loss' | 'tax' | 'unknown';
 
-const LEDGER_TAX_PATTERN = /gst|tds/i;
 const BALANCE_SHEET_PATTERN =
   /\b(cash|bank|hdfc|capital|equipment|machinery|furniture|vehicle|computer|asset|loan|deposit|prepaid|outstanding|accrued|payable|receivable|suspense|advance|provision|stock|investment|drawings|reserve)\b/i;
 const PROFIT_AND_LOSS_PATTERN =
@@ -137,7 +217,7 @@ const PROFIT_AND_LOSS_PATTERN =
 const BANK_CASH_PROFIT_AND_LOSS = /\b(bank|cash)\s+(charges?|fees?|commission|interest|discount)\b/i;
 
 export function classifyLedger(account: string, partyAccounts: Set<string>): LedgerKind {
-  if (LEDGER_TAX_PATTERN.test(account)) return 'tax';
+  if (isTaxLedgerName(account)) return 'tax';
   if (partyAccounts.has(normalizeAccountName(account))) return 'balance_sheet';
   if (BANK_CASH_PROFIT_AND_LOSS.test(account)) return 'profit_and_loss';
   if (BALANCE_SHEET_PATTERN.test(account)) return 'balance_sheet';
@@ -169,7 +249,7 @@ export function partyAccountsOf(
 ): Set<string> {
   const parties = new Set<string>();
   for (const entry of entries) {
-    if (entry.bill_reference === null || LEDGER_TAX_PATTERN.test(entry.correct_account)) continue;
+    if (entry.bill_reference === null || isTaxLedgerName(entry.correct_account)) continue;
     if (CORE_PROFIT_AND_LOSS.test(entry.correct_account)) continue;
     const side = PARTY_SIDE[entry.voucher_type.trim().toLowerCase()];
     if (side !== undefined && entry.dr_cr !== side) continue;
@@ -195,7 +275,17 @@ export function tdsSectionOf(name: string): string | null {
   return KNOWN_TDS_SECTIONS.has(letter) ? `194${letter}` : null;
 }
 
-export function accountNamesMatch(actual: string, expected: string): boolean {
+// `keyAccounts` (2026-09-17, optional): the normalised account names of the
+// answer key being scored. Two names that are BOTH distinct accounts of the
+// key are never equated by the lenient rules ("Mehta Traders" posted where
+// the key expects Mehra Traders, when Mehta Traders is a party of its own).
+export type AccountMatchOptions = { keyAccounts?: ReadonlySet<string> };
+
+export function keyAccountSet(accounts: Iterable<string>): Set<string> {
+  return new Set([...accounts].map(normalizeAccountName));
+}
+
+export function accountNamesMatch(actual: string, expected: string, options: AccountMatchOptions = {}): boolean {
   const a = normalizeAccountName(actual);
   const b = normalizeAccountName(expected);
   if (a === b) {
@@ -206,11 +296,26 @@ export function accountNamesMatch(actual: string, expected: string): boolean {
   if (actualSection !== null && expectedSection !== null && actualSection !== expectedSection) {
     return false;
   }
-  if (sameAccountFamily(actual, expected)) {
-    return true;
+  if (options.keyAccounts?.has(a) && options.keyAccounts.has(b)) {
+    return false;
   }
   const actualHead = gstHeadOf(actual);
   if (actualHead !== null && actualHead === gstHeadOf(expected)) {
+    return true;
+  }
+  // Guards every lenient rule below must pass (2026-09-17).
+  if (taxIdentityOf(actual) !== taxIdentityOf(expected)) {
+    return false;
+  }
+  if (markersDisagree(actual, expected) || directionsConflict(actual, expected)) {
+    return false;
+  }
+  // "Bank Charges" is an expense, "Bank"/"Cash" the asset: exactly one side
+  // naming a bank/cash charge is a different account.
+  if (BANK_CASH_PROFIT_AND_LOSS.test(actual) !== BANK_CASH_PROFIT_AND_LOSS.test(expected)) {
+    return false;
+  }
+  if (sameAccountFamily(actual, expected)) {
     return true;
   }
   if (significantTokensMatch(actual, expected)) {
@@ -226,8 +331,18 @@ export function accountNamesMatch(actual: string, expected: string): boolean {
   }
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length <= b.length ? b : a;
-  if (shorter.length >= 5 && longer.includes(shorter)) {
+  // A short name (under 6 significant chars: "Sales", "Bank") is contained
+  // only as whole words (2026-09-17), so "Credit Sales A/c" still holds
+  // "Sales" but a 5-letter name can no longer hide inside another word.
+  if (shorter.length >= 6 && longer.includes(shorter)) {
     return true;
+  }
+  if (shorter.length === 5) {
+    const shortTokens = significantTokens(shorter === a ? actual : expected);
+    const longTokens = significantTokens(shorter === a ? expected : actual);
+    if (shortTokens.length > 0 && shortTokens.every((token) => longTokens.includes(token))) {
+      return true;
+    }
   }
   // Typo tolerance scaled to name length — names of 8+ significant chars
   // allow 2 edits (a transposed pair costs 2 in plain Levenshtein and is the
@@ -242,3 +357,62 @@ export function accountNamesMatch(actual: string, expected: string): boolean {
   return maxEdits > 0 && editDistanceAtMost(a, b, maxEdits);
 }
 
+
+// An alias of `account` accepts `ledger` only when it fits the account
+// (returns rule), matches the ledger, and the ledger does not contradict the
+// account itself on balance-sheet marker or income/expense direction
+// (2026-09-17): the alias "Interest" of Interest Income must not accept
+// "Interest Paid", nor an alias of Salaries accept "Salary Payable".
+export function aliasAcceptsLedger(ledger: string, alias: string, account: string, options: AccountMatchOptions = {}): boolean {
+  if (!aliasFitsAccount(alias, account)) return false;
+  if (markersDisagree(ledger, account) || directionsConflict(ledger, account)) return false;
+  const normalizedLedger = normalizeAccountName(ledger);
+  if (options.keyAccounts?.has(normalizedLedger) && normalizedLedger !== normalizeAccountName(account) && normalizedLedger !== normalizeAccountName(alias)) {
+    return false;
+  }
+  return accountNamesMatch(ledger, alias, options);
+}
+
+// Two names that no guard separates (2026-09-17): same tax identity, same
+// returns status, balance-sheet markers and income/expense direction in
+// agreement, and not a bank/cash charge against the bank or cash itself.
+// The adjudicator requires this before it may excuse a naming finding.
+export function namesCompatible(a: string, b: string): boolean {
+  return (
+    taxIdentityOf(a) === taxIdentityOf(b) &&
+    RETURNS_TOKEN.test(a) === RETURNS_TOKEN.test(b) &&
+    !markersDisagree(a, b) &&
+    !directionsConflict(a, b) &&
+    BANK_CASH_PROFIT_AND_LOSS.test(a) === BANK_CASH_PROFIT_AND_LOSS.test(b)
+  );
+}
+
+// Words every business or ledger name may carry; sharing one of these says
+// nothing about two names being the same account ("Kolkata Traders" and
+// "Karnataka Traders").
+const GENERIC_NAME_STEMS = new Set(
+  [
+    'trader', 'traders', 'enterprise', 'enterprises', 'industry', 'industries', 'pvt', 'private', 'ltd', 'limited',
+    'llp', 'co', 'company', 'corporation', 'corp', 'supplier', 'suppliers', 'emporium', 'store', 'stores', 'agency',
+    'agencies', 'service', 'services', 'solution', 'solutions', 'india', 'firm', 'brothers', 'bros', 'sons', 'group',
+    'sale', 'sales', 'purchase', 'purchases', 'bank', 'cash', 'income', 'paid', 'received',
+  ].map(stemToken),
+);
+
+export function shareDistinctiveToken(a: string, b: string): boolean {
+  const first = significantTokens(a).filter((token) => !GENERIC_NAME_STEMS.has(token));
+  const second = new Set(significantTokens(b).filter((token) => !GENERIC_NAME_STEMS.has(token)));
+  return first.some((token) => second.has(token));
+}
+
+// A party's name leads with its proper name ("Balaji" Interiors, "Mysore"
+// Decor); the trade word after it is shared by many parties ("Kolkata
+// Interiors"). Two party names are variants only when the first distinctive
+// word of the expected name appears in the other.
+export function shareLeadingNameToken(ledger: string, party: string): boolean {
+  const leading = rawTokens(party)
+    .filter((token) => !FILLER_TOKENS.has(token))
+    .map(stemToken)
+    .find((token) => !GENERIC_NAME_STEMS.has(token));
+  return leading !== undefined && significantTokens(ledger).includes(leading);
+}

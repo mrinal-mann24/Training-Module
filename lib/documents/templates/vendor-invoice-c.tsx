@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Format C — "letterhead minimal": large vendor wordmark, one heavy rule,
 // hairline table with no fills, right-aligned totals, computer-generated
@@ -156,6 +157,7 @@ export function VendorInvoiceDocumentC({ content }: Props) {
           </View>
         </View>
 
+        <VendorInvoiceParticulars content={content} />
         <Text style={styles.footer}>This is a computer generated invoice.</Text>
       </Page>
     </Document>

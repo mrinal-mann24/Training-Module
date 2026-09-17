@@ -146,12 +146,21 @@ export async function logAttemptsAndClassifyRectifications(
 
   const allAttempts = await getConceptAttempts(supabase, learnerId);
   const conceptTagsThisExercise = scoringResult.concept_results.map((result) => result.concept_tag);
-  return classifyRectificationsForExercise(conceptTagsThisExercise, allAttempts);
+  // The scored exercise is named explicitly (2026-09-17) so "prior" is this
+  // exercise's previous round, or failing that the previous batch's final
+  // round, never whichever raw row happens to sort just before it.
+  return classifyRectificationsForExercise(conceptTagsThisExercise, allAttempts, exerciseId);
 }
 
 // Re-derives concept_mastery from the full concept_attempts history, then
 // evaluates module advancement on top of the fresh mastery state — the one
 // sanctioned write path for both tables (architecture.md invariant 5).
+//
+// The raw history goes in whole, every correction round included (2026-09-17):
+// recomputeMastery folds rounds to one attempt per exercise itself, so no
+// caller can forget to and let one re-submitted batch master or escalate a
+// concept. Filtering rows out here instead would lose them from the audit
+// trail's only reader.
 export async function recomputeMasteryAndModuleProgress(
   supabase: SupabaseClient,
   learnerId: string,
@@ -382,6 +391,7 @@ export async function openCorrectionRoundOrAdvance(
         answerKey,
         packMode: params.exercise.packFiles.length > 0,
         focusConceptTag: decision.focusConceptTag,
+        licenseMode: params.licenseMode,
       });
 
       await saveHint(supabase, params.learnerId, params.exercise.id, hint, decision.focusConceptTag);

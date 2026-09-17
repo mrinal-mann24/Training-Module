@@ -93,7 +93,8 @@ describe('real-Tally structures (pilot calibration, 2026-08-20)', () => {
     const xml = `<ENVELOPE><BODY><IMPORTDATA><REQUESTDATA><TALLYMESSAGE><VOUCHER VCHTYPE="Receipt"><DATE>20260405</DATE><NARRATION>x</NARRATION><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME><ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>200.00</AMOUNT><BILLALLOCATIONS.LIST><NAME>INV-001</NAME><BILLTYPE>Against Ref</BILLTYPE><AMOUNT>150.00</AMOUNT></BILLALLOCATIONS.LIST><BILLALLOCATIONS.LIST><NAME>INV-002</NAME><AMOUNT>50.00</AMOUNT></BILLALLOCATIONS.LIST></ALLLEDGERENTRIES.LIST></VOUCHER></TALLYMESSAGE></REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`;
     const result = parseDayBookXml(utf16(xml));
     expect(result.vouchers[0].ledgerEntries[0].billAllocations).toEqual([
-      { name: 'INV-001', amount: 150 },
+      // billType is additive (2026-09-17): present only when BILLTYPE is.
+      { name: 'INV-001', amount: 150, billType: 'Against Ref' },
       { name: 'INV-002', amount: 50 },
     ]);
   });
@@ -117,6 +118,48 @@ describe('item-invoice vouchers (stock items in use, Garima Level 3, 2026-09-03)
     const parsed = parseDayBookXml(Buffer.from(xml, 'utf8'));
     const legs = parsed.vouchers[0].ledgerEntries.map((e) => `${e.drOrCr} ${e.ledgerName} ${e.amount}`);
     expect(legs).toEqual(['Cr Mumbai Suppliers 47200', 'Dr IGST 7200', 'Dr Purchase 20000', 'Dr Purchase 20000']);
-    expect(parsed.vouchers[0].ledgerEntries[0].billAllocations).toEqual([{ name: 'MS-2201', amount: 47200 }]);
+    expect(parsed.vouchers[0].ledgerEntries[0].billAllocations).toEqual([{ name: 'MS-2201', amount: 47200, billType: 'New Ref' }]);
+  });
+});
+
+describe('audit fixes (2026-09-17)', () => {
+  function utf16(xml: string): Buffer {
+    return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]);
+  }
+  function envelope(vouchers: string): Buffer {
+    return utf16(`<ENVELOPE><BODY><IMPORTDATA><REQUESTDATA><TALLYMESSAGE>${vouchers}</TALLYMESSAGE></REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`);
+  }
+  function voucher(extra: string, ledger = 'Vendor', amount = '-100.00', allocations = ''): string {
+    return `<VOUCHER VCHTYPE="Payment"><DATE>20260405</DATE><VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>${extra}<ALLLEDGERENTRIES.LIST><LEDGERNAME>${ledger}</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>${amount}</AMOUNT>${allocations}</ALLLEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST><LEDGERNAME>Bank</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>100.00</AMOUNT></ALLLEDGERENTRIES.LIST></VOUCHER>`;
+  }
+
+  it('keeps leading zeros in bill references, ledger names and narrations (no numeric coercion)', () => {
+    const parsed = parseDayBookXml(
+      envelope(voucher('<NARRATION>00123</NARRATION>', '0123', '-100.00', '<BILLALLOCATIONS.LIST><NAME>001</NAME><BILLTYPE>Agst Ref</BILLTYPE><AMOUNT>-100.00</AMOUNT></BILLALLOCATIONS.LIST>')),
+    );
+    const entry = parsed.vouchers[0].ledgerEntries[0];
+    expect(entry.ledgerName).toBe('0123');
+    expect(entry.amount).toBe(100);
+    expect(entry.drOrCr).toBe('Dr');
+    expect(entry.billAllocations).toEqual([{ name: '001', amount: -100, billType: 'Agst Ref' }]);
+    expect(parsed.vouchers[0].narration).toBe('00123');
+    expect(parsed.vouchers[0].date).toBe('20260405');
+  });
+
+  it('drops optional and cancelled vouchers, so scoring and the voucher count see only postings', () => {
+    const parsed = parseDayBookXml(
+      envelope(
+        voucher('<ISOPTIONAL>No</ISOPTIONAL><ISCANCELLED>No</ISCANCELLED>') +
+          voucher('<ISOPTIONAL>Yes</ISOPTIONAL>') +
+          voucher('<ISCANCELLED>Yes</ISCANCELLED>') +
+          voucher(''),
+      ),
+    );
+    expect(parsed.vouchers).toHaveLength(2);
+  });
+
+  it('names the ledger when an amount is not a number instead of an opaque structure error', () => {
+    expect(() => parseDayBookXml(envelope(voucher('', 'Vendor', 'abc')))).toThrow(/amount "abc" on ledger "Vendor" is not a number/);
+    expect(() => parseDayBookXml(envelope(voucher('', 'Vendor', 'abc')))).toThrow(DayBookParseError);
   });
 });

@@ -48,40 +48,6 @@ const VENDOR_INVOICE_JSON_SCHEMA = {
   required: ['doc_type', 'content'],
 } as const;
 
-const BANK_STATEMENT_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    doc_type: { type: 'string', enum: ['bank_statement'] },
-    content: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        accountHolderName: { type: 'string' },
-        period: { type: 'string' },
-        transactions: {
-          type: 'array',
-          minItems: 1,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              date: { type: 'string' },
-              narration: { type: 'string' },
-              debit: { type: ['number', 'null'] },
-              credit: { type: ['number', 'null'] },
-              balance: { type: 'number' },
-            },
-            required: ['date', 'narration', 'debit', 'credit', 'balance'],
-          },
-        },
-      },
-      required: ['accountHolderName', 'period', 'transactions'],
-    },
-  },
-  required: ['doc_type', 'content'],
-} as const;
-
 const CONTENT_BOUNDARY_INSTRUCTION = `Critical content boundary: this document must contain ONLY what a real physical
 document would show — raw commercial facts and figures a vendor or bank actually
 prints. NEVER state or imply the accounting classification the learner is meant to
@@ -105,6 +71,9 @@ export type VendorInvoiceInput = {
   // The exercise's own transaction line — grounds the DATE (answer-key
   // entries carry no date field).
   transactionDescription: string;
+  // The learner's company, printed as the invoice's recipient block
+  // (2026-09-17); COMPANY_DETAILS.name when omitted.
+  companyName?: string;
 };
 
 // The exact figures the invoice must print, derived deterministically from
@@ -295,7 +264,9 @@ export function buildVendorInvoiceRetryPrompt(
   };
 }
 
-// One transaction to appear as a line on the combined bank statement:
+// One transaction to appear as a line on the combined bank statement
+// (the statement itself is built by code, build-bank-statement.ts; the LLM
+// statement prompt was deleted 2026-09-17):
 // the answer-key entry grounds the amount/direction, the exercise's own
 // transaction description grounds the DATE and business context (answer-key
 // entries carry no date field).
@@ -304,91 +275,3 @@ export type BankStatementLineInput = {
   partyAccounts: string[];
   transactionDescription: string;
 };
-
-// A real bank statement is ONE document listing every movement in the period,
-// not one PDF per transaction (live intern feedback, 2026-09-01: a batch
-// delivered three separate "Bank Statement" cards). This prompt generates a
-// single statement whose transactions array carries one line per flagged
-// bank transaction in the batch.
-function buildBankStatementBatchSystemPrompt(lines: BankStatementLineInput[], companyName: string): string {
-  const transactionBlocks = lines
-    .map(
-      (line, index) => `Transaction ${index + 1} (exercise item ${line.entry.sequence}):
-- Exercise description: ${line.transactionDescription}
-- Parties/accounts involved: ${line.partyAccounts.join('; ') || '(none listed)'}
-- Amount: ${line.entry.amount}
-- Voucher type: ${line.entry.voucher_type}
-- Bill reference: ${line.entry.bill_reference ?? 'none'}`,
-    )
-    .join('\n\n');
-
-  return `You are generating structured source-document content for an accounting training
-exercise: ONE realistic bank statement excerpt for a small Indian trading
-business, covering ALL of the transactions listed below as separate statement
-lines.
-
-Hard requirements:
-- Exactly one statement line per transaction below — ${lines.length} line(s) total,
-  in chronological date order, dated per each transaction's own description.
-- Each line: the date, a terse real-bank-style narration (transfer mode plus a
-  reference number plus the counterparty, e.g. "NEFT/N26050101/SIGNAGE/PMT"),
-  either debit or credit set (the other null) matching the money direction from
-  the business's point of view, and a running balance that is arithmetically
-  consistent from line to line (start from a plausible opening balance).
-- The account holder is EXACTLY "${companyName}" — never an invented company
-  name; the period covers the span of the listed dates.
-- Line amounts must equal each transaction's stated amount exactly.
-- When a transaction lists a bill reference, that reference MUST appear
-  verbatim inside that line's narration (e.g. "NEFT/N26050114/KARNATAKA
-  EMPORIUM/INV KE-305"): the learner allocates the receipt or payment against
-  the bill number they read on the statement, and can never know a number the
-  statement does not show.
-
-${transactionBlocks}
-
-${CONTENT_BOUNDARY_INSTRUCTION}
-
-Never use an em dash anywhere in the text you produce; use a colon, comma, or full stop.
-
-Respond only with JSON matching the provided schema.`;
-}
-
-export function buildBankStatementBatchPrompt(lines: BankStatementLineInput[], companyName: string): {
-  messages: ChatMessage[];
-  jsonSchema: { name: string; schema: Record<string, unknown> };
-} {
-  return {
-    messages: [
-      { role: 'system', content: buildBankStatementBatchSystemPrompt(lines, companyName) },
-      {
-        role: 'user',
-        content: `Generate the single combined bank statement covering exercise items ${lines
-          .map((line) => line.entry.sequence)
-          .join(', ')}.`,
-      },
-    ],
-    jsonSchema: {
-      name: 'bank_statement',
-      schema: BANK_STATEMENT_JSON_SCHEMA,
-    },
-  };
-}
-
-export function buildBankStatementBatchRetryPrompt(
-  lines: BankStatementLineInput[],
-  companyName: string,
-  validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
-  const base = buildBankStatementBatchPrompt(lines, companyName);
-  return {
-    ...base,
-    messages: [
-      ...base.messages,
-      {
-        role: 'user',
-        content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
-      },
-    ],
-  };
-}
-

@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
+import { VendorInvoiceParticulars } from '@/lib/documents/templates/gst-particulars';
 
 // Deterministic, code-based layout — same VendorInvoiceContent always
 // produces the same rendered PDF. No LLM involvement at this step; the LLM's
@@ -139,6 +140,7 @@ export function VendorInvoiceDocument({ content }: VendorInvoiceDocumentProps) {
             <Text style={styles.totalValue}>{formatAmount(content.totalAmount)}</Text>
           </View>
         </View>
+        <VendorInvoiceParticulars content={content} />
       </Page>
     </Document>
   );

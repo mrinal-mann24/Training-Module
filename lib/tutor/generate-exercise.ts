@@ -26,8 +26,7 @@ import {
   isBankLedger,
   registerCompanyLedgers,
   appendCompanyTransactionLog,
-  normalizeBillReference,
-  splitBillReferences,
+  parseBillReferences,
   partyLegOf,
   type OpenBill,
   type PartyTaxClass,
@@ -47,9 +46,30 @@ import type {
 } from "@/lib/llm/prompts/source-document";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
 import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
-import { checkBillNumberUniqueness, checkGstArithmetic, checkGstHeadMetadata, checkTdsArithmetic, checkTdsThresholds, priorBillReferences, tdsHistoryFromKeys } from "@/lib/tutor/generation-checks";
-import { appendMonthEndJournals } from "@/lib/tutor/month-end-journals";
-import { checkDatesExist, enforceEducationalDates } from "@/lib/tutor/educational-dates";
+import {
+  billTokensIn,
+  checkBillNumberUniqueness,
+  checkConceptTagsMatchContent,
+  checkGstArithmetic,
+  checkGstHeadMetadata,
+  checkPlaceOfSupply,
+  checkReverseCharge,
+  checkTdsArithmetic,
+  checkTdsThresholds,
+  checkTextMatchesKey,
+  normalizeDocumentNumber,
+  priorBillReferences,
+  priorDocumentNumbers,
+  tdsHistoryFromKeys,
+  transactionDateOf,
+  type PayeeTypeOf,
+  type StateCodeOf,
+  type TdsHistory,
+} from "@/lib/tutor/generation-checks";
+import { appendMonthEndJournals, type MonthEndParams } from "@/lib/tutor/month-end-journals";
+import { checkCanonicalDateFormat, checkDatesExist, enforceEducationalDates } from "@/lib/tutor/educational-dates";
+import { partyIdentityFor } from "@/lib/documents/party-directory";
+import { extractTransactionDate } from "@/lib/llm/prompts/source-document";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -257,6 +277,62 @@ export function selectDiagnosticVariant(learnerId: string): ExerciseVariant {
   return hash[0] % 2 === 0 ? "A" : "B";
 }
 
+// Opening Cash and Bank from a key's own opening balances.
+function openingCashPosition(generated: GeneratedExercise): { cash: number; bank: number } {
+  const signed = (opening: { dr_cr: "Dr" | "Cr"; amount: number }) => (opening.dr_cr === "Dr" ? opening.amount : -opening.amount);
+  const openings = generated.answer_key.opening_balances ?? [];
+  return {
+    cash: openings.filter((opening) => CASH_LEDGER_PATTERN.test(opening.account)).reduce((sum, opening) => sum + signed(opening), 0),
+    bank: openings.filter((opening) => isBankLedger(opening.account)).reduce((sum, opening) => sum + signed(opening), 0),
+  };
+}
+
+// Party identity for the checks (2026-09-17): the fixed state and
+// constitution the documents print (party-directory.ts), never adjusted to
+// fit the GST the model chose.
+const stateCodeFromIdentity: StateCodeOf = (party) => partyIdentityFor(party).stateCode;
+const payeeTypeFromIdentity: PayeeTypeOf = (party) => (partyIdentityFor(party).entityType === "P" ? "individual_huf" : "other");
+
+export type DiagnosticGenerationDeps = {
+  complete?: typeof getTracedStructuredCompletion;
+  // Builds documents and inserts the exercise; returns its id.
+  persist?: (supabase: SupabaseClient, learnerId: string, exercise: GeneratedExercise) => Promise<{ id: string }>;
+};
+
+async function persistDiagnosticExercise(
+  supabase: SupabaseClient,
+  learnerId: string,
+  dated: GeneratedExercise,
+): Promise<{ id: string }> {
+  // Documents first, exercise row last — see prepareSourceDocuments'
+  // race note. The legacy generated diagnostic has no company registry
+  // yet, so the product's one live company is pinned directly.
+  // Statement built by code from the key; the legacy diagnostic's bank
+  // opening is whatever its own opening_balances say (0 if none).
+  const openingBank = openingCashPosition(dated).bank;
+  const diagnosticStatement =
+    planSourceDocuments(dated).bankLines.length > 0
+      ? buildBankStatementContent({
+          companyName: "Blossom Retail Pvt Ltd",
+          openingBankBalance: openingBank,
+          generated: dated,
+        })
+      : null;
+  const diagnosticExercise = diagnosticStatement
+    ? applyBankReferences(dated, diagnosticStatement.referenceBySequence)
+    : dated;
+  const documents = await prepareSourceDocuments(
+    supabase,
+    learnerId,
+    diagnosticExercise,
+    "Blossom Retail Pvt Ltd",
+    diagnosticStatement?.content ?? null,
+  );
+  const { id } = await insertExercise(supabase, learnerId, "diagnostic", diagnosticExercise);
+  await attachSourceDocuments(supabase, id, documents);
+  return { id };
+}
+
 export async function generateDiagnosticExercise(
   supabase: SupabaseClient,
   learnerId: string,
@@ -264,20 +340,35 @@ export async function generateDiagnosticExercise(
   // seeded, and its batch has no assigned month, so each date token is
   // redated within its own month (educational-dates.ts).
   licenseMode: LicenseMode = "licensed",
+  deps: DiagnosticGenerationDeps = {},
 ): Promise<{ id: string }> {
+  const complete = deps.complete ?? getTracedStructuredCompletion;
+  const persist = deps.persist ?? persistDiagnosticExercise;
   const variant = selectDiagnosticVariant(learnerId);
+  // The diagnostic stands for the books' first month (April 2024).
+  const month = exerciseMonthForModule(1);
 
   let lastError: string | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { messages, jsonSchema } =
+    const base =
       lastError === null
         ? buildDiagnosticPrompt(variant)
         : buildDiagnosticRetryPrompt(variant, lastError);
+    // The same hard checks as an adaptive batch (2026-09-17 audit: this
+    // fallback delivered whatever parsed). The diagnostic prompt says
+    // nothing about dates, so the rule the checks enforce is stated here.
+    const messages = [
+      ...base.messages,
+      {
+        role: "user" as const,
+        content: `Date every transaction explicitly inside ${month.label} in the DD-Mon-YYYY format (e.g. "On 03-${month.label.slice(0, 3)}-${month.year}, ..."), keep every rupee figure and bill number in a line identical to its answer key, and state answer_key.opening_balances for Cash and the bank large enough that neither ever goes negative.`,
+      },
+    ];
 
-    const raw = await getTracedStructuredCompletion({
+    const raw = await complete({
       messages,
-      jsonSchema,
+      jsonSchema: base.jsonSchema,
       traceName: "diagnostic-generation",
       learnerId,
       callType: "diagnostic-generation",
@@ -285,48 +376,34 @@ export async function generateDiagnosticExercise(
 
     const parsed = GeneratedExerciseSchema.safeParse(raw);
 
-    if (parsed.success) {
-      // Redated before the statement is built, since the statement's rows
-      // and references read their dates from the transaction text.
-      const dated =
-        licenseMode === "educational" ? enforceEducationalDates(parsed.data, null) : parsed.data;
-      // Documents first, exercise row last — see prepareSourceDocuments'
-      // race note. The legacy generated diagnostic has no company registry
-      // yet, so the product's one live company is pinned directly.
-      // Statement built by code from the key; the legacy diagnostic's bank
-      // opening is whatever its own opening_balances say (0 if none).
-      const openingBank = (dated.answer_key.opening_balances ?? [])
-        .filter((opening) => isBankLedger(opening.account))
-        .reduce((sum, opening) => sum + (opening.dr_cr === "Dr" ? opening.amount : -opening.amount), 0);
-      const diagnosticStatement =
-        planSourceDocuments(dated).bankLines.length > 0
-          ? buildBankStatementContent({
-              companyName: "Blossom Retail Pvt Ltd",
-              openingBankBalance: openingBank,
-              generated: dated,
-            })
-          : null;
-      const diagnosticExercise = diagnosticStatement
-        ? applyBankReferences(dated, diagnosticStatement.referenceBySequence)
-        : dated;
-      const documents = await prepareSourceDocuments(
-        supabase,
-        learnerId,
-        diagnosticExercise,
-        "Blossom Retail Pvt Ltd",
-        diagnosticStatement?.content ?? null,
-      );
-      const { id } = await insertExercise(
-        supabase,
-        learnerId,
-        "diagnostic",
-        diagnosticExercise,
-      );
-      await attachSourceDocuments(supabase, id, documents);
-      return { id };
+    if (!parsed.success) {
+      lastError = parsed.error.message;
+      continue;
     }
-
-    lastError = parsed.error.message;
+    const candidate = fillBillReferencesFromText(parsed.data);
+    const cashPosition = openingCashPosition(candidate);
+    const { hard } = runGenerationChecks(candidate, {
+      month,
+      cashPosition,
+      // Settlements here are against the diagnostic's own opening balances,
+      // which carry no bill numbers; there is no open-bills list to check.
+      openBills: null,
+      partyTaxClasses: new Map(),
+      priorRefs: new Set(),
+      tdsHistory: new Map(),
+      documentsMode: false,
+      companyName: "Blossom Retail Pvt Ltd",
+    });
+    // Redated before the statement is built, since the statement's rows
+    // and references read their dates from the transaction text.
+    const finalized = hard.length === 0 ? finalizeBatch(candidate, { licenseMode, month: null, cashPosition, monthEnd: null }) : null;
+    const errors = [...hard, ...(finalized?.errors ?? [])];
+    if (errors.length > 0 || !finalized) {
+      lastError = errors.join(" ");
+      dumpFailedAttempt(learnerId, attempt, lastError, candidate);
+      continue;
+    }
+    return persist(supabase, learnerId, finalized.generated);
   }
 
   throw new Error(
@@ -818,10 +895,6 @@ export function stampOpeningPosition(
 // CS/612 (2026-09-03); a learner cannot allocate against a bill Tally has
 // never seen, so the retry lists the party's real open bills.
 const FULL_SETTLEMENT_PATTERN = /full (?:and final )?(?:settlement|payment)|settl(?:es|ed|ing) in full|in full settlement|clears? the (?:bill|invoice) in full/i;
-// References that open an allocation rather than settle a bill: an advance
-// ("ADV-C01 (Advance)"), an explicit New Ref, or On Account.
-const NEW_REFERENCE_PATTERN = /\badvance\b|\bnew ref(?:erence)?\b|^\s*on account\s*$/i;
-
 // The model sometimes names a bill in the transaction text ("bill DT-2301",
 // "against bill INV-016") but leaves bill_reference null in the key
 // (Garima's Level 4, 2026-09-03: five purchases and one receipt). Then the
@@ -829,8 +902,22 @@ const NEW_REFERENCE_PATTERN = /\badvance\b|\bnew ref(?:erence)?\b|^\s*on account
 // the bill exists, and the settlement check never sees the reference. The
 // key is filled from the text BEFORE the checks run, so what the learner is
 // told and what the books track are the same thing.
+// 2026-09-17 audit: the keyword needs a word boundary ("billboard-advertising"
+// was read as bill "board-advertising", "inventory-related" as
+// "entory-related"), the number must be bill-shaped with a digit
+// (billTokensIn), and every bill a line names is kept, not only the first.
 const BILL_IN_TEXT_PATTERN =
-  /\b(?:against\s+)?(?:bill|invoice|inv\.?)\s*(?:(?:ref|no)\.?\s*)?([A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)\b/i;
+  /\b(?:bills?|invoices?|inv)\b\.?\s*(?:(?:ref(?:erence)?|no|number)\b\.?\s*)?(?:#\s*)?((?:[A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)(?:\s*(?:,|and|&)\s*[A-Z][A-Z0-9]*(?:[-\/][A-Z0-9]+)+)*)/gi;
+
+export function billReferencesInText(text: string): string[] {
+  const refs: string[] = [];
+  for (const match of text.matchAll(BILL_IN_TEXT_PATTERN)) {
+    for (const token of billTokensIn(match[1])) {
+      if (!refs.some((ref) => normalizeDocumentNumber(ref) === normalizeDocumentNumber(token))) refs.push(token);
+    }
+  }
+  return refs;
+}
 
 export function fillBillReferencesFromText(generated: GeneratedExercise): GeneratedExercise {
   const descriptionBySequence = new Map<number, string>();
@@ -853,8 +940,8 @@ export function fillBillReferencesFromText(generated: GeneratedExercise): Genera
       continue;
     }
     if (!/^(sales|purchase|receipt|payment)$/i.test(legs[0].voucher_type)) continue;
-    const match = BILL_IN_TEXT_PATTERN.exec(descriptionBySequence.get(sequence) ?? "");
-    if (match) fill.set(sequence, match[1]);
+    const refs = billReferencesInText(descriptionBySequence.get(sequence) ?? "");
+    if (refs.length > 0) fill.set(sequence, refs.join(", "));
   }
   if (fill.size === 0) return generated;
   return {
@@ -903,6 +990,20 @@ export function checkPartyTaxConsistency(
   return `Party states violated: ${violations.join("; ")}. A party's state never changes — keep the GST treatment the books already use for that party, or use a different party.`;
 }
 
+// 2026-09-17 audit: an "advance" or "new ref" anywhere in the reference no
+// longer skips the whole check; each reference is checked on its own.
+// Credit notes, debit notes and journals that settle bills are checked
+// too, and a bill raised earlier in the batch has its real balance (the
+// party total, less what the batch already settled), not an unlimited one.
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isNewReference(reference: string, ref: string): boolean {
+  const escaped = escapeRegExp(ref);
+  return new RegExp(`new\\s+ref(?:erence)?\\s*[:-]?\\s*${escaped}|${escaped}\\s*\\([^)]*new\\s+ref`, "i").test(reference);
+}
+
 export function checkSettlementReferences(
   generated: GeneratedExercise,
   openBills: OpenBill[],
@@ -913,60 +1014,108 @@ export function checkSettlementReferences(
     legs.push(entry);
     bySequence.set(entry.sequence, legs);
   }
-  const raisedInBatch = new Set<string>();
-  for (const legs of bySequence.values()) {
+  const ordered = [...bySequence.entries()].sort((a, b) => a[0] - b[0]);
+  const billId = (party: string, ref: string) => `${party}|${normalizeDocumentNumber(ref)}`;
+  const balances = new Map<string, { party: string; ref: string; open: number }>();
+  for (const bill of openBills) {
+    balances.set(billId(bill.party, bill.ref), { party: bill.party, ref: bill.ref, open: Math.abs(bill.open) });
+  }
+  // Bills this batch raises, at their invoice total.
+  for (const [, legs] of ordered) {
     if (!/^(sales|purchase)$/i.test(legs[0].voucher_type)) continue;
     const party = partyLegOf(legs, legs[0].voucher_type);
-    const raisedRef = legs.find((leg) => leg.bill_reference)?.bill_reference;
-    if (!party || !raisedRef) continue;
-    for (const ref of splitBillReferences(raisedRef)) {
-      raisedInBatch.add(`${party.correct_account}|${normalizeBillReference(ref)}`);
+    const reference = legs.find((leg) => leg.bill_reference)?.bill_reference;
+    if (!party || !reference) continue;
+    const own = parseBillReferences(reference).filter((parsed) => parsed.kind === "bill");
+    for (const parsed of own) {
+      balances.set(billId(party.correct_account, parsed.ref), { party: party.correct_account, ref: parsed.ref, open: party.amount / own.length });
     }
   }
 
+  const listFor = (party: string) => {
+    const open = [...balances.values()].filter((bill) => bill.party === party && bill.open >= 0.5);
+    return open.length === 0
+      ? "no open bills at all"
+      : open.map((bill) => `${bill.ref} (Rs ${Math.round(bill.open).toLocaleString("en-IN")} outstanding)`).join(", ");
+  };
+
   const violations: string[] = [];
-  for (const [sequence, legs] of bySequence) {
-    if (!/^(receipt|payment)$/i.test(legs[0].voucher_type)) continue;
-    const party = partyLegOf(legs, legs[0].voucher_type);
+  for (const [sequence, legs] of ordered) {
+    const type = legs[0].voucher_type.trim().toLowerCase();
     const reference = legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
-    if (!party || !reference) continue;
+    if (!reference) continue;
+    const parsedRefs = parseBillReferences(reference);
+
+    if (type === "journal") {
+      // A journal allocated against a bill (the 9B advance-GST reversal, a
+      // write-off) moves it; a bill it names must exist for one of its legs.
+      for (const parsed of parsedRefs.filter((item) => item.kind === "against" || item.kind === "bill")) {
+        const owner = legs.find((leg) => balances.has(billId(leg.correct_account, parsed.ref)));
+        if (!owner) {
+          violations.push(`transaction ${sequence} allocates a journal against "${parsed.ref}", but no party on it has that bill open.`);
+          continue;
+        }
+        const bill = balances.get(billId(owner.correct_account, parsed.ref));
+        if (bill) bill.open -= legs.filter((leg) => leg.correct_account === owner.correct_account).reduce((sum, leg) => sum + leg.amount, 0);
+      }
+      continue;
+    }
+    if (!/^(receipt|payment|credit note|debit note)$/.test(type)) continue;
+    const party = partyLegOf(legs, legs[0].voucher_type);
+    if (!party) continue;
+    const note = type === "credit note" || type === "debit note";
     const amount = legs
       .filter((leg) => leg.correct_account === party.correct_account)
       .reduce((sum, leg) => sum + leg.amount, 0);
     const description = generated.transactions.find((t) => t.sequence === sequence)?.description ?? "";
-    const partyOpen = openBills.filter((bill) => bill.party === party.correct_account);
-    const listed = partyOpen.length === 0
-      ? "no open bills at all"
-      : partyOpen.map((bill) => `${bill.ref} (Rs ${Math.round(Math.abs(bill.open)).toLocaleString("en-IN")} outstanding)`).join(", ");
-    let openTotal = 0;
-    // An advance ("ADV-C01 (Advance)"), a New Ref or an On Account
-    // allocation (rulebook 4, 9, 10) opens a reference instead of settling
-    // one, so there is no bill to look up and no balance to stay within.
-    if (NEW_REFERENCE_PATTERN.test(reference)) continue;
-    for (const ref of splitBillReferences(reference)) {
-      const id = `${party.correct_account}|${normalizeBillReference(ref)}`;
-      if (raisedInBatch.has(id)) { openTotal += Number.POSITIVE_INFINITY; continue; }
-      const bill = openBills.find((candidate) => `${candidate.party}|${normalizeBillReference(candidate.ref)}` === id);
+
+    const settled: { parsedRef: string; bill: { party: string; ref: string; open: number } }[] = [];
+    for (const parsed of parsedRefs) {
+      // An advance ("ADV-C01 (Advance)"), a New Ref or an On Account
+      // allocation (rulebook 4, 9, 10) opens a reference instead of settling
+      // one, so there is no bill to look up and no balance to stay within.
+      if (parsed.kind === "advance" || parsed.kind === "on_account" || isNewReference(reference, parsed.ref)) continue;
+      const bill = balances.get(billId(party.correct_account, parsed.ref));
       if (!bill) {
-        violations.push(`transaction ${sequence} settles "${ref}" for ${party.correct_account}, but that bill does not exist — ${party.correct_account} has ${listed}. Either reference one of those (amount within its balance) or make the transaction an advance recorded as a New Ref and say so in its text.`);
+        // A note's own number is not a settlement.
+        if (note && parsed.kind === "bill") continue;
+        violations.push(`transaction ${sequence} settles "${parsed.ref}" for ${party.correct_account}, but that bill does not exist — ${party.correct_account} has ${listFor(party.correct_account)}. Either reference one of those (amount within its balance) or make the transaction an advance recorded as a New Ref and say so in its text.`);
         continue;
       }
-      openTotal += Math.abs(bill.open);
+      settled.push({ parsedRef: parsed.ref, bill });
     }
-    if (openTotal === 0 || openTotal === Number.POSITIVE_INFINITY) continue;
+    if (settled.length === 0) continue;
+    const openTotal = settled.reduce((sum, item) => sum + Math.max(item.bill.open, 0), 0);
+    const named = settled.map((item) => item.parsedRef).join(", ");
     if (amount > openTotal + 0.5) {
-      violations.push(`transaction ${sequence} pays/receives ${Math.round(amount)} against ${reference} for ${party.correct_account}, but only ${Math.round(openTotal)} is outstanding on it.`);
+      violations.push(`transaction ${sequence} pays/receives ${Math.round(amount)} against ${named} for ${party.correct_account}, but only ${Math.round(openTotal)} is outstanding on it.`);
     } else if (FULL_SETTLEMENT_PATTERN.test(description) && Math.abs(amount - openTotal) > 0.5) {
-      violations.push(`transaction ${sequence} is described as a full settlement of ${reference} for ${party.correct_account}, but ${Math.round(openTotal)} is outstanding and the amount is ${Math.round(amount)}. Either settle the exact balance or call it a part payment.`);
+      violations.push(`transaction ${sequence} is described as a full settlement of ${named} for ${party.correct_account}, but ${Math.round(openTotal)} is outstanding and the amount is ${Math.round(amount)}. Either settle the exact balance or call it a part payment.`);
     }
+    // Several bills clear in order, the last taking what is left.
+    let left = amount;
+    settled.forEach((item, index) => {
+      const applied = index === settled.length - 1 ? left : Math.min(left, Math.max(item.bill.open, 0));
+      item.bill.open -= applied;
+      left -= applied;
+    });
   }
   if (violations.length === 0) return null;
   return `Bill references violated: ${violations.join(" ")}`;
 }
 
+// Cash/bank walked in the order the books and the statement see the
+// movements: by date, then sequence (2026-09-17 audit, replacing the
+// sequence-order walk of 2026-09-16). The walk runs on the model's batch
+// and again after the month-end journals and Educational Mode redating, so
+// the appended GST payment is checked against the balance on its own date
+// and a receipt dated after a payment can no longer fund it. Sequences are
+// never renumbered to match dates: the answer key, scoring and coaching all
+// refer to them. A transaction with no date sorts after the dated ones.
 export function checkCashFeasibility(
   generated: GeneratedExercise,
   opening: { cash: number; bank: number },
+  options: { overdraftAllowed?: boolean } = {},
 ): string | null {
   const bySequence = new Map<number, GeneratedExercise["answer_key"]["entries"]>();
   for (const entry of generated.answer_key.entries) {
@@ -974,19 +1123,25 @@ export function checkCashFeasibility(
     group.push(entry);
     bySequence.set(entry.sequence, group);
   }
+  const dates = new Map<number, { day: number; monthIndex: number; year: number }>();
+  for (const transaction of generated.transactions) {
+    const date = extractTransactionDate(transaction.description);
+    if (date) dates.set(transaction.sequence, date);
+  }
+  const timeOf = (sequence: number) => {
+    const date = dates.get(sequence);
+    return date ? Date.UTC(date.year, date.monthIndex, date.day) : Number.POSITIVE_INFINITY;
+  };
+  const labelOf = (sequence: number) => {
+    const date = dates.get(sequence);
+    return date ? ` (dated ${String(date.day).padStart(2, "0")}-${MONTH_NAMES[date.monthIndex].slice(0, 3)}-${date.year})` : "";
+  };
 
   let cash = opening.cash;
   let bank = opening.bank;
 
-  // Walks SEQUENCE order, never date order (2026-09-16). Educational Mode
-  // redating runs after this check and collapses days monotonically onto
-  // 1, 2 and 31, so it cannot reorder transactions whose dates already
-  // rose with their sequence; where the model's dates did not, same-day
-  // ties on the statement fall back to sequence order, which is the order
-  // this walk proved feasible. Sequences are never renumbered to match
-  // dates: the answer key, scoring and coaching all refer to them.
-
-  for (const [sequence, legs] of [...bySequence.entries()].sort((a, b) => a[0] - b[0])) {
+  const ordered = [...bySequence.entries()].sort((a, b) => timeOf(a[0]) - timeOf(b[0]) || a[0] - b[0]);
+  for (const [sequence, legs] of ordered) {
     for (const leg of legs) {
       const signed = leg.dr_cr === "Dr" ? leg.amount : -leg.amount;
       if (CASH_LEDGER_PATTERN.test(leg.correct_account)) {
@@ -999,16 +1154,128 @@ export function checkCashFeasibility(
       // A till that is ALREADY overdrawn on entry (an earlier batch's fault,
       // not this one's) needs a different instruction: replenish first.
       if (opening.cash < -OVERDRAW_TOLERANCE) {
-        return `Cash feasibility violated: the till opens this batch overdrawn at ${Math.round(opening.cash)}, and transaction ${sequence} leaves it at ${Math.round(cash)}. Transaction 1 must be a Contra withdrawal from the bank to Cash large enough to clear the shortfall (at least ${Math.abs(Math.round(opening.cash))}) before any other cash movement; every transaction after it must then keep cash non-negative.`;
+        return `Cash feasibility violated: the till opens this batch overdrawn at ${Math.round(opening.cash)}, and transaction ${sequence}${labelOf(sequence)} leaves it at ${Math.round(cash)}. Transaction 1 must be a Contra withdrawal from the bank to Cash, dated first, large enough to clear the shortfall (at least ${Math.abs(Math.round(opening.cash))}) before any other cash movement; every transaction after it must then keep cash non-negative.`;
       }
-      return `Cash feasibility violated: transaction ${sequence} drives Cash-in-Hand to ${Math.round(cash)}, but cash can never go negative. The company holds ${Math.round(opening.cash)} in cash at the start of this batch, so every cash payment or cash-to-bank deposit across the batch must stay within that plus whatever cash the batch itself brings in. Rescale or reorder the cash movements to fit.`;
+      return `Cash feasibility violated: transaction ${sequence}${labelOf(sequence)} drives Cash-in-Hand to ${Math.round(cash)}, but cash can never go negative on any date. The company holds ${Math.round(opening.cash)} in cash at the start of this batch, so every cash payment or cash-to-bank deposit must stay within that plus whatever cash came in on or before its date. Rescale or redate the cash movements to fit.`;
     }
-    if (bank < -OVERDRAW_TOLERANCE) {
-      return `Bank feasibility violated: transaction ${sequence} drives the bank account to ${Math.round(bank)}, an overdraft the learner cannot post. The company holds ${Math.round(opening.bank)} in the bank at the start of this batch; keep every payment and bank-to-cash withdrawal within the running balance.`;
+    if (!options.overdraftAllowed && bank < -OVERDRAW_TOLERANCE) {
+      return `Bank feasibility violated: transaction ${sequence}${labelOf(sequence)} drives the bank account to ${Math.round(bank)}, an overdraft the learner cannot post and the bank statement cannot show. The company holds ${Math.round(opening.bank)} in the bank at the start of this batch; keep every payment and bank-to-cash withdrawal within the balance on its own date (receipts dated later do not count).`;
     }
   }
 
   return null;
+}
+
+// Every hard and soft check a generated batch passes before anything is
+// built from it, shared by the adaptive loop and the diagnostic fallback
+// (2026-09-17 audit: the diagnostic ran none). Batch composition is the
+// caller's (it needs the concept plan). Returns messages for the retry.
+export type GenerationCheckContext = {
+  month: ExerciseMonth;
+  cashPosition: { cash: number; bank: number };
+  // null skips the settlement check (the diagnostic has no open-bills list).
+  openBills: OpenBill[] | null;
+  partyTaxClasses: Map<string, PartyTaxClass>;
+  priorRefs: Set<string>;
+  tdsHistory: TdsHistory;
+  documentsMode: boolean;
+  companyName: string;
+  stateCodeOf?: StateCodeOf;
+  payeeTypeOf?: PayeeTypeOf;
+  overdraftAllowed?: boolean;
+};
+
+export function runGenerationChecks(
+  generated: GeneratedExercise,
+  context: GenerationCheckContext,
+): { hard: string[]; soft: string[] } {
+  const dateOf = transactionDateOf(generated, { day: 1, monthIndex: context.month.monthIndex, year: context.month.year });
+  const hard = [
+    checkBatchMonth(generated, context.month),
+    // 31-Jun or 30-Feb (2026-09-16): no Tally edition saves a date that
+    // does not exist, for any learner.
+    checkDatesExist(generated),
+    // DD-Mon-YYYY only, and no dates inside document numbers (2026-09-17).
+    checkCanonicalDateFormat(generated),
+    checkDocumentBackedDescriptions(generated),
+    // Double-entry runs BEFORE cash feasibility in the message order
+    // because a single-leg key makes the cash walk blind — fixing the legs
+    // is what lets the cash check see the movements at all.
+    checkDoubleEntry(generated),
+    checkCashFeasibility(generated, context.cashPosition, { overdraftAllowed: context.overdraftAllowed }),
+    context.openBills ? checkSettlementReferences(generated, context.openBills) : null,
+    checkPartyTaxConsistency(generated, context.partyTaxClasses),
+    checkPlaceOfSupply(generated, context.stateCodeOf ?? stateCodeFromIdentity),
+    checkReverseCharge(generated),
+    // Documents mode: journal-type lines must keep their figures — that
+    // text becomes the month-end notes sheet (documents-mode.ts).
+    context.documentsMode ? checkMonthEndNoteDetails(generated) : null,
+    // Generation hygiene (2026-09-10 audits, tightened 2026-09-17): reused
+    // or missing document numbers, GST legs off the rate, TDS off the
+    // section's rate or threshold for the voucher's financial year.
+    checkBillNumberUniqueness(generated, context.priorRefs),
+    checkGstArithmetic(generated, { dateOf }),
+    checkTdsThresholds(generated, context.tdsHistory, { dateOf }),
+    // 2026-09-11 audit: gst_head must state the head the leg names (the
+    // invoice address and GSTIN are derived from it), and every sale must be
+    // printable as our invoice before the batch leaves the loop.
+    checkGstHeadMetadata(generated),
+    checkTdsArithmetic(generated, { dateOf, payeeTypeOf: context.payeeTypeOf ?? payeeTypeFromIdentity }),
+    // 2026-09-17 audit: the line the learner reads and the key agree on
+    // every bill number and figure, and every concept tag is earned.
+    checkTextMatchesKey(generated, context.openBills ?? []),
+    checkConceptTagsMatchContent(generated),
+    context.documentsMode ? checkSalesInvoicesBuildable(generated, context.companyName) : null,
+  ].filter((message): message is string => message !== null);
+  const soft = [checkOpeningFigures(generated, context.cashPosition)].filter((message): message is string => message !== null);
+  return { hard, soft };
+}
+
+// The code-owned steps that change a checked batch before it is built:
+// the month-end GST journals, then Educational Mode redating. Their result
+// is checked again (2026-09-17 audit): the appended GST payment against the
+// bank on its own date, and the redated batch in (date, sequence) order,
+// which is the order the bank statement prints.
+export function finalizeBatch(
+  generated: GeneratedExercise,
+  params: {
+    licenseMode: LicenseMode;
+    // The batch month for redating; null maps each date within its own month.
+    month: { monthIndex: number; year: number } | null;
+    cashPosition: { cash: number; bank: number };
+    monthEnd: MonthEndParams | null;
+    overdraftAllowed?: boolean;
+  },
+): { generated: GeneratedExercise; errors: string[] } {
+  const errors: string[] = [];
+  let result = generated;
+  if (params.monthEnd) {
+    const monthEnd = appendMonthEndJournals(result, params.monthEnd);
+    result = monthEnd.generated;
+    if (monthEnd.paymentShortfall) {
+      errors.push(
+        `GST payment infeasible: the system pays last month's GST liability of Rs ${Math.round(monthEnd.paymentShortfall.payable).toLocaleString("en-IN")} from the bank this month, but the batch leaves only Rs ${Math.round(monthEnd.paymentShortfall.bank).toLocaleString("en-IN")} there. Keep at least that much in the bank (fewer or smaller payments, or receipts dated before the 20th).`,
+      );
+    }
+  }
+  // Educational Mode dates, guaranteed in code (2026-09-16): every date
+  // token of this month is mapped to 1, 2 or 31 HERE, before the cleanups,
+  // documents mode, the bank statement and the sales documents, because
+  // each of those reads its dates from the transaction text. The assertion
+  // inside enforceEducationalDates throws if anything unpostable is left.
+  if (params.licenseMode === "educational") {
+    try {
+      result = enforceEducationalDates(result, params.month);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      return { generated: result, errors };
+    }
+  }
+  const cashError = checkCashFeasibility(result, params.cashPosition, { overdraftAllowed: params.overdraftAllowed });
+  if (cashError) {
+    errors.push(`After the month-end journals and final dating: ${cashError}`);
+  }
+  return { generated: result, errors };
 }
 
 // One level down from currentLevel, floored at L0 — used when reinforcement
@@ -1129,6 +1396,7 @@ export async function generateAdaptiveExercise(
     openBills,
     partyTaxClasses,
     documentsMode,
+    usedBillNumbers: priorDocumentNumbers(priorKeys),
   };
 
   let lastError: string | null = null;
@@ -1141,6 +1409,28 @@ export async function generateAdaptiveExercise(
   // a wrong batch costs the learner far more than a delayed one (the job
   // step retries), and a delivered fallback silently defeats every guard.
   let unbalancedFallback: GeneratedExercise | null = null;
+
+  // Month-end GST journals with figures from the ledger (2026-09-10): the
+  // set-off and the payment to the government are appended when the
+  // batch's concepts call for them, replacing anything the model wrote.
+  // Since 2026-09-17 they are appended INSIDE the loop, so a payment the
+  // bank cannot fund on its date sends the batch back for a retry instead
+  // of being silently skipped or overdrawing the statement.
+  const batchConcepts: ConceptTag[] = [
+    target.conceptTag,
+    ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
+  ];
+  const bankAccount = openingBalances.find((opening) => isBankLedger(opening.account))?.account ?? "HDFC Bank — 1234";
+  const checkContext: GenerationCheckContext = {
+    month: exerciseMonth,
+    cashPosition,
+    openBills,
+    partyTaxClasses,
+    priorRefs,
+    tdsHistory,
+    documentsMode,
+    companyName: companyName ?? "Blossom Retail Pvt Ltd",
+  };
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const { messages, jsonSchema } =
@@ -1166,73 +1456,45 @@ export async function generateAdaptiveExercise(
       : parsedRaw;
 
     if (parsed.success) {
-      // Composition, month, document-pointer, and cash-feasibility
-      // violations are combined into one retry message so a single retry can
-      // fix everything at once.
+      // Every violation is combined into one retry message so a single
+      // retry can fix everything at once.
       const compositionError = checkBatchComposition(
         parsed.data,
         batchPlan,
         target.escalationActive,
       );
-      const monthError = checkBatchMonth(parsed.data, exerciseMonth);
-      // 31-Jun or 30-Feb (2026-09-16): no Tally edition saves a date that
-      // does not exist, for any learner. Hard.
-      const datesExistError = checkDatesExist(parsed.data);
-      const documentTextError = checkDocumentBackedDescriptions(parsed.data);
-      // Double-entry runs BEFORE cash feasibility in the message order
-      // because a single-leg key makes the cash walk blind — fixing the legs
-      // is what lets the cash check see the movements at all.
-      const doubleEntryError = checkDoubleEntry(parsed.data);
-      const cashError = checkCashFeasibility(parsed.data, cashPosition);
-      const openingFigureError = checkOpeningFigures(parsed.data, cashPosition);
-      const settlementError = checkSettlementReferences(parsed.data, openBills);
-      const partyTaxError = checkPartyTaxConsistency(parsed.data, partyTaxClasses);
-      // Documents mode: journal-type lines must keep their figures — that
-      // text becomes the month-end notes sheet (documents-mode.ts).
-      const notesError = documentsMode ? checkMonthEndNoteDetails(parsed.data) : null;
-      // Generation hygiene (2026-09-10 audits): reused bill numbers, GST
-      // legs off the rate, TDS deducted below or missed above the year's
-      // threshold. All hard: the key itself would be wrong.
-      const uniquenessError = checkBillNumberUniqueness(parsed.data, priorRefs);
-      const gstArithmeticError = checkGstArithmetic(parsed.data);
-      const tdsThresholdError = checkTdsThresholds(parsed.data, tdsHistory);
-      // 2026-09-11 audit: gst_head must state the head the leg names (the
-      // invoice address and GSTIN are derived from it), the TDS leg must
-      // equal base x rate, and every sale must be printable as our invoice
-      // before the batch leaves the loop (documents mode built it after
-      // validation and threw, killing the job).
-      const gstHeadError = checkGstHeadMetadata(parsed.data);
-      const tdsArithmeticError = checkTdsArithmetic(parsed.data);
-      const salesInvoiceError = documentsMode ? checkSalesInvoicesBuildable(parsed.data, companyName ?? "Blossom Retail Pvt Ltd") : null;
-      const hardError = [monthError, datesExistError, documentTextError, doubleEntryError, cashError, settlementError, partyTaxError, notesError, uniquenessError, gstArithmeticError, tdsThresholdError, gstHeadError, tdsArithmeticError, salesInvoiceError]
-        .filter(Boolean)
-        .join(" ");
-      const batchError = [
-        compositionError,
-        monthError,
-        datesExistError,
-        documentTextError,
-        doubleEntryError,
-        cashError,
-        openingFigureError,
-        settlementError,
-        partyTaxError,
-        notesError,
-        uniquenessError,
-        gstArithmeticError,
-        tdsThresholdError,
-        gstHeadError,
-        tdsArithmeticError,
-        salesInvoiceError,
-      ]
-        .filter(Boolean)
-        .join(" ");
-      if (batchError === "") {
-        generated = parsed.data;
+      const { hard, soft } = runGenerationChecks(parsed.data, checkContext);
+      let finalized: GeneratedExercise | null = null;
+      if (hard.length === 0) {
+        const bankAfterBatch =
+          cashPosition.bank +
+          parsed.data.answer_key.entries
+            .filter((entry) => isBankLedger(entry.correct_account))
+            .reduce((sum, entry) => sum + (entry.dr_cr === "Dr" ? entry.amount : -entry.amount), 0);
+        const outcome = finalizeBatch(parsed.data, {
+          licenseMode,
+          month: exerciseMonth,
+          cashPosition,
+          monthEnd: {
+            priorKeys,
+            concepts: batchConcepts,
+            month: exerciseMonth,
+            licenseMode,
+            bankAccount,
+            bankAfterBatch,
+            ledgerNames: companyLedgerRegistry.map((entry) => entry.ledger_name),
+          },
+        });
+        hard.push(...outcome.errors);
+        finalized = outcome.generated;
+      }
+      const batchError = [compositionError, ...hard, ...soft].filter(Boolean).join(" ");
+      if (batchError === "" && finalized) {
+        generated = finalized;
         break;
       }
-      if (hardError === "") {
-        unbalancedFallback = parsed.data;
+      if (hard.length === 0 && finalized) {
+        unbalancedFallback = finalized;
       }
       lastError = batchError;
       dumpFailedAttempt(learnerId, attempt, batchError, parsed.data);
@@ -1251,41 +1513,6 @@ export async function generateAdaptiveExercise(
     throw new Error(
       `Adaptive exercise generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
     );
-  }
-
-  // Month-end GST journals with figures from the ledger (2026-09-10): the
-  // set-off and the payment to the government are appended here when the
-  // batch's concepts call for them, replacing anything the model wrote.
-  const batchConcepts: ConceptTag[] = [
-    target.conceptTag,
-    ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
-  ];
-  const bankAccount = openingBalances.find((opening) => isBankLedger(opening.account))?.account ?? "HDFC Bank — 1234";
-  const bankAfterBatch =
-    cashPosition.bank +
-    generated.answer_key.entries
-      .filter((entry) => isBankLedger(entry.correct_account))
-      .reduce((sum, entry) => sum + (entry.dr_cr === "Dr" ? entry.amount : -entry.amount), 0);
-  generated = appendMonthEndJournals(generated, {
-    priorKeys,
-    concepts: batchConcepts,
-    month: exerciseMonth,
-    licenseMode,
-    bankAccount,
-    bankAfterBatch,
-  }).generated;
-
-  // Educational Mode dates, guaranteed in code (2026-09-16): the prompt
-  // lists the allowed dates, but nothing checked them, and a batch dated
-  // the 15th could not be posted by an educational learner at all. Every
-  // date token of this month is mapped to 1, 2 or 31 (educationalDayFor)
-  // HERE, before the cleanups, documents mode, the bank statement and the
-  // sales documents, because each of those reads its dates from the
-  // transaction text. The assertion inside enforceEducationalDates throws
-  // if anything unpostable is left; it should be unreachable. Licensed
-  // learners are untouched.
-  if (licenseMode === "educational") {
-    generated = enforceEducationalDates(generated, exerciseMonth);
   }
 
   generated = stampOpeningPosition(

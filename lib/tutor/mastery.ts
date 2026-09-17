@@ -36,10 +36,89 @@ export type MasteryRecomputeInput = {
   currentMastery: Map<ConceptTag, ConceptMastery>;
 };
 
-// Whether an attempt counts as "clean" for the mastery streak: it passed,
-// and hint usage on it didn't exceed the threshold.
-function isCleanPass(attempt: ConceptAttempt): boolean {
-  return attempt.result === 'pass' && attempt.hint_rungs_used < CLEAN_HELP_STEP_THRESHOLD;
+// One exercise's verdict on one concept, after its correction rounds are
+// folded together (2026-09-17). The fields of the LATEST round's row, plus:
+//   - firstAttemptedAt: when the learner first attempted this exercise on
+//     this concept. Effective attempts are sequenced by it, so a batch keeps
+//     its place in the timeline even if a late correction round lands after
+//     the next batch was handed out.
+//   - corrected: an earlier round of this exercise failed the concept, so the
+//     latest round's result was reached only through the correction loop.
+export type EffectiveConceptAttempt = ConceptAttempt & {
+  firstAttemptedAt: string;
+  corrected: boolean;
+};
+
+function byCreatedAtThenId(a: ConceptAttempt, b: ConceptAttempt): number {
+  return a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+}
+
+// Folds correction rounds into one attempt per (concept, exercise)
+// (2026-09-17). Every round appends a full set of concept_attempts rows
+// (architecture.md, "Every round appends its own attempt rows"), and those
+// raw rows stay untouched as the audit trail. But the streak, escalation and
+// reinforcement rules count EXERCISES a learner has done, not uploads: before
+// this, one batch re-submitted four times read as a four-pass streak and
+// mastered the concept, and three failing rounds of one batch escalated it.
+//
+// The latest round (by created_at) wins, result AND hint_rungs_used: help
+// pushed during the correction rounds was genuinely spent on that exercise,
+// and the per-exercise help count is cumulative, so the latest row carries it.
+// Rows are grouped by exercise_id alone, so legacy rows with a null
+// submission_id collapse the same way.
+export function collapseCorrectionRounds(attempts: ConceptAttempt[]): EffectiveConceptAttempt[] {
+  const rounds = new Map<string, ConceptAttempt[]>();
+  for (const attempt of attempts) {
+    const key = `${attempt.concept_tag}|${attempt.exercise_id}`;
+    const group = rounds.get(key);
+    if (group) {
+      group.push(attempt);
+    } else {
+      rounds.set(key, [attempt]);
+    }
+  }
+
+  const effective: EffectiveConceptAttempt[] = [];
+  for (const group of rounds.values()) {
+    const ordered = [...group].sort(byCreatedAtThenId);
+    const latest = ordered[ordered.length - 1];
+    effective.push({
+      ...latest,
+      firstAttemptedAt: ordered[0].created_at,
+      corrected: ordered.slice(0, -1).some((round) => round.result === 'fail'),
+    });
+  }
+
+  return effective.sort(
+    (a, b) => a.firstAttemptedAt.localeCompare(b.firstAttemptedAt) || byCreatedAtThenId(a, b),
+  );
+}
+
+// Whether an exercise counts as "clean" for the mastery streak: it passed,
+// hint usage on it didn't exceed the threshold, and it passed without the
+// correction loop.
+//
+// A pass reached only after a correction round is NOT clean, and like any
+// other non-clean pass it breaks the streak rather than sitting neutral
+// (decision 2026-09-17). Why:
+//   - Mastery is "consecutive clean passes", i.e. getting it right on your
+//     own, first time, repeatedly. A first-round failure is evidence against
+//     that, and before correction rounds existed that same batch was simply a
+//     fail and reset the streak. A neutral rule would make the correction
+//     loop an easier road to mastery than never having had one: clean,
+//     corrected, clean, corrected, clean would master a 3-streak concept
+//     with two first-try failures in it.
+//   - It matches isCleanPass's existing treatment of a help-heavy pass,
+//     which resets the streak too, not a neutral skip.
+// It is NOT a failure for escalation or reinforcement, though: the learner
+// did fix it, so those windows read the latest round's pass. Escalation is
+// for concepts the learner cannot get right, and this one they could.
+function isCleanPass(attempt: EffectiveConceptAttempt): boolean {
+  return attempt.result === 'pass' && !attempt.corrected && attempt.hint_rungs_used < CLEAN_HELP_STEP_THRESHOLD;
+}
+
+function effectiveAttemptsForConcept(attempts: ConceptAttempt[], conceptTag: ConceptTag): EffectiveConceptAttempt[] {
+  return collapseCorrectionRounds(attempts.filter((attempt) => attempt.concept_tag === conceptTag));
 }
 
 function computeConceptTags(attempts: ConceptAttempt[], currentMastery: Map<ConceptTag, ConceptMastery>): ConceptTag[] {
@@ -55,7 +134,9 @@ function computeConceptTags(attempts: ConceptAttempt[], currentMastery: Map<Conc
 
 // Recomputes concept_mastery deltas + escalation flags from the full
 // concept_attempts history. Deterministic and idempotent: re-running against
-// the same attempts always produces the same patch.
+// the same attempts always produces the same patch. Every window below counts
+// one attempt per exercise, never one per correction round (2026-09-17, see
+// collapseCorrectionRounds).
 export function recomputeMastery(input: MasteryRecomputeInput): StatePatch {
   const { attempts, currentMastery } = input;
 
@@ -63,9 +144,7 @@ export function recomputeMastery(input: MasteryRecomputeInput): StatePatch {
   const escalationChanges: StatePatch['escalation_changes'] = [];
 
   for (const conceptTag of computeConceptTags(attempts, currentMastery)) {
-    const conceptAttempts = attempts
-      .filter((attempt) => attempt.concept_tag === conceptTag)
-      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const conceptAttempts = effectiveAttemptsForConcept(attempts, conceptTag);
 
     if (conceptAttempts.length === 0) {
       continue;
@@ -74,7 +153,8 @@ export function recomputeMastery(input: MasteryRecomputeInput): StatePatch {
     const latest = conceptAttempts[conceptAttempts.length - 1];
 
     // Consecutive clean-pass streak, counted back from the most recent
-    // attempt — any fail or hint-heavy pass resets it to 0.
+    // exercise — any fail, hint-heavy pass or pass-after-correction resets it
+    // to 0.
     let consecutiveCleanCount = 0;
     for (let i = conceptAttempts.length - 1; i >= 0; i--) {
       if (isCleanPass(conceptAttempts[i])) {
@@ -112,12 +192,12 @@ export type ReinforcementCheck = {
   reinforcementActive: boolean;
 };
 
-// 2 of the last 3 attempts on a concept failed -> the next exercise
-// targeting it drops one difficulty level and re-targets directly.
+// 2 of the last 3 exercises on a concept failed -> the next exercise
+// targeting it drops one difficulty level and re-targets directly. One
+// attempt per exercise, latest round wins (2026-09-17): two failing
+// correction rounds of a single batch are one failed batch, not two.
 export function checkReinforcement(attempts: ConceptAttempt[], conceptTag: ConceptTag): ReinforcementCheck {
-  const conceptAttempts = attempts
-    .filter((attempt) => attempt.concept_tag === conceptTag)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const conceptAttempts = effectiveAttemptsForConcept(attempts, conceptTag);
 
   const lastThree = conceptAttempts.slice(-REINFORCEMENT_WINDOW);
   const failureCount = lastThree.filter((attempt) => attempt.result === 'fail').length;

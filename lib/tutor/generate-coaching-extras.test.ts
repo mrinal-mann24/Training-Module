@@ -95,7 +95,10 @@ describe('describeTieOutMismatches', () => {
   it('describes a ledger missing from the export and states the cap as its own line', () => {
     const many = Array.from({ length: 8 }, (_, i) => ({ account: `Ledger ${i + 1}`, status: 'off' as const, difference: 100 }));
     const lines = describeTieOutMismatches([{ account: 'Sales Returns', status: 'missing', difference: -5000 }, ...many]);
-    expect(lines[0]).toBe('Sales Returns does not appear in the Trial Balance export at all (it should have moved by Rs 5,000 this month)');
+    // Invariant 1 (2026-09-17): a missing ledger's "difference" is the
+    // correct movement itself, so it is never printed.
+    expect(lines[0]).toBe("Sales Returns does not appear in the Trial Balance export at all, although this month's postings should move it");
+    expect(lines[0]).not.toMatch(/5,000/);
     expect(lines).toHaveLength(7);
     expect(lines[6]).toBe('and 3 more ledger(s) in the Trial Balance are off');
   });
@@ -109,15 +112,17 @@ describe('describeBooksReconciliation', () => {
         { account: 'Sales', status: 'off', difference: -150000 },
       ]),
     ).toEqual([
-      'Sundry Debtors closes with Rs 2,500 more on the debit side than the correct books, year to date',
-      'Sales closes with Rs 1,50,000 more on the credit side than the correct books, year to date',
+      // Direction only (2026-09-17): gap plus the learner's own balance is
+      // the correct books' figure.
+      'Sundry Debtors closes heavier on the debit side than the correct books, year to date',
+      'Sales closes heavier on the credit side than the correct books, year to date',
     ]);
   });
 
   it('describes a ledger missing from the export and caps with its own line', () => {
     const many = Array.from({ length: 7 }, (_, i) => ({ account: `Ledger ${i + 1}`, status: 'off' as const, difference: -10 }));
     const lines = describeBooksReconciliation([{ account: 'HDFC Bank', status: 'missing', difference: -150000 }, ...many]);
-    expect(lines[0]).toBe('HDFC Bank has no ledger in the export although the correct books carry a balance of about Rs 1,50,000 on it');
+    expect(lines[0]).toBe('HDFC Bank has no ledger in the export although the correct books carry a balance on it');
     expect(lines).toHaveLength(7);
     expect(lines[6]).toBe('and 2 more ledger(s) differ');
   });

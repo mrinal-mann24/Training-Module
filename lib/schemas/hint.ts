@@ -32,3 +32,13 @@ export const HintSchema = z.object({
   concept_tag: z.string(),
 });
 export type Hint = z.infer<typeof HintSchema>;
+
+// What the MODEL returns for steps 2 and 3 (2026-09-17), which is not what is
+// stored. The step and concept are decided in code, and every hint cites the
+// fact ids it restates so generate-hint.ts can check it says nothing the
+// facts do not. Step 1 is composed entirely in code and never calls a model.
+export const HintModelOutputSchema = z.object({
+  hint_text: z.string().min(1),
+  fact_ids: z.array(z.string()),
+});
+export type HintModelOutput = z.infer<typeof HintModelOutputSchema>;

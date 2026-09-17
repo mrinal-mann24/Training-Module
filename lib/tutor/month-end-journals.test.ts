@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerKey, AnswerKeyEntry, GeneratedExercise } from '@/lib/schemas/exercise';
-import { appendMonthEndJournals, buildGstSetOff, gstPositionFromKeys } from './month-end-journals';
+import { appendMonthEndJournals, buildGstSetOff, emptyGstPosition, gstPositionFromKeys, optimiseSetOff } from './month-end-journals';
 
 function leg(sequence: number, account: string, side: 'Dr' | 'Cr', amount: number, overrides: Partial<AnswerKeyEntry> = {}): AnswerKeyEntry {
   return {
@@ -54,6 +54,7 @@ describe('gstPositionFromKeys', () => {
 describe('buildGstSetOff', () => {
   it('utilises IGST credit first, then CGST and SGST against their own heads, and moves the rest to GST Payable', () => {
     const setOff = buildGstSetOff({
+      ...emptyGstPosition(),
       output: { IGST: 18000, CGST: 6000, SGST: 6000 },
       input: { IGST: 20000, CGST: 2000, SGST: 500 },
       payable: 1000,
@@ -71,7 +72,7 @@ describe('buildGstSetOff', () => {
       { account: 'Output SGST', dr_cr: 'Dr', amount: 5500 },
       { account: 'GST Payable', dr_cr: 'Cr', amount: 7500 },
     ]);
-    expect(setOff?.after).toEqual({ output: { IGST: 0, CGST: 0, SGST: 0 }, input: { IGST: 0, CGST: 0, SGST: 0 }, payable: 8500 });
+    expect(setOff?.after).toEqual({ ...emptyGstPosition(), payable: 8500 });
     // The journal balances.
     const dr = setOff!.legs.filter((l) => l.dr_cr === 'Dr').reduce((s, l) => s + l.amount, 0);
     const cr = setOff!.legs.filter((l) => l.dr_cr === 'Cr').reduce((s, l) => s + l.amount, 0);
@@ -79,7 +80,7 @@ describe('buildGstSetOff', () => {
   });
 
   it('returns null when there is no output liability', () => {
-    expect(buildGstSetOff({ output: { IGST: 0, CGST: 0, SGST: 0 }, input: { IGST: 500, CGST: 0, SGST: 0 }, payable: 0 })).toBeNull();
+    expect(buildGstSetOff({ ...emptyGstPosition(), input: { IGST: 500, CGST: 0, SGST: 0 } })).toBeNull();
   });
 });
 
@@ -275,5 +276,118 @@ describe('appendMonthEndJournals', () => {
       bankAfterBatch: 500000,
     });
     expect(untouched.generated).toBe(batch);
+  });
+});
+
+describe('least-cash set-off within Rule 88A (2026-09-17 audit)', () => {
+  it('pays nothing on output CGST 100 + SGST 100 against credit IGST 100 + CGST 100 (the greedy order paid 100)', () => {
+    const best = optimiseSetOff({ IGST: 0, CGST: 100, SGST: 100 }, { IGST: 100, CGST: 100, SGST: 0 });
+    expect(best.cash).toBe(0);
+    expect(best.utilisation.IGST.SGST).toBe(100);
+    expect(best.utilisation.CGST.CGST).toBe(100);
+    const setOff = buildGstSetOff({ ...emptyGstPosition(), output: { IGST: 0, CGST: 100, SGST: 100 }, input: { IGST: 100, CGST: 100, SGST: 0 } });
+    expect(setOff?.legs.some((leg) => leg.account === 'GST Payable')).toBe(false);
+    expect(setOff?.after.input).toEqual({ IGST: 0, CGST: 0, SGST: 0 });
+  });
+
+  it('never uses CGST credit against SGST output', () => {
+    const best = optimiseSetOff({ IGST: 0, CGST: 0, SGST: 500 }, { IGST: 0, CGST: 500, SGST: 0 });
+    expect(best.cash).toBe(500);
+    expect(best.utilisation.CGST.SGST).toBe(0);
+  });
+
+  it('uses IGST credit against IGST output first, and CGST/SGST credit against IGST only after', () => {
+    const best = optimiseSetOff({ IGST: 1000, CGST: 0, SGST: 0 }, { IGST: 400, CGST: 300, SGST: 300 });
+    expect(best.utilisation.IGST.IGST).toBe(400);
+    expect(best.utilisation.CGST.IGST + best.utilisation.SGST.IGST).toBe(600);
+    expect(best.cash).toBe(0);
+  });
+});
+
+describe('reverse-charge tax is paid in cash (s. 49(4) and s. 2(82) CGST Act; 2026-09-17 audit)', () => {
+  const rcmJournal = (sequence: number): AnswerKeyEntry[] => [
+    leg(sequence, 'Input CGST RCM', 'Dr', 450, { voucher_type: 'Journal', gst_head: 'CGST', gst_rate: 2.5 }),
+    leg(sequence, 'Input SGST RCM', 'Dr', 450, { voucher_type: 'Journal', gst_head: 'SGST', gst_rate: 2.5 }),
+    leg(sequence, 'Output CGST RCM', 'Cr', 450, { voucher_type: 'Journal', gst_head: 'CGST', gst_rate: 2.5 }),
+    leg(sequence, 'Output SGST RCM', 'Cr', 450, { voucher_type: 'Journal', gst_head: 'SGST', gst_rate: 2.5 }),
+  ];
+
+  it('moves RCM output to GST Payable in full instead of setting it off, and keeps the month RCM credit for next month', () => {
+    const batch: GeneratedExercise = {
+      scenario: 'Batch.',
+      difficulty_level: 'L2',
+      variant: 'A',
+      transactions: [
+        { sequence: 1, description: 'On 05-May-2025, bought goods.' },
+        { sequence: 2, description: 'On 12-May-2025, GTA freight under reverse charge.' },
+      ],
+      answer_key: {
+        entries: [
+          leg(1, 'Purchases', 'Dr', 10000, { voucher_type: 'Purchase' }),
+          leg(1, 'Input CGST', 'Dr', 900, { voucher_type: 'Purchase', gst_head: 'CGST', gst_rate: 9 }),
+          leg(1, 'Input SGST', 'Dr', 900, { voucher_type: 'Purchase', gst_head: 'SGST', gst_rate: 9 }),
+          leg(1, 'Mumbai Suppliers', 'Cr', 11800, { voucher_type: 'Purchase' }),
+          ...rcmJournal(2),
+        ],
+      },
+    };
+    const result = appendMonthEndJournals(batch, {
+      priorKeys: [],
+      concepts: ['gst_set_off'],
+      month: { monthIndex: 4, year: 2025 },
+      licenseMode: 'licensed',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 500000,
+    });
+    const setOff = result.generated.answer_key.entries
+      .filter((entry) => entry.sequence === 3)
+      .map((entry) => [entry.correct_account, entry.dr_cr, entry.amount]);
+    // No regular output to set off; the RCM tax goes to the payable, and the
+    // input RCM credit is not utilised (its tax is unpaid).
+    expect(setOff).toEqual([
+      ['Output CGST RCM', 'Dr', 450],
+      ['Output SGST RCM', 'Dr', 450],
+      ['GST Payable', 'Cr', 900],
+    ]);
+  });
+
+  it('utilises RCM credit from an earlier month once its tax has been paid', () => {
+    const position = { ...emptyGstPosition(), output: { IGST: 0, CGST: 1000, SGST: 1000 }, rcmInput: { IGST: 0, CGST: 450, SGST: 450 } };
+    const withoutEligibility = buildGstSetOff(position);
+    expect(withoutEligibility?.legs.find((leg) => leg.account === 'GST Payable')?.amount).toBe(2000);
+    const eligible = buildGstSetOff(position, { eligibleRcmInput: { IGST: 0, CGST: 450, SGST: 450 } });
+    expect(eligible?.legs).toContainEqual({ account: 'Input CGST RCM', dr_cr: 'Cr', amount: 450 });
+    expect(eligible?.legs.find((leg) => leg.account === 'GST Payable')?.amount).toBe(1100);
+  });
+
+  it('uses per-head payable ledgers when the company keeps them', () => {
+    const setOff = buildGstSetOff({ ...emptyGstPosition(), output: { IGST: 300, CGST: 100, SGST: 100 } }, { perHeadPayable: true });
+    expect(setOff?.legs.filter((leg) => leg.dr_cr === 'Cr')).toEqual([
+      { account: 'IGST Payable', dr_cr: 'Cr', amount: 300 },
+      { account: 'CGST Payable', dr_cr: 'Cr', amount: 100 },
+      { account: 'SGST Payable', dr_cr: 'Cr', amount: 100 },
+    ]);
+  });
+});
+
+describe('a GST payment the bank cannot fund is signalled, not skipped (2026-09-17 audit)', () => {
+  it('appends the payment and reports the shortfall', () => {
+    const batch: GeneratedExercise = {
+      scenario: 'Batch.',
+      difficulty_level: 'L2',
+      variant: 'A',
+      transactions: [{ sequence: 1, description: 'On 05-Jul-2024, sold goods.' }],
+      answer_key: { entries: [leg(1, 'Cash', 'Dr', 1000), leg(1, 'Sales', 'Cr', 1000)] },
+    };
+    const result = appendMonthEndJournals(batch, {
+      priorKeys: [{ opening_balances: [{ account: 'GST Payable', dr_cr: 'Cr', amount: 40000 }], entries: [] }],
+      concepts: ['gst_payment'],
+      month: { monthIndex: 6, year: 2024 },
+      licenseMode: 'licensed',
+      bankAccount: 'HDFC Bank — 1234',
+      bankAfterBatch: 1000,
+    });
+    expect(result.appended.payment).toBe(true);
+    expect(result.paymentShortfall).toEqual({ payable: 40000, bank: 1000 });
   });
 });

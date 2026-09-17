@@ -166,7 +166,7 @@ describe('printed documents carry the document number (Praveen, June 2025)', () 
     expect(system).toContain('invoiceNumber: "MS/990" exactly');
     const content = {
       vendorName: 'Mumbai Suppliers',
-      vendorGSTIN: '27AABCM1234F1Z5',
+      vendorGSTIN: '27AABCM1234F1ZX',
       invoiceNumber: 'MS/990',
       invoiceDate: '15-Jun-2025',
       lineItems: [{ description: 'Trading goods', quantity: 1, rate: 22000, amount: 22000 }],
@@ -197,9 +197,11 @@ describe('bill state and numbering treat the advance as adjusted, not raised', (
     expect(bills.some((bill) => bill.ref === 'INV-3002')).toBe(false);
   });
 
-  it('uniqueness counts only the numbers a document raises', () => {
+  it('uniqueness counts the numbers a document or an advance raises, not the advance a document adjusts', () => {
+    // 2026-09-17 audit: advance numbers are raised by the receipt or payment
+    // and count too; leading zeros are ignored (ADV-C01 = ADV-C1).
     const prior = priorBillReferences([{ entries: juneEntries } as AnswerKey]);
-    expect([...prior].sort()).toEqual(['inv3001', 'inv3002', 'ms990']);
+    expect([...prior].sort()).toEqual(['advc1', 'advc2', 'advs1', 'inv3001', 'inv3002', 'ms990']);
     const july: GeneratedExercise = {
       ...juneBatch,
       answer_key: {

@@ -52,7 +52,9 @@ describe('sequence labels (pack-exercise specificity)', () => {
     // Against Ref (real intern report, 2026-08-31) — the party/voucher-type
     // rider makes the label locate the entry in their own books.
     expect(labels.get(13)).toBe('INV-012 (the Coimbatore Interiors sales)');
-    expect(labels.get(65)).toBe('the Advertisement & Marketing purchase');
+    // Invariant 1 (2026-09-17): the expense ledger is the answer being scored,
+    // so a direct-expense leg is labelled by its amount, never its account.
+    expect(labels.get(65)).toBe('the Rs 60,000 purchase');
 
     const described = groupDescriptionsByField(
       [
@@ -61,9 +63,34 @@ describe('sequence labels (pack-exercise specificity)', () => {
       ],
       labels,
     );
-    expect(described).toEqual([
-      'the GST treatment (INV-012 (the Coimbatore Interiors sales) and the Advertisement & Marketing purchase)',
-    ]);
+    // One bracket level only: the fallback used to print "(INV-012 (the ...))".
+    expect(described).toEqual(['the GST treatment on INV-012 (the Coimbatore Interiors sales) and the Rs 60,000 purchase']);
+  });
+
+  it('never names an expense, tax or income ledger from the key in a label', () => {
+    const leg = (sequence: number, account: string, drCr: 'Dr' | 'Cr', amount: number, voucherType: string, billRef: string | null = null) => ({
+      sequence, correct_account: account, dr_cr: drCr, amount, voucher_type: voucherType, gst_head: null, gst_rate: null,
+      tds_section: null, tds_rate: null, tds_base: null, bill_reference: billRef, narration: null,
+      concept_tags: ['payment_voucher_basics' as const], requires_source_document: false, source_document_type: null,
+    });
+    const labels = buildSequenceLabels({
+      entries: [
+        // Expense leg precedes the party leg on a purchase.
+        leg(1, 'Signage Advertising', 'Dr', 50000, 'Purchase', 'SA-11'),
+        leg(1, 'Input CGST @9%', 'Dr', 4500, 'Purchase', 'SA-11'),
+        leg(1, 'Bright Signs Pvt Ltd', 'Cr', 59000, 'Purchase', 'SA-11'),
+        // Direct expense payment: no party at all.
+        leg(2, 'Office Rent', 'Dr', 25000, 'Payment'),
+        leg(2, 'HDFC Bank', 'Cr', 25000, 'Payment'),
+        // Receipt of interest: the income ledger is the answer.
+        leg(3, 'HDFC Bank', 'Dr', 1200, 'Receipt'),
+        leg(3, 'Interest Received', 'Cr', 1200, 'Receipt'),
+      ],
+    });
+    expect(labels.get(1)).toBe('SA-11 (the Bright Signs Pvt Ltd purchase)');
+    expect(labels.get(2)).toBe('the Rs 25,000 payment');
+    expect(labels.get(3)).toBe('the Rs 1,200 receipt');
+    expect([...labels.values()].join(' ')).not.toMatch(/Signage|CGST|Office Rent|Interest Received/);
   });
 });
 
@@ -295,9 +322,12 @@ describe('guardrails (2026-09-01: praise/flag exclusivity, label collisions)', (
       concept_tags: ['payment_voucher_basics' as const], requires_source_document: false,
       source_document_type: null,
     });
-    const labels = buildSequenceLabels({ entries: [leg(46, 350), leg(78, 850)] });
-    expect(labels.get(46)).toBe('the Bank Charges payment of Rs. 350');
-    expect(labels.get(78)).toBe('the Bank Charges payment of Rs. 850');
+    // Labels are amount-based for payments now (2026-09-17), so equal
+    // amounts are what collide; the sequence breaks the tie.
+    const labels = buildSequenceLabels({ entries: [leg(46, 350), leg(78, 350), leg(90, 850)] });
+    expect(labels.get(46)).toBe('the Rs 350 payment, transaction 46');
+    expect(labels.get(78)).toBe('the Rs 350 payment, transaction 78');
+    expect(labels.get(90)).toBe('the Rs 850 payment');
   });
 });
 
@@ -384,7 +414,7 @@ describe('checkGrounding', () => {
       { id: 'I1', kind: 'issue', text: 'the GST treatment (INV-012 (the Coimbatore Interiors sales)) needs another look' },
       { id: 'T1', kind: 'tieout', text: "Sales shows Rs 15,000 more on the debit side in the Trial Balance than this month's correct postings" },
       { id: 'T2', kind: 'tieout', text: "Purchases shows Rs 8,000 more on the credit side in the Trial Balance than this month's correct postings" },
-      { id: 'T3', kind: 'tieout', text: 'Sales Returns does not appear in the Trial Balance export at all (it should have moved by Rs 12,000 this month)' },
+      { id: 'T3', kind: 'tieout', text: "Sales Returns shows Rs 12,000 more on the debit side in the Trial Balance than this month's correct postings" },
     ];
     const withBullet = (text: string, ids: string[]): CoachingModelOutput => ({
       opening_line: 'A few ledgers need a look.',
@@ -394,20 +424,20 @@ describe('checkGrounding', () => {
 
     it('rejects figures swapped between two merged ledgers (review finding)', () => {
       const output = withBullet('Sales is off by Rs 8,000 and Purchases by Rs 15,000.', ['T1', 'T2', 'T3']);
-      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong ledger/);
+      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong fact/);
     });
 
     it('does not let Sales lend its figure to Sales Returns', () => {
       const output = withBullet(
-        'Sales shows Rs 15,000 more on the debit side; Purchases shows Rs 8,000 more on the credit side; Sales Returns should have moved by Rs 15,000.',
+        'Sales shows Rs 15,000 more on the debit side; Purchases shows Rs 8,000 more on the credit side; Sales Returns shows Rs 15,000 more on the debit side.',
         ['T1', 'T2', 'T3'],
       );
-      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong ledger/);
+      expect(checkGrounding(output, ledgerFacts, { tbTieOut: false }).join(' ')).toMatch(/wrong fact/);
     });
 
     it('accepts correctly merged ledgers', () => {
       const output = withBullet(
-        'Sales shows Rs 15,000 more on the debit side, and Purchases shows Rs 8,000 more on the credit side, while Sales Returns does not appear though it should have moved by Rs 12,000.',
+        'Sales shows Rs 15,000 more on the debit side, and Purchases shows Rs 8,000 more on the credit side, while Sales Returns shows Rs 12,000 more on the debit side.',
         ['T1', 'T2', 'T3'],
       );
       expect(checkGrounding(output, ledgerFacts, { tbTieOut: false })).toEqual([]);
@@ -553,7 +583,7 @@ describe('generateCoaching (grounded loop, injected completion)', () => {
     expect(needsWork).toContain('Payment voucher no. 7');
     expect(needsWork).toMatch(/more than one bank ledger/i);
     expect(needsWork).toContain('Sales shows Rs 15,000 more on the credit side');
-    expect(needsWork).toContain('Sundry Debtors closes with Rs 2,500 more on the debit side');
+    expect(needsWork).toContain('Sundry Debtors closes heavier on the debit side');
     expect(needsWork).not.toMatch(/earlier months/);
     expect(coaching.went_well).toEqual(['The voucher type used (transaction 4) was handled correctly.']);
     expect(JSON.stringify(coaching)).not.toMatch(/Deccan|recurring|50,000/);
@@ -569,7 +599,7 @@ describe('generateCoaching (grounded loop, injected completion)', () => {
         { text: 'Check Payment voucher no. 7 dated 12-04-2025 for Rs 18,000 on Suspense.', fact_ids: ['U1'] },
         { text: 'Two bank ledgers are in use, HDFC BANK and HDFC 123. Keep one.', fact_ids: ['L1'] },
         { text: 'Sales shows Rs 15,000 more on the credit side than the month should.', fact_ids: ['T1'] },
-        { text: 'Sundry Debtors closes Rs 2,500 heavier on the debit side than the correct books.', fact_ids: ['B1'] },
+        { text: 'Sundry Debtors closes heavier on the debit side than the correct books.', fact_ids: ['B1'] },
       ],
     };
     const complete = vi.fn().mockResolvedValueOnce(HALLUCINATION).mockResolvedValueOnce(grounded);

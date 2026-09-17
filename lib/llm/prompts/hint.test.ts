@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildHintPrompt, summarizePackAnswerKey } from './hint';
+import { buildHintPrompt, summarizePackAnswerKey, type HintPromptContext } from './hint';
+import { buildHintFacts, chooseHintConcept } from '@/lib/tutor/generate-hint';
 import type { AnswerKey } from '@/lib/schemas/exercise';
 
 const answerKey: AnswerKey = {
@@ -41,14 +42,21 @@ const answerKey: AnswerKey = {
   ],
 };
 
-function contextFor(packMode: boolean) {
+function contextFor(packMode: boolean): HintPromptContext {
   return {
-    rung: 3 as const,
+    rung: 3,
     scenario: 'A month of Blossom Retail bookkeeping.',
     transactions: [],
     answerKey,
     packMode,
+    focusConceptTag: 'gst_classification',
   };
+}
+
+function promptText(context: HintPromptContext): string {
+  const concept = chooseHintConcept(context);
+  const { messages } = buildHintPrompt(context, buildHintFacts(context, concept), concept);
+  return messages.map((message) => message.content).join('\n');
 }
 
 describe('pack-mode hints (answer-key withholding)', () => {
@@ -61,19 +69,27 @@ describe('pack-mode hints (answer-key withholding)', () => {
   });
 
   it('pack mode withholds every party name, amount, and reference from the prompt', () => {
-    const { messages } = buildHintPrompt(contextFor(true));
-    const fullPrompt = messages.map((message) => message.content).join('\n');
+    const fullPrompt = promptText(contextFor(true));
     expect(fullPrompt).not.toContain('Ludhiana Woodworks');
+    expect(fullPrompt).not.toContain('1,12,100');
     expect(fullPrompt).not.toContain('112100');
     expect(fullPrompt).not.toContain('INV-010');
     expect(fullPrompt).toContain('PACK MODE');
-    expect(fullPrompt).toContain('transaction_count');
+    expect(fullPrompt).toContain('[R13]');
   });
 
-  it('non-pack mode still passes the full answer key for grounding', () => {
-    const { messages } = buildHintPrompt(contextFor(false));
-    const fullPrompt = messages.map((message) => message.content).join('\n');
-    expect(fullPrompt).toContain('Ludhiana Woodworks');
+  it('non-pack mode passes only the focus concept transactions as cited facts, never raw key JSON', () => {
+    const fullPrompt = promptText(contextFor(false));
+    expect(fullPrompt).toContain('[K1] Transaction 1, bill reference INV-010: Sales voucher. Dr Ludhiana Woodworks Rs 1,12,100 (GST head IGST at 18%).');
+    expect(fullPrompt).not.toContain('Karnataka Emporium');
+    expect(fullPrompt).not.toContain('"correct_account"');
     expect(fullPrompt).not.toContain('PACK MODE');
+  });
+
+  it('fences the facts and carries no em dash from the rulebook', () => {
+    const fullPrompt = promptText(contextFor(false));
+    expect(fullPrompt).toMatch(/<<<FACTS[\s\S]*FACTS>>>/);
+    const facts = buildHintFacts(contextFor(false), 'gst_classification');
+    expect(facts.map((fact) => fact.text).join(' ')).not.toMatch(/[—–]/);
   });
 });
