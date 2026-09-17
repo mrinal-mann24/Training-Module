@@ -48,7 +48,16 @@ const IDENTITY_FIELDS = [
 ];
 const FIXED_FIELDS = ['concept_tags', 'gst_head'];
 
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Key order is not data: Postgres jsonb stores object keys in its own order,
+// so the live row reads { dr_cr, amount, account } where the seed file says
+// { account, dr_cr, amount } (first live dry run, 2026-09-17).
+const canonical = (value) =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+      : value;
+const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 // The fields this fix changes, as [path, before, after], and the updated key.
 export function planTagFix(row, seed) {
