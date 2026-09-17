@@ -274,7 +274,7 @@ function transactionWeight(expectedLegs: AnswerKeyEntry[]): number {
   const legs = consolidateExpectedLegs(expectedLegs).length;
   const perLeg = FIELD_WEIGHT.account + FIELD_WEIGHT.dr_cr + FIELD_WEIGHT.amount;
   const voucherLevel = FIELD_WEIGHT.voucher_type + FIELD_WEIGHT.gst + FIELD_WEIGHT.tds + FIELD_WEIGHT.bill_reference;
-  const narration = expectedLegs.some((leg) => KEY_BANK_REFERENCE.test(leg.narration ?? '')) ? FIELD_WEIGHT.narration : 0;
+  const narration = expectedLegs.some((leg) => keyBankReference(leg.narration) !== null) ? FIELD_WEIGHT.narration : 0;
   return legs * perLeg + voucherLevel + narration;
 }
 
@@ -405,16 +405,27 @@ function diffVoucherAgainstAnswerKey(
 // Only a statement-shaped reference counts: it carries the stamp (the
 // N/CD/CW code with the date and line number). "Ref INV-012" in a key
 // narration is a bill number, not a bank reference, and is not checked.
-const KEY_BANK_REFERENCE = /\bRef\s+([A-Z0-9][A-Z0-9 \/\-]*?(?:N|CD|CW)\d{8}[A-Z0-9 \/\-]*?)(?=[,.]|$)/;
+// 2026-09-17 (round 2): the statement joins the bills one movement settles
+// with " & " (build-bank-statement.ts BILL_SEPARATOR), so "&" is in both
+// character classes; a bill number may carry "." or lower case ("inv.12"),
+// so the reference ends only at ", " or at a final "." closing the
+// narration (applyBankReferences writes "Ref X, against Y." or "Ref X.");
+// and the stamp is the date plus the sequence padded to two digits, so
+// sequence 100 and later print 9 digits (N240416101).
+const KEY_BANK_REFERENCE = /\bRef\s+([A-Za-z0-9][A-Za-z0-9 &.\/\-]*?(?:N|CD|CW)\d{8,9}(?:[\/ ][A-Za-z0-9 &.\/\-]*?)?)(?=,\s|\.?\s*$)/;
 // The learner may paste the whole reference or just its distinctive stamp.
-const REFERENCE_STAMP = /\b(?:N|CD|CW)\d{8}\b/i;
+const REFERENCE_STAMP = /\b(?:N|CD|CW)\d{8,9}\b/i;
+
+export function keyBankReference(narration: string | null | undefined): string | null {
+  const match = KEY_BANK_REFERENCE.exec(narration ?? '');
+  return match ? match[1].trim() : null;
+}
 
 function diffBankReference(voucher: Voucher, expectedLegs: AnswerKeyEntry[], voucherRef: number): VoucherDiff | null {
-  const keyNarration = expectedLegs.map((leg) => leg.narration ?? '').find((text) => KEY_BANK_REFERENCE.test(text));
-  if (!keyNarration) {
+  const reference = expectedLegs.map((leg) => keyBankReference(leg.narration)).find((found): found is string => found !== null);
+  if (!reference) {
     return null;
   }
-  const reference = KEY_BANK_REFERENCE.exec(keyNarration)![1].trim();
   const stamp = REFERENCE_STAMP.exec(reference)?.[0] ?? null;
   const posted = voucher.narration.replace(/\s+/g, '').toLowerCase();
   const present =
@@ -1240,7 +1251,8 @@ function narrationIdentifiers(expectedLegs: AnswerKeyEntry[]): string[] {
   const identifiers = new Set<string>();
   for (const leg of expectedLegs) {
     const narration = leg.narration ?? '';
-    for (const match of narration.matchAll(/\b(?:N|CD|CW)\d{8}\b/gi)) identifiers.add(match[0].toLowerCase());
+    // 9 digits from sequence 100 on (2026-09-17, see KEY_BANK_REFERENCE).
+    for (const match of narration.matchAll(/\b(?:N|CD|CW)\d{8,9}\b/gi)) identifiers.add(match[0].toLowerCase());
     for (const match of narration.matchAll(/\d{8,}/g)) identifiers.add(match[0]);
   }
   return [...identifiers];
