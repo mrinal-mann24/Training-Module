@@ -19,12 +19,19 @@ import {
   aliasFitsAccount,
   classifyLedger,
   gstHeadOf,
+  headWisePayableHead,
+  isGenericGstPayable,
   isTaxLedgerName,
   keyAccountSet,
+  namesCompatible,
   normalizeAccountName,
   partyAccountsOf,
+  tdsSectionOf,
   type AccountMatchOptions,
 } from './account-names';
+import { combinedGstRate } from './generation-checks';
+import { optimiseSetOff, type GstHead } from './month-end-journals';
+import { roundTdsAmount, tdsSectionFromText } from './tax-rules';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -63,7 +70,9 @@ const FIELD_WEIGHT: Record<ScoredField, number> = {
 // amounts and type, so only the account field is flagged.
 // Name matching plus the batch's advance references (2026-09-17), threaded
 // through every diff so the scorer and the adjudicator judge alike.
-export type ScoringOptions = AccountMatchOptions & { advanceReferences?: ReadonlySet<string> };
+// `gstBooks` (2026-09-17, second round): the learner's own GST ledger
+// movements for the month, which the month-end set-off is judged against.
+export type ScoringOptions = AccountMatchOptions & { advanceReferences?: ReadonlySet<string>; gstBooks?: LearnerGstBooks };
 
 // Aliases go through aliasAcceptsLedger (2026-09-17): the ledger must not
 // contradict the account itself (a payable for an expense head, "Interest
@@ -73,7 +82,50 @@ function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry, options: Scori
   if (accountNamesMatch(entry.ledgerName, leg.correct_account, options)) {
     return true;
   }
+  if (headWisePayableFitsLeg(entry, leg, options)) {
+    return true;
+  }
   return (leg.account_aliases ?? []).some((alias) => aliasAcceptsLedger(entry.ledgerName, alias, leg.correct_account, options));
+}
+
+// Head-wise payables stand for the key's single "GST Payable" (2026-09-17,
+// second round). The pilot learner credited "IGST Payable" where the pack
+// says GST Payable (seq 99), and the stricter name rules flagged a
+// legitimate practice. A payable per head, or several of them together
+// (merged in pairLegsToEntries), fills the GST Payable leg; the set-off
+// check (judgeGstSetOff) then confirms each head's payable holds only that
+// head's liability. A ledger the key names as an account of its own is not
+// borrowed.
+const HEAD_WISE_PAYABLE_MERGES = new WeakSet<LedgerEntry>();
+
+function headWisePayableFitsLeg(entry: LedgerEntry, leg: AnswerKeyEntry, options: ScoringOptions): boolean {
+  if (!isGenericGstPayable(leg.correct_account)) return false;
+  if (options.keyAccounts?.has(normalizeAccountName(entry.ledgerName))) return false;
+  return HEAD_WISE_PAYABLE_MERGES.has(entry) || headWisePayableHead(entry.ledgerName) !== null;
+}
+
+function mergeHeadWisePayables(entries: LedgerEntry[], legs: AnswerKeyEntry[], options: ScoringOptions): LedgerEntry[] {
+  if (legs.some((leg) => headWisePayableHead(leg.correct_account) !== null)) return entries;
+  let merged = entries;
+  for (const side of ['Dr', 'Cr'] as const) {
+    const payableLeg = legs.find((leg) => leg.dr_cr === side && isGenericGstPayable(leg.correct_account));
+    if (!payableLeg) continue;
+    const parts = merged.filter(
+      (entry) => entry.drOrCr === side && headWisePayableFitsLeg(entry, payableLeg, options) && !HEAD_WISE_PAYABLE_MERGES.has(entry),
+    );
+    if (parts.length < 2) continue;
+    const combined: LedgerEntry = {
+      ledgerName: parts.map((part) => part.ledgerName).join(' + '),
+      amount: round2(parts.reduce((sum, part) => sum + part.amount, 0)),
+      drOrCr: side,
+      billAllocations: parts.flatMap((part) => part.billAllocations),
+    };
+    HEAD_WISE_PAYABLE_MERGES.add(combined);
+    const first = merged.indexOf(parts[0]);
+    merged = merged.filter((entry) => !parts.includes(entry));
+    merged.splice(first, 0, combined);
+  }
+  return merged;
 }
 
 // Voucher types by their base (2026-09-17). Tally lets a company create its
@@ -227,9 +279,9 @@ function consolidateLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
 export type LegPairing = { entries: LedgerEntry[]; legs: AnswerKeyEntry[]; assigned: Map<number, LedgerEntry>; leftover: LedgerEntry[] };
 
 export function pairLegsToEntries(voucher: Voucher, expectedLegs: AnswerKeyEntry[], options: ScoringOptions = {}): LegPairing {
-  const entries = consolidateLedgerEntries(voucher.ledgerEntries);
-  const unmatchedEntries = [...entries];
   const consolidated = consolidateExpectedLegs(expectedLegs);
+  const entries = mergeHeadWisePayables(consolidateLedgerEntries(voucher.ledgerEntries), consolidated, options);
+  const unmatchedEntries = [...entries];
 
   // Pair expected legs to posted entries in two passes. Pass 1 claims an
   // entry by the account NAME; only pass 2 falls back to the key's aliases.
@@ -302,6 +354,7 @@ function diffVoucherAgainstAnswerKey(
   }
 
   const { legs: consolidated, assigned } = pairLegsToEntries(voucher, expectedLegs, options);
+  const setOffTransaction = isGstSetOffTransaction(expectedLegs);
 
   for (const [index, expectedLeg] of consolidated.entries()) {
     const matchingEntry = assigned.get(index);
@@ -346,20 +399,26 @@ function diffVoucherAgainstAnswerKey(
       leg: index,
     });
 
-    // GST/TDS-named legs (the set-off JV, a TDS deposit) don't get amount-
-    // checked: their correct figures depend on every upstream voucher, so a
-    // single upstream slip would cascade into a wall of AMOUNT_WRONGs here.
-    // Presence and direction still score; the aggregate effect is covered by
-    // the per-voucher gst/tds checks and the (tax-exempt) TB tie-out.
+    // Tax legs are amount-checked (2026-09-17, second round). Every GST and
+    // TDS leg used to be skipped so a set-off's upstream slips would not
+    // cascade, which let a wrong TDS deduction or a wrong GST figure on an
+    // ordinary voucher pass. Now a tax leg must equal the key within a rupee
+    // of rounding (s. 288B / TRACES round TDS to the rupee; invoices round
+    // each GST head). Only the month-end set-off's tax legs are left
+    // unscored here: their figures come from the learner's own ledgers and
+    // are judged by judgeGstSetOff through the gst field.
     // Tax ledgers by word (2026-09-17): "Kingston Traders" holds "gst".
     const taxLeg = isTaxLedgerName(expectedLeg.correct_account);
-    const amountCorrect = taxLeg || amountsMatch(matchingEntry.amount, expectedLeg.amount);
+    const setOffTaxLeg = taxLeg && setOffTransaction;
+    const amountCorrect =
+      setOffTaxLeg ||
+      (taxLeg ? Math.abs(matchingEntry.amount - expectedLeg.amount) <= TAX_AMOUNT_TOLERANCE : amountsMatch(matchingEntry.amount, expectedLeg.amount));
     diffs.push({
       voucherRef: sequence,
       field: 'amount',
       expected_masked: true,
       is_correct: amountCorrect,
-      vacuously_correct: taxLeg ? true : undefined,
+      vacuously_correct: setOffTaxLeg ? true : undefined,
       error_code: amountCorrect ? null : 'AMOUNT_WRONG',
       leg: index,
     });
@@ -405,16 +464,26 @@ function diffVoucherAgainstAnswerKey(
 // Only a statement-shaped reference counts: it carries the stamp (the
 // N/CD/CW code with the date and line number). "Ref INV-012" in a key
 // narration is a bill number, not a bank reference, and is not checked.
-const KEY_BANK_REFERENCE = /\bRef\s+([A-Z0-9][A-Z0-9 \/\-]*?(?:N|CD|CW)\d{8}[A-Z0-9 \/\-]*?)(?=[,.]|$)/;
+// 2026-09-17, second round: the statement joins the bills one movement
+// settles with " & " (build-bank-statement.ts BILL_SEPARATOR), so "&" is in
+// both character classes; a bill number may carry "." or lower case
+// ("inv.12"), so the reference ends only at ", " or a final "."; and the
+// stamp is the date plus the sequence padded to two digits, so sequence 100
+// and later print 9 digits (N240416101).
+const KEY_BANK_REFERENCE = /\bRef\s+([A-Za-z0-9][A-Za-z0-9 &.\/\-]*?(?:N|CD|CW)\d{8,9}(?:[\/ ][A-Za-z0-9 &.\/\-]*?)?)(?=,\s|\.?\s*$)/;
 // The learner may paste the whole reference or just its distinctive stamp.
-const REFERENCE_STAMP = /\b(?:N|CD|CW)\d{8}\b/i;
+const REFERENCE_STAMP = /\b(?:N|CD|CW)\d{8,9}\b/i;
+
+export function keyBankReference(narration: string | null | undefined): string | null {
+  const match = KEY_BANK_REFERENCE.exec(narration ?? '');
+  return match ? match[1].trim() : null;
+}
 
 function diffBankReference(voucher: Voucher, expectedLegs: AnswerKeyEntry[], voucherRef: number): VoucherDiff | null {
-  const keyNarration = expectedLegs.map((leg) => leg.narration ?? '').find((text) => KEY_BANK_REFERENCE.test(text));
-  if (!keyNarration) {
+  const reference = expectedLegs.map((leg) => keyBankReference(leg.narration)).find((found): found is string => found !== null);
+  if (!reference) {
     return null;
   }
-  const reference = KEY_BANK_REFERENCE.exec(keyNarration)![1].trim();
   const stamp = REFERENCE_STAMP.exec(reference)?.[0] ?? null;
   const posted = voucher.narration.replace(/\s+/g, '').toLowerCase();
   const present =
@@ -1240,7 +1309,8 @@ function narrationIdentifiers(expectedLegs: AnswerKeyEntry[]): string[] {
   const identifiers = new Set<string>();
   for (const leg of expectedLegs) {
     const narration = leg.narration ?? '';
-    for (const match of narration.matchAll(/\b(?:N|CD|CW)\d{8}\b/gi)) identifiers.add(match[0].toLowerCase());
+    // 9 digits from sequence 100 on (2026-09-17, see KEY_BANK_REFERENCE).
+    for (const match of narration.matchAll(/\b(?:N|CD|CW)\d{8,9}\b/gi)) identifiers.add(match[0].toLowerCase());
     for (const match of narration.matchAll(/\d{8,}/g)) identifiers.add(match[0]);
   }
   return [...identifiers];
