@@ -19,8 +19,8 @@
 //   financial year -> 50,000 for a month or part of a month; s. 194H
 //   commission 15,000 -> 20,000 per financial year. s. 194C unchanged
 //   (30,000 single sum, 1,00,000 aggregate).
-// - Rulebook 12.4 (lib/llm/grounding/rulebook.ts) quotes 50,000 for 194J,
-//   which is the FY 2025-26 figure; this table follows the statute per FY.
+// - Rulebook 12.4 (lib/llm/grounding/rulebook.ts) states the same dated
+//   thresholds as this table (corrected 2026-09-17).
 // - GST: CGST Act 2017 / IGST Act 2017; rate schedules Notification
 //   1/2017-Central Tax (Rate) (0, 0.25, 3, 5, 12, 18, 28 overall, CGST and
 //   SGST each half, IGST the whole rate); from 22-Sep-2025 Notification

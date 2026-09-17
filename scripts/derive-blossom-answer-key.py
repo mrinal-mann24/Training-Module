@@ -182,6 +182,10 @@ for (d, bill, vendor, state, nature, base, gst, total, tds, terms) in purchases:
         tds_section, tds_rate, tds_base = sec, float(pct.rstrip("%")), base
         net = total - base * tds_rate / 100  # TDS on the taxable BASE only
     vendor_net[str(bill)] = net
+    # Tags follow content (2026-09-17, checkConceptTagsMatchContent): TDS is
+    # tagged only when a TDS leg exists, and a Purchase is never tagged as a
+    # journal. The seed JSON was corrected the same way.
+    concepts = [c for c in concepts if c != "journal_voucher_basics" and (c != "tds_classification" or tds_section)]
     V(d, "Purchase", [(account, "Dr", base), (vendor_clean, "Cr", net)],
       gst_head=gst_head_for(state), gst_rate=18,
       tds_section=tds_section, tds_rate=tds_rate, tds_base=tds_base,

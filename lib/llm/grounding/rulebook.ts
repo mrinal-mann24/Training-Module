@@ -1,4 +1,4 @@
-// Karbon VA House Practices Rulebook v0.2 — extracted from the source
+// AI Accountant's VA House Practices Rulebook v0.2 — extracted from the source
 // .docx (Reference Material folder of the training pack) by
 // scripts/derive-blossom-answer-key.py's companion extraction step.
 // This is THE grounding text for coaching, hints, and Q&A — the real
@@ -10,7 +10,15 @@
 // re-dated training pack, so grounded hints and Q&A that quote them do not
 // point learners at a year their books never contain. Re-apply after any
 // re-extraction.
-export const RULEBOOK_TEXT = `Karbon VA — House Practices Rulebook
+// Second exception (2026-09-17): the 12.4 TDS threshold table is dated per
+// financial year to match lib/tutor/tax-rules.ts (tdsThresholdFor,
+// tdsRatesFor), whose header cites the sources: Income-tax Act ss. 194C,
+// 194H, 194-I, 194J, 206AA; Finance (No. 2) Act 2024 (194H 5% -> 2% from
+// 01-Oct-2024); Finance Act 2025 thresholds from 01-Apr-2025. v0.2 printed
+// the FY 2025-26 194J figure (50,000) for every year, wrong for FY 2024-25
+// (30,000), and the old 194H and 194-I figures for every year. Re-apply
+// after any re-extraction.
+export const RULEBOOK_TEXT = `AI Accountant's VA — House Practices Rulebook
 v0.2 — full rebuild
 Standard practices for Virtual Accountant team members. All new joiners are expected to follow these unless explicitly overridden by the reviewer. This document is the seed for the coaching-loop rulebook — Claude coaches interns against these rules during bootcamp and beyond.
 Contents
@@ -518,7 +526,7 @@ If TDS was deducted and now advance is refunded — reviewer-handled (TDS revers
 One-off transaction, no formal invoice cycle
 Payment same day as consumption
 No follow-up expected (returns, reconciliation)
-Amount below materiality threshold (Karbon rule: below ₹5,000)
+Amount below materiality threshold (AI Accountant's rule: below ₹5,000)
 Vendor won't be tracked over time
 No TDS involved
 No GST ITC to be claimed
@@ -602,27 +610,36 @@ HDFC Bank A/c
 12.3 TDS on advance paid
 See Section 10.2.
 12.4 TDS threshold check — MANDATORY before deducting
+Thresholds and rates depend on the date of the voucher: FY 2024-25 runs 1-Apr-2024 to 31-Mar-2025, FY 2025-26 from 1-Apr-2025 (Finance Act 2025 changed the thresholds). A threshold is crossed only when the amount EXCEEDS it.
 Section
-Threshold
+Threshold FY 2024-25
+Threshold FY 2025-26
 Rate
 194J — Professional
+₹30,000 aggregate per FY
 ₹50,000 aggregate per FY
 10%
 194J(a) — Technical / royalty / call-centre
+₹30,000 aggregate per FY
 ₹50,000 aggregate per FY
 2%
 194C — Contractor, single payment
 ₹30,000 single
+₹30,000 single
 1% indiv/HUF, 2% others
 194C — Contractor, aggregate
 ₹1,00,000 aggregate per FY
+₹1,00,000 aggregate per FY
 Same rates
 194I — Rent
-₹2,40,000 per FY
-10% land/bldg, 2% plant/mach
+₹2,40,000 per FY (rent for the year likely to exceed it)
+₹50,000 for a month or part of a month
+10% land/bldg/furniture, 2% plant/mach
 194H — Commission
 ₹15,000 per FY
-5%
+₹20,000 per FY
+5% up to 30-Sep-2024, 2% from 1-Oct-2024
+No PAN (206AA): 20%, or the section rate if higher.
 House rule: check running FY total for each payee. Do not deduct below threshold. Do not miss deduction above threshold — 30% disallowance risk.
 12.5 TDS filing
 Deposit by 7th of next month (30-Apr for March)

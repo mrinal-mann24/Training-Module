@@ -15,6 +15,8 @@ export const SCORING_ERROR_CODES = [
   'TDS_SECTION_WRONG',
   'TDS_RATE_WRONG',
   'TDS_BASE_WRONG',
+  // A TDS amount that is neither a wrong rate nor a GST-inclusive base (2026-09-17).
+  'TDS_AMOUNT_WRONG',
   'TDS_MISSING',
   'TDS_UNEXPECTED',
   'BILL_REFERENCE_WRONG',
@@ -53,6 +55,8 @@ export const SPEC_CODE_BY_ERROR_CODE: Record<ScoringErrorCode, string | null> = 
   TDS_SECTION_WRONG: 'E06',
   TDS_RATE_WRONG: 'E07',
   TDS_BASE_WRONG: null,
+  // E11 'amount/rounding error' (2026-09-17): the deduction's figure is off.
+  TDS_AMOUNT_WRONG: 'E11',
   // E08 is "TDS threshold ignored (deducted below or missed above)" — the
   // engine detects the OUTCOME (TDS absent where expected / present where
   // not), not the threshold reasoning behind it, but the outcome codes are

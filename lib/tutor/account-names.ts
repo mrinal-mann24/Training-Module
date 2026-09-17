@@ -144,6 +144,31 @@ export function gstHeadOf(name: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+// GST payable ledgers (2026-09-17, round 2). The rulebook's 9B journal names
+// one "GST Payable"; many companies keep a payable per head ("IGST
+// Payable", "CGST Payable", "SGST Payable") and pay each head on its own
+// challan line. Both are legitimate. A head-wise payable is never an Output,
+// Input or RCM ledger: "Output IGST" credited as the liability is a
+// different ledger and stays wrong.
+function hasPayableWord(name: string): boolean {
+  return rawTokens(name).some((token) => token === 'payable' || token === 'payables');
+}
+
+export function isGenericGstPayable(name: string): boolean {
+  return taxIdentityOf(name) === 'gst' && hasPayableWord(name);
+}
+
+export function headWisePayableHead(name: string): 'CGST' | 'SGST' | 'IGST' | null {
+  const head = gstHeadOf(name);
+  if (head === null || !hasPayableWord(name)) return null;
+  if (/\b(output|input|itc|rcm)\b/i.test(name)) return null;
+  return head.toUpperCase() as 'CGST' | 'SGST' | 'IGST';
+}
+
+export function isGstPayableLedger(name: string): boolean {
+  return isGenericGstPayable(name) || headWisePayableHead(name) !== null;
+}
+
 // Ledger names are the learner's own. The same expense head is "Rent" in
 // the key, "Office Rent" in one learner's Tally and "Rent A/c" in another's;
 // "Salaries" vs "SALARY AC"; "Electricity Charges" vs "Electricity Bill".

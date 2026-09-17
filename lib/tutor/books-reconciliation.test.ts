@@ -192,3 +192,21 @@ describe('a party row is never lent to an expense ledger through an alias', () =
     expect(evaluateBooksReconciliation(vendorOnly, expected).differences).toEqual([]);
   });
 });
+
+describe('evaluateBooksReconciliation shares the tie-out row rules (2026-09-17, round 2)', () => {
+  it('reads a ledger named like a Tally group when the key aliases it, and never lends an alias to a contradicting ledger', () => {
+    const expected = [
+      { account: 'Office Equipment', kind: 'balance_sheet' as const, expected: 80000, aliases: ['Fixed Assets'] },
+      { account: 'Interest Income', kind: 'profit_and_loss' as const, expected: -1200, aliases: ['Interest'] },
+    ];
+    const trialBalance = {
+      ledgers: [
+        { ledgerName: 'Fixed Assets', closingDebit: 80000, closingCredit: 0 },
+        { ledgerName: 'Interest Paid', closingDebit: 0, closingCredit: 1200 },
+      ],
+    };
+    expect(evaluateBooksReconciliation(trialBalance, expected).differences).toEqual([
+      { account: 'Interest Income', status: 'missing', difference: 1200 },
+    ]);
+  });
+});

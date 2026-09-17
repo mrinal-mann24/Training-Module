@@ -6,6 +6,19 @@
 
 Known engine limitations (accepted for v1, from the existing scorer): (1) vouchers match by date-order position, so a learner's same-day ordering must match register order; (2) intra-state GST is keyed as CGST (single-head check); (3) narration content isn't extracted by the parser — narration scoring reports presence only.
 
+## Review notes — 2026-09-17 (accuracy audit, round 2)
+
+Amounts, accounts and GST treatment are unchanged. Only concept tags and the set-off's GST heads were corrected, so each tag names what its voucher actually drills (checked by `checkConceptTagsMatchContent` and `checkGstHeadMetadata` in `lib/tutor/generation-checks.ts`, both now clean on this key). The live `exercise_packs` row is updated separately by `scripts/fix-pack-answer-key-tags.mjs`; learner exercises already assigned keep their copy.
+
+- **#2** tagged `journal_voucher_basics` on a Purchase voucher: tag removed (`purchase_voucher_basics` stays).
+- **#44** and **#58** tagged `tds_classification` with no TDS on the voucher: tag removed. The negative-TDS traps remain in the notes, but a voucher with no deduction cannot fail a TDS check, so the tag only inflated mastery.
+- **#99** set-off legs carried `gst_head` null: each Output/Input leg now carries its head; GST Payable (all heads) stays null.
+
+Assumptions the key relies on (stated so the reviewer can confirm them against the pack documents):
+
+- **A1. Sharma Legal (#44, #67) is a legal consultancy firm, not an individual advocate or a firm of advocates.** Legal services by an advocate or a firm of advocates to a business entity are under reverse charge (Notification 13/2017-Central Tax (Rate), entry 2); a consultancy that is not an advocate charges GST forward, so the bill's CGST/SGST @18% is correct as keyed. No TDS: the fee of 30,000 does not EXCEED the FY 2024-25 s. 194J threshold of 30,000 (the 50,000 threshold applies only from 1-Apr-2025, Finance Act 2025).
+- **A2. Delivery Direct (#71, #82) is a transporter owning not more than ten goods carriages that furnished its PAN and the s. 194C(6) declaration.** Under s. 194C(6) no TDS is deducted on payments to such a contractor in the business of plying, hiring or leasing goods carriages, so 40,000 above the 30,000 single-bill limit carries no TDS. The GST treatment (CGST/SGST @18% as billed) is kept exactly as the pack states and was not re-examined; open for the reviewer: a goods transport agency paying forward charge in FY 2024-25 charges 5% or 12% (Notification 11/2017-Central Tax (Rate), item 9(iii)), and road transport by a non-GTA transporter is exempt (Notification 12/2017-Central Tax (Rate), entry 18), so 18% needs the supplier to be something other than either.
+
 | # | Date | Voucher | Legs | GST | TDS | Ref | Note |
 |---|---|---|---|---|---|---|---|
 | 1 | 2024-04-02 | Sales | Dr Ludhiana Woodworks 112,100.00; Cr Sales 95,000.00 | IGST @18% |  | INV-010 |  |
@@ -51,7 +64,7 @@ Known engine limitations (accepted for v1, from the existing scorer): (1) vouche
 | 41 | 2024-04-16 | Payment | Dr Mumbai Suppliers 450,000.00; Cr HDFC Bank — 1234 450,000.00 |  |  | MS-B1, MS-B2, MS-B3 (part) | SPLIT 4,50,000 across three bills: B1 2,95,000 + B2 1,41,600 + B3 13,400 partial. |
 | 42 | 2024-04-16 | Payment | Dr Trichy Textiles 70,800.00; Cr HDFC Bank — 1234 70,800.00 |  |  | TT-234 |  |
 | 43 | 2024-04-17 | Credit Note | Dr Sales Returns 15,000.00; Cr Karnataka Emporium 17,700.00 | CGST @18% |  | INV-001 | Trap: must reverse OUTPUT GST (not Input) and use a Credit Note voucher. |
-| 44 | 2024-04-17 | Purchase | Dr Legal & Professional Charges 30,000.00; Cr Sharma Legal 35,400.00 | CGST @18% |  | SL-018 | NEGATIVE TDS TRAP: Sharma Legal is an individual, 30k < 50k 194J threshold — NO TDS. |
+| 44 | 2024-04-17 | Purchase | Dr Legal & Professional Charges 30,000.00; Cr Sharma Legal 35,400.00 | CGST @18% |  | SL-018 | NEGATIVE TDS TRAP: 30,000 does not exceed the FY 2024-25 194J threshold of 30,000 — NO TDS. Forward-charge GST: see assumption A1. |
 | 45 | 2024-04-17 | Receipt | Dr HDFC Bank — 1234 64,900.00; Cr Bengaluru Local Store 64,900.00 |  |  | INV-017 |  |
 | 46 | 2024-04-17 | Payment | Dr Bank Charges 350.00; Cr HDFC Bank — 1234 350.00 |  |  |  | Plain bank charge, no GST component on this line. |
 | 47 | 2024-04-18 | Purchase | Dr Legal & Professional Charges 75,000.00; Cr Mehta & Associates 81,000.00 | CGST @18% | 194J @10.0% on 75,000 | CA26-101 |  |
@@ -78,7 +91,7 @@ Known engine limitations (accepted for v1, from the existing scorer): (1) vouche
 | 68 | 2024-04-24 | Payment | Dr Bharat Machinery 50,000.00; Cr HDFC Bank — 1234 50,000.00 |  |  | ADV-02 | ADVANCE paid to a creditor (Advance ref ADV-02) — no bill yet. |
 | 69 | 2024-04-24 | Payment | Dr Vizag Vendors 76,700.00; Cr HDFC Bank — 1234 76,700.00 |  |  | VV-042 |  |
 | 70 | 2024-04-25 | Sales | Dr Hyderabad Interiors 100,300.00; Cr Sales 85,000.00 | IGST @18% |  | INV-008 | TRAP: 30d terms — a CREDIT sale to Hyderabad Interiors, must NOT go to Cash Sales. |
-| 71 | 2024-04-25 | Purchase | Dr Freight & Delivery Charges 40,000.00; Cr Delivery Direct 47,200.00 | CGST @18% |  | DD-455 |  |
+| 71 | 2024-04-25 | Purchase | Dr Freight & Delivery Charges 40,000.00; Cr Delivery Direct 47,200.00 | CGST @18% |  | DD-455 | No TDS under s. 194C(6), forward-charge GST: see assumption A2. |
 | 72 | 2024-04-25 | Payment | Dr Electricity Charges 4,500.00; Cr HDFC Bank — 1234 4,500.00 |  |  |  |  |
 | 73 | 2024-04-25 | Payment | Dr Signage Advertising 69,384.00; Cr HDFC Bank — 1234 69,384.00 |  |  | SA-101 | TRAP: net payable is 69,600 (70,800 − 1,200 TDS) but bank shows 69,384 — a 216 residual stays on the vendor. Post as per bank. |
 | 74 | 2024-04-26 | Sales | Dr Delhi Bazaar 112,100.00; Cr Sales 95,000.00 | IGST @18% |  | INV-022 |  |
@@ -106,4 +119,4 @@ Known engine limitations (accepted for v1, from the existing scorer): (1) vouche
 | 96 | 2024-04-30 | Receipt | Dr HDFC Bank — 1234 47,200.00; Cr Bengaluru Boutique 47,200.00 |  |  | INV-024 |  |
 | 97 | 2024-04-30 | Journal | Dr Prepaid Software 15,000.00; Cr Software Subscription 15,000.00 |  |  |  | Month-end note 2. |
 | 98 | 2024-04-30 | Journal | Dr Rent 35,000.00; Cr Outstanding Expenses 35,000.00 |  |  |  | Month-end note 1. |
-| 99 | 2024-04-30 | Journal | Dr Output CGST 40,680.00; Dr Output SGST 40,680.00; Dr Output IGST 352,980.00; Cr Input CGST 52,314.83; Cr Input SGST 52,314.83; Cr Input IGST 171,000.00; Cr GST Payable 158,710.34 |  |  |  | Month-end note 3, head-wise. Output 434,340.00 vs Input 275,629.66 → net payable 158,710.34. All GST-named ledgers are tie-out-exempt in the engine, so head naming variants do not fail the TB check. |
+| 99 | 2024-04-30 | Journal | Dr Output CGST 40,680.00; Dr Output SGST 40,680.00; Dr Output IGST 352,980.00; Cr Input CGST 52,314.83; Cr Input SGST 52,314.83; Cr Input IGST 171,000.00; Cr GST Payable 158,710.34 |  |  |  | Month-end note 3, head-wise. Output 434,340.00 vs Input 275,629.66 → net payable 158,710.34. All GST-named ledgers are tie-out-exempt in the engine, so head naming variants do not fail the TB check. Since 2026-09-17 the scorer judges this journal against the learner's own GST ledger balances (least cash under Rule 88A, CGST credit never against SGST), and head-wise payables (IGST/CGST/SGST Payable) are accepted for GST Payable. |

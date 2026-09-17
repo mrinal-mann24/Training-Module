@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { accountNamesMatch, aliasAcceptsLedger, aliasFitsAccount, classifyLedger, isTaxLedgerName, keyAccountSet, partyAccountsOf, tdsSectionOf } from './account-names';
+import {
+  accountNamesMatch,
+  aliasAcceptsLedger,
+  aliasFitsAccount,
+  classifyLedger,
+  headWisePayableHead,
+  isGenericGstPayable,
+  isGstPayableLedger,
+  isTaxLedgerName,
+  keyAccountSet,
+  partyAccountsOf,
+  tdsSectionOf,
+} from './account-names';
+
+describe('GST payable ledgers (2026-09-17, round 2)', () => {
+  it('tells the single GST Payable from head-wise payables, and never takes an Output or Input ledger for a payable', () => {
+    expect(isGenericGstPayable('GST Payable')).toBe(true);
+    expect(isGenericGstPayable('IGST Payable')).toBe(false);
+    expect(isGenericGstPayable('Kingston Payables')).toBe(false);
+    expect(headWisePayableHead('IGST Payable')).toBe('IGST');
+    expect(headWisePayableHead('CGST Payable A/c')).toBe('CGST');
+    expect(headWisePayableHead('Output IGST')).toBeNull();
+    expect(headWisePayableHead('Output IGST Payable')).toBeNull();
+    expect(headWisePayableHead('GST Payable')).toBeNull();
+    expect(isGstPayableLedger('SGST Payable')).toBe(true);
+    expect(isGstPayableLedger('TDS Payable')).toBe(false);
+  });
+});
 
 describe('aliasFitsAccount (returns require their own ledger, 2026-09-16)', () => {
   it('refuses a base ledger as an alias of a returns ledger, and a returns ledger as an alias of its base', () => {

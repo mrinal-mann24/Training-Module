@@ -63,8 +63,7 @@
       "bill_reference": "DT-115",
       "narration": "Being office computers from Deccan Traders vide bill DT-115",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "journal_voucher_basics"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -84,8 +83,7 @@
       "bill_reference": "DT-115",
       "narration": "Being office computers from Deccan Traders vide bill DT-115",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "journal_voucher_basics"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -2015,8 +2013,7 @@
       "bill_reference": "SL-018",
       "narration": "Being legal services from Sharma Legal vide bill SL-018",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "tds_classification"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -2036,8 +2033,7 @@
       "bill_reference": "SL-018",
       "narration": "Being legal services from Sharma Legal vide bill SL-018",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "tds_classification"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -2666,8 +2662,7 @@
       "bill_reference": "BC-078",
       "narration": "Being housekeeping from Bangalore Cleaning vide bill BC-078",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "tds_classification"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -2687,8 +2682,7 @@
       "bill_reference": "BC-078",
       "narration": "Being housekeeping from Bangalore Cleaning vide bill BC-078",
       "concept_tags": [
-        "purchase_voucher_basics",
-        "tds_classification"
+        "purchase_voucher_basics"
       ],
       "requires_source_document": false,
       "source_document_type": null
@@ -4593,7 +4587,7 @@
       "dr_cr": "Dr",
       "amount": 40680.0,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "CGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,
@@ -4615,7 +4609,7 @@
       "dr_cr": "Dr",
       "amount": 40680.0,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "SGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,
@@ -4637,7 +4631,7 @@
       "dr_cr": "Dr",
       "amount": 352980.0,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "IGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,
@@ -4659,7 +4653,7 @@
       "dr_cr": "Cr",
       "amount": 52314.83,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "CGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,
@@ -4681,7 +4675,7 @@
       "dr_cr": "Cr",
       "amount": 52314.83,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "SGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,
@@ -4703,7 +4697,7 @@
       "dr_cr": "Cr",
       "amount": 171000.0,
       "voucher_type": "Journal",
-      "gst_head": null,
+      "gst_head": "IGST",
       "gst_rate": null,
       "tds_section": null,
       "tds_rate": null,

@@ -37,9 +37,9 @@ type BankMovement = {
 const CASH_LEDGER_PATTERN = /^cash\b|cash-in-hand/i;
 
 // "&" is spelled AND (2026-09-17): the statement uses " & " only to separate
-// the bills one movement settles, and the scorer's reference pattern
-// (score-submission.ts KEY_BANK_REFERENCE) has no "&" in its character
-// class, so "MEHTA & ASSOCIATES" left the whole narration unrecognised.
+// the bills one movement settles. The scorer's reference pattern
+// (score-submission.ts keyBankReference) accepts "&" since 2026-09-17, but
+// spelling it out keeps the party code unambiguous next to that separator.
 function counterpartyCode(name: string): string {
   return name
     .toUpperCase()

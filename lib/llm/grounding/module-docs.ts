@@ -224,10 +224,10 @@ Section 194J (Professional Fees) & Section 194C (Contractors)
 TDS (Tax Deducted at Source) applies when you pay certain categories of expenses above a threshold — you hold back a percentage as tax and deposit it with the government on the payee's behalf; they get credit for it against their own tax liability. This module covers two of the most common sections: 194J (professional fees) and 194C (payments to contractors).
 Note: from FY 2026-27, TDS provisions are consolidated under Section 393 of the Income Tax Act, 2025 — but the familiar section numbers (194J, 194C) are still universally used in practice, in software like TallyPrime, and in this guide, since they map directly to the old, well-known rates and rules.
 A. TDS under Section 194J — Professional Fees
-Applies to fees for professional services (legal, accounting, consultancy, etc.). Threshold: ₹50,000 in aggregate per payee per financial year. Rate: 10% for professional services [194J(b)] — technical services, royalty, and call-centre payments are taxed separately at 2% under 194J(a).
+Applies to fees for professional services (legal, accounting, consultancy, etc.). Threshold: aggregate per payee per financial year exceeding ₹30,000 in FY 2024-25, and ₹50,000 from FY 2025-26 (Finance Act 2025). Rate: 10% for professional services [194J(b)] — technical services, royalty, and call-centre payments are taxed separately at 2% under 194J(a).
 Menu Path:  Gateway of Tally → Create → Journal   (booking the expense with TDS deducted)
 Entry 1 — booking the expense
-You engage CA Rakesh & Co for professional services billed at ₹60,000 (above the ₹50,000 threshold).
+You engage CA Rakesh & Co for professional services billed at ₹60,000 (above the threshold in either year).
 Account
 Dr / Cr
 Professional Fees A/c (₹60,000)
@@ -282,7 +282,7 @@ Applies to
 Legal, accounting, consultancy, technical & professional services
 Work contracts, sub-contracts, labour/construction charges
 Threshold
-₹50,000 in aggregate per FY
+above ₹30,000 per FY (FY 2024-25); above ₹50,000 per FY (from FY 2025-26)
 ₹30,000 single payment, or ₹1,00,000 aggregate per FY
 Rate
 10% (professional) / 2% (technical, 194J(a))

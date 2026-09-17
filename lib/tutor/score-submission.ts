@@ -11,7 +11,7 @@ import type {
   LedgerFinding,
   CompositeMatch,
 } from '@/lib/schemas/scoring';
-import { isBankLedger, parseBillReferences } from '@/lib/db/queries/company';
+import { isBankLedger, parseBillReferences, partyLegOf } from '@/lib/db/queries/company';
 import { findLedgerFindings } from './ledger-findings';
 import {
   accountNamesMatch,
@@ -19,12 +19,19 @@ import {
   aliasFitsAccount,
   classifyLedger,
   gstHeadOf,
+  headWisePayableHead,
+  isGenericGstPayable,
   isTaxLedgerName,
   keyAccountSet,
+  namesCompatible,
   normalizeAccountName,
   partyAccountsOf,
+  tdsSectionOf,
   type AccountMatchOptions,
 } from './account-names';
+import { combinedGstRate } from './generation-checks';
+import { optimiseSetOff, type GstHead } from './month-end-journals';
+import { roundTdsAmount, tdsSectionFromText } from './tax-rules';
 
 export { accountNamesMatch, normalizeAccountName };
 
@@ -63,7 +70,9 @@ const FIELD_WEIGHT: Record<ScoredField, number> = {
 // amounts and type, so only the account field is flagged.
 // Name matching plus the batch's advance references (2026-09-17), threaded
 // through every diff so the scorer and the adjudicator judge alike.
-export type ScoringOptions = AccountMatchOptions & { advanceReferences?: ReadonlySet<string> };
+// gstBooks (2026-09-17, round 2): the learner's own GST ledgers for the month,
+// against which the month-end set-off is judged (see judgeGstSetOff).
+export type ScoringOptions = AccountMatchOptions & { advanceReferences?: ReadonlySet<string>; gstBooks?: LearnerGstBooks };
 
 // Aliases go through aliasAcceptsLedger (2026-09-17): the ledger must not
 // contradict the account itself (a payable for an expense head, "Interest
@@ -73,7 +82,45 @@ function legMatchesEntry(entry: LedgerEntry, leg: AnswerKeyEntry, options: Scori
   if (accountNamesMatch(entry.ledgerName, leg.correct_account, options)) {
     return true;
   }
+  if (headWisePayableFitsLeg(entry.ledgerName, leg.correct_account, options)) {
+    return true;
+  }
   return (leg.account_aliases ?? []).some((alias) => aliasAcceptsLedger(entry.ledgerName, alias, leg.correct_account, options));
+}
+
+// Head-wise payables stand for the key's single "GST Payable" (2026-09-17,
+// round 2). The pilot learner credited "IGST Payable" where the pack says
+// GST Payable (seq 99), and the stricter name rules of round 1 flagged a
+// legitimate practice. One head-wise payable, or several together (merged
+// into one entry by mergeHeadWisePayables, named "IGST Payable + CGST
+// Payable"), fills the GST Payable leg; the set-off judgement
+// (judgeGstSetOff) then checks that each head's payable holds only what that
+// head leaves to pay. A ledger the key names as an account of its own is
+// never borrowed, and "Output IGST" is not a payable.
+function headWisePayableFitsLeg(ledgerName: string, account: string, options: ScoringOptions): boolean {
+  if (!isGenericGstPayable(account)) return false;
+  if (options.keyAccounts?.has(normalizeAccountName(ledgerName))) return false;
+  return headWisePayableHead(ledgerName) !== null;
+}
+
+function mergeHeadWisePayables(entries: LedgerEntry[], legs: AnswerKeyEntry[], options: ScoringOptions): LedgerEntry[] {
+  let merged = entries;
+  for (const side of ['Dr', 'Cr'] as const) {
+    const payableLeg = legs.find((leg) => leg.dr_cr === side && isGenericGstPayable(leg.correct_account));
+    if (!payableLeg) continue;
+    const parts = merged.filter((entry) => entry.drOrCr === side && headWisePayableFitsLeg(entry.ledgerName, payableLeg.correct_account, options));
+    if (parts.length < 2) continue;
+    const combined: LedgerEntry = {
+      ledgerName: parts.map((part) => part.ledgerName).join(' + '),
+      amount: round2(parts.reduce((sum, part) => sum + part.amount, 0)),
+      drOrCr: side,
+      billAllocations: parts.flatMap((part) => part.billAllocations),
+    };
+    const first = merged.indexOf(parts[0]);
+    merged = merged.filter((entry) => !parts.includes(entry));
+    merged.splice(first, 0, combined);
+  }
+  return merged;
 }
 
 // Voucher types by their base (2026-09-17). Tally lets a company create its
@@ -227,9 +274,9 @@ function consolidateLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
 export type LegPairing = { entries: LedgerEntry[]; legs: AnswerKeyEntry[]; assigned: Map<number, LedgerEntry>; leftover: LedgerEntry[] };
 
 export function pairLegsToEntries(voucher: Voucher, expectedLegs: AnswerKeyEntry[], options: ScoringOptions = {}): LegPairing {
-  const entries = consolidateLedgerEntries(voucher.ledgerEntries);
-  const unmatchedEntries = [...entries];
   const consolidated = consolidateExpectedLegs(expectedLegs);
+  const entries = mergeHeadWisePayables(consolidateLedgerEntries(voucher.ledgerEntries), consolidated, options);
+  const unmatchedEntries = [...entries];
 
   // Pair expected legs to posted entries in two passes. Pass 1 claims an
   // entry by the account NAME; only pass 2 falls back to the key's aliases.
@@ -267,6 +314,21 @@ export function pairLegsToEntries(voucher: Voucher, expectedLegs: AnswerKeyEntry
   return { entries, legs: consolidated, assigned, leftover: unmatchedEntries };
 }
 
+const TAX_AMOUNT_TOLERANCE = 1;
+
+// A month-end GST set-off in the key (2026-09-17, round 2): a Journal whose
+// legs debit a forward-charge Output GST ledger and credit Input GST or a GST
+// payable (same shape generation-checks.ts isSetOffJournal recognises).
+export function isGstSetOffTransaction(expectedLegs: AnswerKeyEntry[]): boolean {
+  if (baseVoucherType(expectedLegs[0].voucher_type) !== 'journal') return false;
+  const forward = expectedLegs.filter((leg) => gstHeadOf(leg.correct_account) !== null && !/\brcm\b|reverse charge/i.test(leg.correct_account));
+  const touchesOutput = forward.some((leg) => /\boutput\b/i.test(leg.correct_account));
+  const touchesInputOrPayable =
+    forward.some((leg) => /\b(input|itc)\b/i.test(leg.correct_account)) ||
+    expectedLegs.some((leg) => isGenericGstPayable(leg.correct_account) || headWisePayableHead(leg.correct_account) !== null);
+  return touchesOutput && touchesInputOrPayable;
+}
+
 // The weight a transaction is worth when every field is scored: account,
 // side and amount per consolidated leg, plus voucher type, GST, TDS, bill
 // reference and (when the key names a statement reference) narration.
@@ -302,6 +364,8 @@ function diffVoucherAgainstAnswerKey(
   }
 
   const { legs: consolidated, assigned } = pairLegsToEntries(voucher, expectedLegs, options);
+  const setOffTransaction = isGstSetOffTransaction(expectedLegs);
+  const paysOwnPayable = isGstPaymentTransaction(expectedLegs) && paysOwnGstPayable(voucher, options.gstBooks);
 
   for (const [index, expectedLeg] of consolidated.entries()) {
     const matchingEntry = assigned.get(index);
@@ -346,20 +410,29 @@ function diffVoucherAgainstAnswerKey(
       leg: index,
     });
 
-    // GST/TDS-named legs (the set-off JV, a TDS deposit) don't get amount-
-    // checked: their correct figures depend on every upstream voucher, so a
-    // single upstream slip would cascade into a wall of AMOUNT_WRONGs here.
-    // Presence and direction still score; the aggregate effect is covered by
-    // the per-voucher gst/tds checks and the (tax-exempt) TB tie-out.
+    // Tax legs are amount-checked (2026-09-17, round 2). Every GST- and
+    // TDS-named leg used to be skipped so that a set-off's upstream slips
+    // would not cascade, which also let a wrong TDS deduction or a wrong GST
+    // figure on an ordinary voucher pass. A tax leg now equals the key
+    // within Rs 1 of rounding (TDS to the rupee under s. 288B; GST rounded
+    // per head on the invoice). Only the month-end GST set-off keeps its
+    // tax legs unscored here: its figures are the learner's own ledger
+    // balances, judged against their Day Book by judgeGstSetOff (gst field).
     // Tax ledgers by word (2026-09-17): "Kingston Traders" holds "gst".
     const taxLeg = isTaxLedgerName(expectedLeg.correct_account);
-    const amountCorrect = taxLeg || amountsMatch(matchingEntry.amount, expectedLeg.amount);
+    const setOffTaxLeg = taxLeg && setOffTransaction;
+    const amountCorrect =
+      setOffTaxLeg ||
+      paysOwnPayable ||
+      (taxLeg
+        ? Math.abs(matchingEntry.amount - expectedLeg.amount) <= TAX_AMOUNT_TOLERANCE
+        : amountsMatch(matchingEntry.amount, expectedLeg.amount));
     diffs.push({
       voucherRef: sequence,
       field: 'amount',
       expected_masked: true,
       is_correct: amountCorrect,
-      vacuously_correct: taxLeg ? true : undefined,
+      vacuously_correct: setOffTaxLeg ? true : undefined,
       error_code: amountCorrect ? null : 'AMOUNT_WRONG',
       leg: index,
     });
@@ -449,6 +522,243 @@ function entriesBeyondExpectedLegs(voucher: Voucher, expectedLegs: AnswerKeyEntr
   return voucher.ledgerEntries.filter((entry) => !expectedLegs.some((leg) => legMatchesEntry(entry, leg, options)));
 }
 
+// ---------------------------------------------------------------- GST set-off
+//
+// The month-end set-off judged against the learner's OWN books (2026-09-17,
+// round 2). Pack seq 99 scored clean with any figures: its tax legs were
+// never amount-checked and its GST check only asked that every head appear.
+// The key's figures cannot be the yardstick either (one upstream slip would
+// cascade), so the set-off is judged against the GST ledger balances the
+// learner's own Day Book produces for the month (every voucher except the
+// set-off itself, plus the GST opening balances: the Trial Balance's opening
+// column when the export carries one, else the key's opening balances).
+//
+// Law (tax-rules.ts header): s. 49(5) CGST Act, Rule 88A CGST Rules and
+// Circular 98/17/2019-GST: IGST credit is used first against IGST, the rest
+// against CGST and SGST in any order; CGST and SGST credit only once IGST
+// credit is used up; CGST credit against CGST then IGST, SGST credit against
+// SGST then IGST, never CGST against SGST or the reverse. Reverse-charge tax
+// is never set off (s. 49(4), s. 2(82)) and is moved to the payable in full.
+// month-end-journals.ts optimiseSetOff computes the least cash the rules
+// allow; the generator builds the key from it.
+//
+// A posted set-off is correct when
+//  (a) no head's credit used exceeds the credit its books hold, and no
+//      Output ledger is debited beyond its balance        -> else GST_RATE_WRONG
+//  (b) some flow of that credit to those outputs obeys the rules above
+//      (with head-wise payables, head by head)            -> else GST_HEAD_WRONG
+//  (c) every Output ledger is cleared, the cash left to pay is the least the
+//      rules allow, and the payable ledgers receive exactly that plus the
+//      reverse-charge tax                                  -> else GST_RATE_WRONG
+// Any legal utilisation paying the least cash passes, not only the split the
+// key happens to use. Figures carry Rs 1 of rounding per head.
+export type LearnerGstBooks = {
+  vouchers: Voucher[];
+  // GST ledger opening balances, Dr positive.
+  openings: { ledgerName: string; signedDr: number }[];
+  // Credit balance of the GST payable ledgers at the start of the period,
+  // read from the Trial Balance's opening column; null without one.
+  payableOpening: number | null;
+};
+
+type HeadFigures = Record<GstHead, number>;
+const GST_HEADS: GstHead[] = ['IGST', 'CGST', 'SGST'];
+const SET_OFF_TOLERANCE = 1;
+const zeroHeads = (): HeadFigures => ({ IGST: 0, CGST: 0, SGST: 0 });
+const isRcmName = (name: string) => /\brcm\b|reverse charge/i.test(name);
+
+function gstSideOfName(name: string, voucherType: string | null): 'output' | 'input' | null {
+  if (/\boutput\b/i.test(name)) return 'output';
+  if (/\b(input|itc)\b/i.test(name) || /c\/f/i.test(name)) return 'input';
+  return voucherType === null ? null : expectedGstSide(voucherType);
+}
+
+type LearnerGstPosition = { output: HeadFigures; input: HeadFigures; rcmOutput: HeadFigures; openingRcmInput: HeadFigures };
+
+export function learnerGstPosition(books: LearnerGstBooks, exclude?: Voucher): LearnerGstPosition {
+  const position: LearnerGstPosition = { output: zeroHeads(), input: zeroHeads(), rcmOutput: zeroHeads(), openingRcmInput: zeroHeads() };
+  const apply = (name: string, signedDr: number, voucherType: string | null, opening: boolean) => {
+    const head = gstHeadOf(name)?.toUpperCase() as GstHead | undefined;
+    if (!head || headWisePayableHead(name) !== null) return;
+    const side = gstSideOfName(name, voucherType);
+    if (side === 'output') {
+      const bucket = isRcmName(name) ? position.rcmOutput : position.output;
+      bucket[head] = round2(bucket[head] - signedDr);
+    } else if (side === 'input') {
+      if (isRcmName(name)) {
+        // RCM credit is usable only once its tax has been paid: what the
+        // books carried in is paid by now, this month's is not (same rule as
+        // appendMonthEndJournals).
+        if (opening) position.openingRcmInput[head] = round2(position.openingRcmInput[head] + signedDr);
+        return;
+      }
+      position.input[head] = round2(position.input[head] + signedDr);
+    }
+  };
+  for (const opening of books.openings) apply(opening.ledgerName, opening.signedDr, null, true);
+  for (const voucher of books.vouchers) {
+    if (voucher === exclude) continue;
+    for (const entry of voucher.ledgerEntries) {
+      apply(entry.ledgerName, entry.drOrCr === 'Dr' ? entry.amount : -entry.amount, voucher.voucherType, false);
+    }
+  }
+  return position;
+}
+
+type PostedSetOff = {
+  outputCleared: HeadFigures;
+  rcmCleared: HeadFigures;
+  creditUsed: HeadFigures;
+  headCash: HeadFigures;
+  genericCash: number;
+};
+
+function postedSetOff(voucher: Voucher): PostedSetOff {
+  const posted: PostedSetOff = { outputCleared: zeroHeads(), rcmCleared: zeroHeads(), creditUsed: zeroHeads(), headCash: zeroHeads(), genericCash: 0 };
+  for (const entry of voucher.ledgerEntries) {
+    const signedDr = entry.drOrCr === 'Dr' ? entry.amount : -entry.amount;
+    const payableHead = headWisePayableHead(entry.ledgerName);
+    if (payableHead) {
+      posted.headCash[payableHead] = round2(posted.headCash[payableHead] - signedDr);
+      continue;
+    }
+    if (isGenericGstPayable(entry.ledgerName)) {
+      posted.genericCash = round2(posted.genericCash - signedDr);
+      continue;
+    }
+    const head = gstHeadOf(entry.ledgerName)?.toUpperCase() as GstHead | undefined;
+    if (!head) continue;
+    // A head ledger with no side word ("CGST") on the journal: its debit
+    // clears output, its credit uses credit.
+    const side = gstSideOfName(entry.ledgerName, null) ?? (signedDr > 0 ? 'output' : 'input');
+    if (side === 'output') {
+      const bucket = isRcmName(entry.ledgerName) ? posted.rcmCleared : posted.outputCleared;
+      bucket[head] = round2(bucket[head] + signedDr);
+    } else {
+      posted.creditUsed[head] = round2(posted.creditUsed[head] - signedDr);
+    }
+  }
+  return posted;
+}
+
+// (b) Does some rule-abiding flow of the credit used reach the outputs
+// cleared? IGST credit meets IGST output first (forced); its remainder r goes
+// x to CGST and r - x to SGST; CGST and SGST credit meet their own head, then
+// what IGST output is left. With head-wise payables each head must receive
+// exactly its output less its cash.
+function setOffFlowIsLegal(output: HeadFigures, available: HeadFigures, used: HeadFigures, headCash: HeadFigures | null): boolean {
+  const T = SET_OFF_TOLERANCE;
+  if (used.CGST + used.SGST > T && used.IGST < available.IGST - T) return false;
+  const iToI = Math.min(used.IGST, output.IGST);
+  const r = used.IGST - iToI;
+  const igstLeft = output.IGST - iToI;
+  if (headCash === null) {
+    const lo = Math.max(0, r - output.SGST);
+    const hi = Math.min(r, output.CGST);
+    if (lo > hi + T) return false;
+    const clamp = (x: number) => Math.min(hi, Math.max(lo, x));
+    const spill = (x: number) => Math.max(0, used.CGST - (output.CGST - x)) + Math.max(0, used.SGST - (output.SGST - (r - x)));
+    const candidates = [lo, hi, clamp(output.CGST - used.CGST), clamp(r - output.SGST + used.SGST)];
+    return Math.min(...candidates.map(spill)) <= igstLeft + T;
+  }
+  const target: HeadFigures = {
+    IGST: output.IGST - headCash.IGST,
+    CGST: output.CGST - headCash.CGST,
+    SGST: output.SGST - headCash.SGST,
+  };
+  if (GST_HEADS.some((head) => target[head] < -T)) return false;
+  const spillToIgst = used.CGST + used.SGST - target.CGST - target.SGST + r;
+  if (Math.abs(iToI + spillToIgst - target.IGST) > 2 * T) return false;
+  const lo = Math.max(0, target.CGST - used.CGST, r - target.SGST);
+  const hi = Math.min(r, target.CGST, r - target.SGST + used.SGST);
+  return lo <= hi + 2 * T;
+}
+
+function booksCarryGst(books: LearnerGstBooks, setOff: Voucher): boolean {
+  const position = learnerGstPosition(books, setOff);
+  return [position.output, position.input, position.rcmOutput, position.openingRcmInput].some((figures) =>
+    GST_HEADS.some((head) => Math.abs(figures[head]) >= 0.005),
+  );
+}
+
+export function judgeGstSetOff(voucher: Voucher, books: LearnerGstBooks): ScoringErrorCode | null {
+  const T = SET_OFF_TOLERANCE;
+  const position = learnerGstPosition(books, voucher);
+  const posted = postedSetOff(voucher);
+  const output: HeadFigures = { IGST: Math.max(0, position.output.IGST), CGST: Math.max(0, position.output.CGST), SGST: Math.max(0, position.output.SGST) };
+  const available: HeadFigures = {
+    IGST: round2(Math.max(0, position.input.IGST) + Math.max(0, position.openingRcmInput.IGST)),
+    CGST: round2(Math.max(0, position.input.CGST) + Math.max(0, position.openingRcmInput.CGST)),
+    SGST: round2(Math.max(0, position.input.SGST) + Math.max(0, position.openingRcmInput.SGST)),
+  };
+  // (a)
+  for (const head of GST_HEADS) {
+    if (posted.creditUsed[head] > available[head] + T || posted.creditUsed[head] < -T) return 'GST_RATE_WRONG';
+    if (posted.outputCleared[head] > output[head] + T || posted.rcmCleared[head] > Math.max(0, position.rcmOutput[head]) + T) return 'GST_RATE_WRONG';
+  }
+  // (b)
+  const headWiseOnly = Math.abs(posted.genericCash) <= T;
+  const nonRcmHeadCash: HeadFigures | null = headWiseOnly
+    ? {
+        IGST: posted.headCash.IGST - posted.rcmCleared.IGST,
+        CGST: posted.headCash.CGST - posted.rcmCleared.CGST,
+        SGST: posted.headCash.SGST - posted.rcmCleared.SGST,
+      }
+    : null;
+  if (!setOffFlowIsLegal(output, available, posted.creditUsed, nonRcmHeadCash)) return 'GST_HEAD_WRONG';
+  // (c)
+  for (const head of GST_HEADS) {
+    if (Math.abs(posted.outputCleared[head] - output[head]) > T) return 'GST_RATE_WRONG';
+    if (Math.abs(posted.rcmCleared[head] - Math.max(0, position.rcmOutput[head])) > T) return 'GST_RATE_WRONG';
+  }
+  const sum = (figures: HeadFigures) => figures.IGST + figures.CGST + figures.SGST;
+  const leastCash = optimiseSetOff(output, available).cash;
+  const cash = sum(posted.outputCleared) - sum(posted.creditUsed);
+  if (Math.abs(cash - leastCash) > 3 * T) return 'GST_RATE_WRONG';
+  const payable = posted.genericCash + sum(posted.headCash);
+  if (Math.abs(payable - (cash + sum(posted.rcmCleared))) > 3 * T) return 'GST_RATE_WRONG';
+  return null;
+}
+
+// A payment of last month's GST (2026-09-17, round 2): its figure is the
+// learner's own payable balance, accepted when it equals the payable their
+// Trial Balance opens the period with.
+export function isGstPaymentTransaction(expectedLegs: AnswerKeyEntry[]): boolean {
+  return (
+    baseVoucherType(expectedLegs[0].voucher_type) === 'payment' &&
+    expectedLegs.some((leg) => leg.dr_cr === 'Dr' && (isGenericGstPayable(leg.correct_account) || headWisePayableHead(leg.correct_account) !== null))
+  );
+}
+
+function paysOwnGstPayable(voucher: Voucher, books: LearnerGstBooks | undefined): boolean {
+  if (!books || books.payableOpening === null || books.payableOpening < SET_OFF_TOLERANCE) return false;
+  const paid = voucher.ledgerEntries
+    .filter((entry) => isGenericGstPayable(entry.ledgerName) || headWisePayableHead(entry.ledgerName) !== null)
+    .reduce((sum, entry) => sum + (entry.drOrCr === 'Dr' ? entry.amount : -entry.amount), 0);
+  return Math.abs(paid - books.payableOpening) <= SET_OFF_TOLERANCE;
+}
+
+// The learner's GST books from the export (see LearnerGstBooks).
+export function learnerGstBooks(dayBook: ParsedDayBook, trialBalance: ParsedTrialBalance | null, answerKey: AnswerKey): LearnerGstBooks {
+  const isGstName = (name: string) => gstHeadOf(name) !== null || isGenericGstPayable(name);
+  if (trialBalance && hasOpeningColumn(trialBalance)) {
+    const rows = trialBalance.ledgers.filter((row) => isGstName(row.ledgerName));
+    const payableRows = rows.filter((row) => isGenericGstPayable(row.ledgerName) || headWisePayableHead(row.ledgerName) !== null);
+    return {
+      vouchers: dayBook.vouchers,
+      openings: rows.map((row) => ({ ledgerName: row.ledgerName, signedDr: (row.openingDebit ?? 0) - (row.openingCredit ?? 0) })),
+      payableOpening: round2(payableRows.reduce((sum, row) => sum + (row.openingCredit ?? 0) - (row.openingDebit ?? 0), 0)),
+    };
+  }
+  return {
+    vouchers: dayBook.vouchers,
+    openings: (answerKey.opening_balances ?? [])
+      .filter((opening) => isGstName(opening.account))
+      .map((opening) => ({ ledgerName: opening.account, signedDr: opening.dr_cr === 'Dr' ? opening.amount : -opening.amount })),
+    payableOpening: null,
+  };
+}
+
 function diffGst(
   voucher: Voucher,
   expected: AnswerKeyEntry,
@@ -456,6 +766,13 @@ function diffGst(
   voucherRef: number,
   options: ScoringOptions = {},
 ): VoucherDiff {
+  // Books with no GST at all besides the set-off itself (a drill that posts
+  // only the journal, no opening figures) give nothing to judge against;
+  // the head check below still applies to those.
+  if (options.gstBooks && isGstSetOffTransaction(expectedLegs) && booksCarryGst(options.gstBooks, voucher)) {
+    const error = judgeGstSetOff(voucher, options.gstBooks);
+    return { voucherRef, field: 'gst', expected_masked: true, is_correct: error === null, error_code: error };
+  }
   const actualGst = collectGstFromLedgerEntries(
     expected.gst_head === null ? entriesBeyondExpectedLegs(voucher, expectedLegs, options) : voucher.ledgerEntries,
   );
@@ -542,16 +859,57 @@ function diffGst(
 
 const GST_AMOUNT_TOLERANCE = 1;
 
-// Posted GST per head versus the key's GST legs per head. A key with no GST
-// leg amounts (older single-leg keys carried the tax as metadata) is not
-// amount-checked.
-function gstAmountsMatch(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): boolean {
+// Posted GST per head versus the key's GST per head.
+//
+// 2026-09-17, round 2: a key with no GST-named legs used to pass any figure.
+// The authored pack stores GST only as gst_head/gst_rate metadata on the
+// party and base legs (every taxed pack voucher), so its GST was never
+// amount-checked. The expected tax is now derived from the metadata:
+// taxable value = the base-side legs other than the party (sales and debit
+// notes Cr, purchases, credit notes and expense payments Dr), times the
+// overall rate; IGST carries the whole rate, CGST and SGST half each.
+// Rate semantics: gst_rate is read by generation-checks.ts combinedGstRate,
+// the reading the generator validates keys with (generated keys store the
+// PER-HEAD rate on CGST/SGST, 9 for 18%; the pack stores the COMBINED rate,
+// 18 on the CGST head; the two never collide because half of a slab is
+// never a slab). month-end-journals.ts gstPositionFromKeys reads gst_rate as
+// combined only, which is right for the pack and every generated key with
+// GST legs (its metadata branch never sees a generated per-head key).
+function expectedGstByHead(expectedLegs: AnswerKeyEntry[]): Map<string, number> {
   const expectedByHead = new Map<string, number>();
   for (const leg of expectedLegs) {
     if (leg.gst_head && gstHeadOf(leg.correct_account) !== null) {
       expectedByHead.set(leg.gst_head, (expectedByHead.get(leg.gst_head) ?? 0) + leg.amount);
     }
   }
+  if (expectedByHead.size > 0) return expectedByHead;
+
+  const taxed = expectedLegs.find((leg) => leg.gst_head !== null && leg.gst_rate !== null);
+  if (!taxed || taxed.gst_head === null) return expectedByHead;
+  const type = baseVoucherType(expectedLegs[0].voucher_type);
+  const baseSide = type === 'sales' || type === 'debit note' || type === 'receipt' ? 'Cr' : type === 'purchase' || type === 'credit note' || type === 'payment' ? 'Dr' : null;
+  if (baseSide === null) return expectedByHead;
+  const party = /^(sales|purchase|credit note|debit note)$/.test(type) ? partyLegOf(expectedLegs, type) : undefined;
+  const head = taxed.gst_head;
+  for (const leg of expectedLegs) {
+    if (leg === party || leg.dr_cr !== baseSide) continue;
+    if (isTaxLedgerName(leg.correct_account) || isBankLedger(leg.correct_account) || CASH_LEDGER.test(leg.correct_account)) continue;
+    if (/\bround(?:ing)?[\s-]?off\b|\bdiscount\b/i.test(leg.correct_account)) continue;
+    const combined = combinedGstRate(head, leg.gst_rate ?? taxed.gst_rate ?? 0);
+    if (combined === null || combined === 0) continue;
+    if (head === 'IGST') {
+      expectedByHead.set('IGST', round2((expectedByHead.get('IGST') ?? 0) + (leg.amount * combined) / 100));
+    } else {
+      const half = (leg.amount * combined) / 200;
+      expectedByHead.set('CGST', round2((expectedByHead.get('CGST') ?? 0) + half));
+      expectedByHead.set('SGST', round2((expectedByHead.get('SGST') ?? 0) + half));
+    }
+  }
+  return expectedByHead;
+}
+
+function gstAmountsMatch(voucher: Voucher, expectedLegs: AnswerKeyEntry[]): boolean {
+  const expectedByHead = expectedGstByHead(expectedLegs);
   if (expectedByHead.size === 0) return true;
   const actualByHead = new Map<string, number>();
   for (const entry of voucher.ledgerEntries) {
@@ -588,13 +946,66 @@ function diffTds(
     };
   }
 
-  return {
-    voucherRef,
-    field: 'tds',
-    expected_masked: true,
-    is_correct: actualTds !== null,
-    error_code: actualTds !== null ? null : 'TDS_MISSING',
-  };
+  if (actualTds === null) {
+    return { voucherRef, field: 'tds', expected_masked: true, is_correct: false, error_code: 'TDS_MISSING' };
+  }
+  const error = tdsError(voucher, expected, expectedLegs);
+  return { voucherRef, field: 'tds', expected_masked: true, is_correct: error === null, error_code: error };
+}
+
+// TDS section and amount (2026-09-17, round 2). Presence alone used to pass,
+// so a 194J ledger on a 194C bill, or 7,000 deducted where 7,500 was due,
+// scored as correct. Now:
+// - SECTION: every posted TDS ledger that names a section (tdsSectionOf:
+//   "TDS Payable - u/s 194J", "TDS 194C 2%") must name the key's section.
+//   A plain "TDS Payable" names none and is accepted: the section then
+//   shows only in the rate, which the amount check covers. 194-I and 194J
+//   share the 10% rate, so only the name can catch that confusion.
+// - AMOUNT: the deduction is tds_base x tds_rate rounded to the rupee
+//   (s. 288B Income-tax Act; tax-rules.ts roundTdsAmount), or the key's own
+//   TDS legs where it has them, within Rs 1. A wrong figure is named by what
+//   it equals: another TDS rate on the right base is TDS_RATE_WRONG (E07),
+//   the right rate on the GST-inclusive total is TDS_BASE_WRONG (TDS is on
+//   the value excluding GST, CBDT Circular 23/2017), anything
+//   else TDS_AMOUNT_WRONG (E11).
+const TDS_AMOUNT_TOLERANCE = 1;
+const KNOWN_TDS_RATES = [0.1, 1, 2, 5, 10, 20];
+
+function tdsError(voucher: Voucher, expected: AnswerKeyEntry, expectedLegs: AnswerKeyEntry[]): ScoringErrorCode | null {
+  const tdsEntries = voucher.ledgerEntries.filter((entry) => TDS_LEDGER_PATTERN.test(entry.ledgerName));
+  const expectedSection = tdsSectionFromText(expected.tds_section)?.toLowerCase() ?? null;
+  if (expectedSection !== null && tdsEntries.some((entry) => {
+    const posted = tdsSectionOf(entry.ledgerName);
+    return posted !== null && posted !== expectedSection;
+  })) {
+    return 'TDS_SECTION_WRONG';
+  }
+
+  const keyTdsLegs = expectedLegs.filter((leg) => TDS_LEDGER_PATTERN.test(leg.correct_account));
+  const base = expected.tds_base;
+  const rate = expected.tds_rate;
+  let expectedAmount: number | null = null;
+  if (keyTdsLegs.length > 0) {
+    expectedAmount = Math.abs(keyTdsLegs.reduce((sum, leg) => sum + (leg.dr_cr === 'Dr' ? leg.amount : -leg.amount), 0));
+  } else if (base !== null && rate !== null) {
+    expectedAmount = roundTdsAmount((base * rate) / 100);
+  }
+  if (expectedAmount === null) return null;
+  const posted = Math.abs(tdsEntries.reduce((sum, entry) => sum + (entry.drOrCr === 'Dr' ? entry.amount : -entry.amount), 0));
+  if (Math.abs(posted - expectedAmount) <= TDS_AMOUNT_TOLERANCE) return null;
+  if (base !== null) {
+    const near = (figure: number) => Math.abs(posted - figure) <= TDS_AMOUNT_TOLERANCE;
+    if (KNOWN_TDS_RATES.some((other) => other !== rate && near(roundTdsAmount((base * other) / 100)))) {
+      return 'TDS_RATE_WRONG';
+    }
+    const gstPosted = voucher.ledgerEntries
+      .filter((entry) => gstHeadOf(entry.ledgerName) !== null)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    if (rate !== null && gstPosted > 0 && near(roundTdsAmount(((base + gstPosted) * rate) / 100))) {
+      return 'TDS_BASE_WRONG';
+    }
+  }
+  return 'TDS_AMOUNT_WRONG';
 }
 
 // Bill references (rewritten 2026-09-17). The old rule accepted a match when
@@ -857,7 +1268,8 @@ export function computeOverallResult(weightedScore: number, tbTieOut: boolean): 
 // fully-settled account legitimately absent from the export only fails when
 // its expected figure is non-zero. Mismatches are returned by ledger with
 // the size of the gap, never the expected figure.
-const TIE_OUT_EXEMPT_PATTERN = /gst|tds/i;
+// Tax ledgers by word (2026-09-17, round 2): the old /gst|tds/ substring
+// exempted parties such as "Kingston Traders" from the tie-out.
 // Whole-rupee tolerance: Tally rounds TDS/GST legs, and a movement is the
 // difference of two rounded closings.
 const TIE_OUT_TOLERANCE = 1;
@@ -915,14 +1327,34 @@ export function isTallyGroupRow(ledgerName: string): boolean {
   return TALLY_GROUP_NAMES.has(normalizeAccountName(ledgerName));
 }
 
+// 2026-09-17, round 2:
+// - acceptableNames[0] is the account itself, the rest its aliases (both
+//   callers pass [account, ...aliases]). A row reached through an alias
+//   must not contradict the account (aliasAcceptsLedger: balance-sheet
+//   markers, income against expense), the guard the voucher scorer applies
+//   since round 1: the alias "Interest" of Interest Income no longer takes
+//   an "Interest Paid" row.
+// - A row named like a Tally group is a ledger when the account or one of
+//   its aliases IS that name ("Fixed Assets" aliased for Office Equipment,
+//   "Cash-in-Hand" for Cash); only unclaimed group names are dropped.
+// - Head-wise GST payable rows ("IGST Payable") are rows of GST Payable,
+//   as the voucher scorer reads them (headWisePayableFitsLeg).
 export function rowsForAccount(
   trialBalance: ParsedTrialBalance,
   acceptableNames: string[],
   excluded: Set<string>,
 ): ParsedTrialBalance['ledgers'] {
   const normalizedNames = acceptableNames.map(normalizeAccountName);
-  const ledgerRows = trialBalance.ledgers.filter((ledger) => !isTallyGroupRow(ledger.ledgerName));
-  const exactRows = ledgerRows.filter((ledger) => normalizedNames.includes(normalizeAccountName(ledger.ledgerName)));
+  const account = acceptableNames[0] ?? '';
+  const aliases = acceptableNames.slice(1);
+  const ledgerRows = trialBalance.ledgers.filter(
+    (ledger) => !isTallyGroupRow(ledger.ledgerName) || normalizedNames.includes(normalizeAccountName(ledger.ledgerName)),
+  );
+  const exactRows = ledgerRows.filter(
+    (ledger) =>
+      normalizedNames.includes(normalizeAccountName(ledger.ledgerName)) ||
+      (isGenericGstPayable(account) && headWisePayableHead(ledger.ledgerName) !== null),
+  );
   const unclaimed = ledgerRows.filter((ledger) => !excluded.has(ledger.ledgerName));
   if (exactRows.length > 0) {
     // Alongside an exact row, only rows whose name EMBEDS the account name
@@ -935,13 +1367,21 @@ export function rowsForAccount(
         !exactRows.includes(ledger) &&
         acceptableNames.some((name) => {
           const needle = normalizeAccountName(name);
-          return needle.length >= MIN_CONTAINMENT_CHARS && rowName.includes(needle) && aliasFitsAccount(ledger.ledgerName, name);
+          return (
+            needle.length >= MIN_CONTAINMENT_CHARS &&
+            rowName.includes(needle) &&
+            aliasFitsAccount(ledger.ledgerName, name) &&
+            namesCompatible(ledger.ledgerName, account)
+          );
         })
       );
     });
     return [...exactRows, ...embedding];
   }
-  return unclaimed.filter((ledger) => acceptableNames.some((name) => accountNamesMatch(ledger.ledgerName, name)));
+  return unclaimed.filter(
+    (ledger) =>
+      accountNamesMatch(ledger.ledgerName, account) || aliases.some((alias) => aliasAcceptsLedger(ledger.ledgerName, alias, account)),
+  );
 }
 
 // A previous export with fewer rows than this is a collapsed, group-level
@@ -996,6 +1436,36 @@ export function rowsExcludedFor(account: string, claimed: Set<string>, reserved:
   return excluded;
 }
 
+// Does this export's opening column start before the month the previous
+// export closed? A month-only export opens where the previous export
+// closed, row by row; one run from an earlier date (books begin, the start
+// of the year) opens where the previous export OPENED instead. Judged on
+// the rows both exports carry that moved last time (previous opening and
+// closing differ, or the previous export has no opening column): the
+// export opens early when more of them open somewhere other than the
+// previous closing than open at it. A few corrected rows (a learner fixing an old
+// month after feedback, which changes that month's closing) do not tip it.
+const OPENING_MATCH_TOLERANCE = 1;
+
+export function opensBeforeThisMonth(trialBalance: ParsedTrialBalance, previousExport: ParsedTrialBalance): boolean {
+  const previousByName = new Map(previousExport.ledgers.map((row) => [normalizeAccountName(row.ledgerName), row]));
+  const previousHasOpenings = hasOpeningColumn(previousExport);
+  let atPreviousClosing = 0;
+  let elsewhere = 0;
+  for (const row of trialBalance.ledgers) {
+    if (row.openingDebit === undefined && row.openingCredit === undefined) continue;
+    const previous = previousByName.get(normalizeAccountName(row.ledgerName));
+    if (!previous) continue;
+    const openingNow = (row.openingDebit ?? 0) - (row.openingCredit ?? 0);
+    const previousClosing = previous.closingDebit - previous.closingCredit;
+    const previousOpening = previousHasOpenings ? (previous.openingDebit ?? 0) - (previous.openingCredit ?? 0) : null;
+    if (previousOpening !== null && Math.abs(previousOpening - previousClosing) < OPENING_MATCH_TOLERANCE) continue;
+    if (Math.abs(openingNow - previousClosing) < OPENING_MATCH_TOLERANCE) atPreviousClosing += 1;
+    else elsewhere += 1;
+  }
+  return elsewhere > atPreviousClosing;
+}
+
 // Financial-year change (2026-09-11): Tally restarts every profit-and-loss
 // ledger on 1 April, so the first batch of a year exports Sales, Purchases
 // and the expense ledgers with that month's figures only while the
@@ -1019,9 +1489,15 @@ export function evaluateTrialBalanceTieOut(
   // Praveen's SA/2027-04 fix in April would otherwise have surfaced as a
   // May movement. The previous-export comparison remains for files with
   // no opening column.
-  const selfContained = hasOpeningColumn(trialBalance);
-  const previousTrialBalance =
-    !selfContained && previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
+  const usableBaseline = previousExport && previousExport.ledgers.length >= MIN_BASELINE_ROWS ? previousExport : null;
+  // A period export that does not start this month (2026-09-17, round 2):
+  // a learner who exports April to May for the May batch sends an opening
+  // column holding the books-begin balances, and closing minus opening read
+  // every ledger as off by April's movement. Such an export is detected
+  // against the previous scored export (see opensBeforeThisMonth) and read
+  // like a file with no opening column: closing minus the previous closing.
+  const selfContained = hasOpeningColumn(trialBalance) && !(usableBaseline !== null && opensBeforeThisMonth(trialBalance, usableBaseline));
+  const previousTrialBalance = !selfContained ? usableBaseline : null;
   const movementBased = selfContained || previousTrialBalance !== null;
   const expected = new Map<string, number>();
   const aliasesByAccount = new Map<string, string[]>();
@@ -1051,7 +1527,7 @@ export function evaluateTrialBalanceTieOut(
 
   const mismatches: TieOutMismatch[] = [];
   for (const [account, expectedFigure] of expected) {
-    if (TIE_OUT_EXEMPT_PATTERN.test(account)) continue;
+    if (isTaxLedgerName(account)) continue;
     const names = namesByAccount.get(account) ?? [account];
     const rowsNow = rowsForAccount(trialBalance, names, rowsExcludedFor(account, claimedNow, reservedNow));
     if (selfContained) {
@@ -1669,8 +2145,16 @@ export function answerKeyMatchOptions(answerKey: AnswerKey): ScoringOptions {
   };
 }
 
-function matchAndDiff(vouchers: Voucher[], transactionGroups: AnswerKeyEntry[][], answerKey: AnswerKey): CompositeState {
-  const options = answerKeyMatchOptions(answerKey);
+function matchAndDiff(
+  vouchers: Voucher[],
+  transactionGroups: AnswerKeyEntry[][],
+  answerKey: AnswerKey,
+  trialBalance: ParsedTrialBalance | null = null,
+): CompositeState {
+  const options: ScoringOptions = {
+    ...answerKeyMatchOptions(answerKey),
+    gstBooks: learnerGstBooks({ vouchers }, trialBalance, answerKey),
+  };
   const matching = matchVouchersToTransactionsDetailed(vouchers, transactionGroups, options);
   const state: CompositeState = {
     matchedIndexes: [...matching.matchedIndexes],
@@ -1708,7 +2192,7 @@ export function scoreSubmission(
   options: { previousTrialBalance?: ParsedTrialBalance | null; firstMonthOfFinancialYear?: boolean } = {},
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
-  const state = matchAndDiff(dayBook.vouchers, transactionGroups, answerKey);
+  const state = matchAndDiff(dayBook.vouchers, transactionGroups, answerKey, trialBalance);
   const perVoucherDiffs = state.diffs.flat();
 
   const unmatchedVouchers = describeUnmatchedVouchers(dayBook.vouchers, state.used);
