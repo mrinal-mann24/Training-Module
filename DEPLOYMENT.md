@@ -23,7 +23,7 @@ generic Hostinger docs pattern, this VPS's setup differs from it:
 - It discovers containers purely via **Docker labels**
   (`--providers.docker.exposedbydefault=false`, so `traefik.enable=true` is
   required on every app that wants to be routed).
-- Each existing app (`aia-flagged-automation`, `va-bot`, `karbon-mis`, ...)
+- Each existing app (`aia-flagged-automation`, `va-bot`, `AI Accountant's-mis`, ...)
   publishes its port to **`127.0.0.1:<port>`** on the host (loopback only,
   never `0.0.0.0` — not reachable directly from the internet) and points its
   Traefik label at a fixed `loadbalancer.server.url=http://127.0.0.1:<port>`,
@@ -34,7 +34,7 @@ generic Hostinger docs pattern, this VPS's setup differs from it:
   resolves straight to that IP, no DNS records needed). `ai-tutor` uses the
   `ai-tutor` label.
 - **After first deploy, Traefik needed one restart** (`docker restart
-  traefik-traefik-1`) before the new router actually served traffic over
+traefik-traefik-1`) before the new router actually served traffic over
   HTTPS with a valid cert — the router/cert appeared in Traefik's ACME store
   (`acme.json`) immediately, but the live TLS handshake kept using a
   self-signed fallback until the restart. Do this once after first deploy;
@@ -46,6 +46,7 @@ generic Hostinger docs pattern, this VPS's setup differs from it:
 ## 0. One-time prerequisites (before first deploy)
 
 ### a. Public URL
+
 Already decided and working: `https://ai-tutor.187-127-173-25.sslip.io`.
 `docker-compose.yml` reads this from `APP_DOMAIN` in `.env` — no default is
 baked in, it must be set explicitly:
@@ -58,7 +59,7 @@ APP_PORT=3005
 `APP_PORT` is the host-loopback port this app publishes on
 (`127.0.0.1:$APP_PORT`) — must not collide with another app's port. Known
 taken ports on this VPS as of 2026-08-27: 8000 (aia-flagged-automation),
-8001 (va-bot), 8002 (gm-opportunity), 8003 (karbon-mis). `3005` is free;
+8001 (va-bot), 8002 (gm-opportunity), 8003 (AI Accountant's-mis). `3005` is free;
 verify with `docker ps --format '{{.Names}}\t{{.Ports}}'` before reusing it
 if deploying a second app later.
 
@@ -69,6 +70,7 @@ more `docker restart traefik-traefik-1` per the note above). Update the
 Supabase and Inngest URLs in steps (c) and (d) to match.
 
 ### b. Production `.env`
+
 On the VPS, `.env` was created from `.env.example`. Differences from dev:
 
 - **Remove `INNGEST_DEV=1` entirely** (or the app will look for a local dev
@@ -81,6 +83,7 @@ On the VPS, `.env` was created from `.env.example`. Differences from dev:
 - `APP_DOMAIN` and `APP_PORT` per step 0a.
 
 ### c. Supabase (one-time)
+
 - All migrations in `supabase/migrations/` applied to the project.
 - Storage buckets + pack seeded: run `node scripts/seed-pack.mjs` from your
   local machine with the production env values (the script is not shipped in
@@ -90,6 +93,7 @@ On the VPS, `.env` was created from `.env.example`. Differences from dev:
   Without this, magic links and OAuth land on localhost.
 
 ### d. Inngest Cloud (one-time, after the app is up)
+
 In app.inngest.com → Apps → Sync new app, register:
 `https://ai-tutor.187-127-173-25.sslip.io/api/inngest`
 Inngest must be able to reach this endpoint from the internet — this is why
@@ -155,14 +159,14 @@ trigger to that workflow file. Note the workflow's `cd` path should match
 
 ## 3. Operations
 
-| Task | Command |
-|---|---|
-| Status / health | `docker compose ps` |
-| Logs (live) | `docker compose logs -f ai-tutor` |
-| Restart | `docker compose restart ai-tutor` |
-| Stop | `docker compose down` |
-| Env change | edit `.env`, then `docker compose up -d` (no build needed — runtime env only; changing a `NEXT_PUBLIC_*` value DOES need `--build`, it's baked into the browser bundle) |
-| Uptime monitoring | add `https://ai-tutor.187-127-173-25.sslip.io/api/health` to the Uptime Kuma already running on this VPS |
+| Task              | Command                                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status / health   | `docker compose ps`                                                                                                                                                     |
+| Logs (live)       | `docker compose logs -f ai-tutor`                                                                                                                                       |
+| Restart           | `docker compose restart ai-tutor`                                                                                                                                       |
+| Stop              | `docker compose down`                                                                                                                                                   |
+| Env change        | edit `.env`, then `docker compose up -d` (no build needed — runtime env only; changing a `NEXT_PUBLIC_*` value DOES need `--build`, it's baked into the browser bundle) |
+| Uptime monitoring | add `https://ai-tutor.187-127-173-25.sslip.io/api/health` to the Uptime Kuma already running on this VPS                                                                |
 
 **What the container does NOT contain:** secrets (runtime env only, via
 `env_file`; `.dockerignore` keeps `.env*` out of the build context and

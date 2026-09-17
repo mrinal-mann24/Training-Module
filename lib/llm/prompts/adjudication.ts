@@ -1,34 +1,43 @@
-import type { ChatMessage } from '@/lib/llm/client';
-import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
-import type { ScoredField, ScoringErrorCode } from '@/lib/schemas/scoring';
-import type { Voucher } from '@/lib/schemas/voucher';
-import { RULEBOOK_TEXT } from '@/lib/llm/grounding/rulebook';
+import type { ChatMessage } from "@/lib/llm/client";
+import type { AnswerKeyEntry } from "@/lib/schemas/exercise";
+import type { ScoredField, ScoringErrorCode } from "@/lib/schemas/scoring";
+import type { Voucher } from "@/lib/schemas/voucher";
+import { RULEBOOK_TEXT } from "@/lib/llm/grounding/rulebook";
 
 const ADJUDICATION_JSON_SCHEMA = {
-  type: 'object',
+  type: "object",
   additionalProperties: false,
   properties: {
     verdicts: {
-      type: 'array',
+      type: "array",
       items: {
-        type: 'object',
+        type: "object",
         additionalProperties: false,
         properties: {
-          sequence: { type: 'integer' },
+          sequence: { type: "integer" },
           field: {
-            type: 'string',
-            enum: ['account', 'dr_cr', 'amount', 'voucher_type', 'gst', 'tds', 'bill_reference', 'narration'],
+            type: "string",
+            enum: [
+              "account",
+              "dr_cr",
+              "amount",
+              "voucher_type",
+              "gst",
+              "tds",
+              "bill_reference",
+              "narration",
+            ],
           },
           // The leg number shown with an account finding; null otherwise.
-          leg: { type: ['integer', 'null'] },
-          verdict: { type: 'string', enum: ['uphold', 'dismiss'] },
-          reason: { type: 'string' },
+          leg: { type: ["integer", "null"] },
+          verdict: { type: "string", enum: ["uphold", "dismiss"] },
+          reason: { type: "string" },
         },
-        required: ['sequence', 'field', 'leg', 'verdict', 'reason'],
+        required: ["sequence", "field", "leg", "verdict", "reason"],
       },
     },
   },
-  required: ['verdicts'],
+  required: ["verdicts"],
 } as const;
 
 // The judge's brief: senior reviewer deciding whether a mechanical checker's
@@ -81,7 +90,7 @@ it.
 Return a verdict for EVERY finding listed, with its sequence, field and leg
 exactly as shown — never skip one.
 
-Reference — Karbon VA House Practices Rulebook v0.2:
+Reference — AI Accountant's VA House Practices Rulebook v0.2:
 ${RULEBOOK_TEXT}
 
 Respond only with JSON matching the provided schema.`;
@@ -108,7 +117,7 @@ export type FlaggedTransaction = {
 
 // Trainee text can never close the data block or open a new one.
 function traineeData(text: string): string {
-  const safe = text.replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim();
+  const safe = text.replace(/[<>]/g, " ").replace(/\s+/g, " ").trim();
   return `<trainee_data>${safe}</trainee_data>`;
 }
 
@@ -124,32 +133,39 @@ function describeExpected(legs: AnswerKeyEntry[]): string {
   }
   const tdsLeg = legs.find((leg) => leg.tds_section !== null);
   if (tdsLeg) {
-    parts.push(`TDS ${tdsLeg.tds_section} @${tdsLeg.tds_rate}% on base ${tdsLeg.tds_base}`);
+    parts.push(
+      `TDS ${tdsLeg.tds_section} @${tdsLeg.tds_rate}% on base ${tdsLeg.tds_base}`,
+    );
   }
   const referenceLeg = legs.find((leg) => leg.bill_reference !== null);
   if (referenceLeg) {
     parts.push(`bill ref ${referenceLeg.bill_reference}`);
   }
-  return parts.join('; ');
+  return parts.join("; ");
 }
 
 function describeActual(voucher: Voucher | null): string {
   if (!voucher) {
-    return 'NO MATCHING VOUCHER FOUND in the submission';
+    return "NO MATCHING VOUCHER FOUND in the submission";
   }
   const legs = voucher.ledgerEntries.map((entry) => {
     const refs = entry.billAllocations.map((allocation) => allocation.name);
-    const refText = refs.length > 0 ? ` bill refs ${traineeData(refs.join(', '))}` : '';
+    const refText =
+      refs.length > 0 ? ` bill refs ${traineeData(refs.join(", "))}` : "";
     return `${entry.drOrCr} ledger ${traineeData(entry.ledgerName)} ${entry.amount}${refText}`;
   });
-  return `voucher type ${traineeData(voucher.voucherType)}, date ${traineeData(voucher.date)}; ${legs.join('; ')}; narration ${traineeData(voucher.narration)}`;
+  return `voucher type ${traineeData(voucher.voucherType)}, date ${traineeData(voucher.date)}; ${legs.join("; ")}; narration ${traineeData(voucher.narration)}`;
 }
 
 function describeFinding(finding: FlaggedFinding): string {
-  const code = finding.errorCode ? ` (${finding.errorCode})` : '';
-  if (finding.field === 'account' && finding.leg !== null) {
-    const expected = finding.expectedLeg ? `${finding.expectedLeg.dr_cr} ${finding.expectedLeg.correct_account} ${finding.expectedLeg.amount}` : 'unknown';
-    const posted = finding.postedLedger ? traineeData(finding.postedLedger) : 'none';
+  const code = finding.errorCode ? ` (${finding.errorCode})` : "";
+  if (finding.field === "account" && finding.leg !== null) {
+    const expected = finding.expectedLeg
+      ? `${finding.expectedLeg.dr_cr} ${finding.expectedLeg.correct_account} ${finding.expectedLeg.amount}`
+      : "unknown";
+    const posted = finding.postedLedger
+      ? traineeData(finding.postedLedger)
+      : "none";
     return `- field "account", leg ${finding.leg}${code}: expected ${expected}; trainee's ledger on that leg ${posted}`;
   }
   return `- field "${finding.field}", leg null${code}`;
@@ -160,7 +176,7 @@ export function buildAdjudicationPrompt(flagged: FlaggedTransaction[]): {
   jsonSchema: { name: string; schema: Record<string, unknown> };
 } {
   const blocks = flagged.map((transaction) => {
-    const findings = transaction.findings.map(describeFinding).join('\n');
+    const findings = transaction.findings.map(describeFinding).join("\n");
     return `Transaction #${transaction.sequence}
 Expected: ${describeExpected(transaction.expectedLegs)}
 Trainee posted: ${describeActual(transaction.actualVoucher)}
@@ -170,24 +186,27 @@ ${findings}`;
 
   return {
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: blocks.join('\n\n') },
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: blocks.join("\n\n") },
     ],
-    jsonSchema: { name: 'adjudication', schema: ADJUDICATION_JSON_SCHEMA },
+    jsonSchema: { name: "adjudication", schema: ADJUDICATION_JSON_SCHEMA },
   };
 }
 
 export function buildAdjudicationRetryPrompt(
   flagged: FlaggedTransaction[],
   validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
   const base = buildAdjudicationPrompt(flagged);
   return {
     ...base,
     messages: [
       ...base.messages,
       {
-        role: 'user',
+        role: "user",
         content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
       },
     ],

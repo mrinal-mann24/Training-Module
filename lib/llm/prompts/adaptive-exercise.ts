@@ -1,17 +1,26 @@
-import type { ChatMessage } from '@/lib/llm/client';
-import { ACTIVE_CONCEPT_TAGS, type ConceptTag, type ExerciseDifficultyLevel } from '@/lib/schemas/exercise';
-import type { CompanyLedgerRegistryEntry, CompanyTransactionLogEntry, OpenBill, PartyTaxClass } from '@/lib/db/queries/company';
-import type { LicenseMode } from '@/lib/schemas/onboarding';
-import { EXERCISE_JSON_SCHEMA } from './exercise-json-schema';
-import { BOOKS_BEGIN_LABEL, BOOKS_BEGIN_YEAR } from '@/lib/tutor/timeline';
+import type { ChatMessage } from "@/lib/llm/client";
+import {
+  ACTIVE_CONCEPT_TAGS,
+  type ConceptTag,
+  type ExerciseDifficultyLevel,
+} from "@/lib/schemas/exercise";
+import type {
+  CompanyLedgerRegistryEntry,
+  CompanyTransactionLogEntry,
+  OpenBill,
+  PartyTaxClass,
+} from "@/lib/db/queries/company";
+import type { LicenseMode } from "@/lib/schemas/onboarding";
+import { EXERCISE_JSON_SCHEMA } from "./exercise-json-schema";
+import { BOOKS_BEGIN_LABEL, BOOKS_BEGIN_YEAR } from "@/lib/tutor/timeline";
 import {
   daysInMonth,
   educationalDateLabels,
   monthName,
   parseMonthLabel,
   type CalendarMonth,
-} from '@/lib/tutor/educational-dates';
-import { taxRulesSummaryFor } from '@/lib/tutor/tax-rules';
+} from "@/lib/tutor/educational-dates";
+import { taxRulesSummaryFor } from "@/lib/tutor/tax-rules";
 
 export type AdaptiveExerciseParams = {
   targetConceptTag: ConceptTag;
@@ -65,30 +74,34 @@ export type AdaptiveExerciseParams = {
   usedBillNumbers?: string[];
 };
 
-// House practice per concept, from the Karbon rulebook (2026-09-10): the
+// House practice per concept, from the AI Accountant's rulebook (2026-09-10): the
 // briefs for every concept in the batch are pasted into the prompt so the
 // model writes the topic the way the house books it. The set-off and the
 // GST payment are appended by code (month-end-journals.ts), never written
 // by the model.
 export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
   sales_voucher_basics:
-    'Credit sale: Sales voucher, Dr customer (total, New Ref invoice number), Cr Sales (base), Cr Output GST per the customer state. Cash counter sale: Dr Cash instead of a customer.',
+    "Credit sale: Sales voucher, Dr customer (total, New Ref invoice number), Cr Sales (base), Cr Output GST per the customer state. Cash counter sale: Dr Cash instead of a customer.",
   purchase_voucher_basics:
-    'Purchase or expense bill: Purchase voucher, Dr Purchases or the expense ledger (base), Dr Input GST, Cr vendor (total, New Ref bill number); TDS at booking where the section applies.',
+    "Purchase or expense bill: Purchase voucher, Dr Purchases or the expense ledger (base), Dr Input GST, Cr vendor (total, New Ref bill number); TDS at booking where the section applies.",
   payment_voucher_basics:
-    'Payment from the bank: Dr party or expense, Cr bank, Against Ref the bill being paid; the narration carries the bank reference.',
-  receipt_voucher_basics: 'Receipt into the bank: Dr bank, Cr customer, Against Ref the invoice being settled.',
-  contra_voucher_basics: 'Cash to bank or bank to cash only, sized to the balances actually held.',
+    "Payment from the bank: Dr party or expense, Cr bank, Against Ref the bill being paid; the narration carries the bank reference.",
+  receipt_voucher_basics:
+    "Receipt into the bank: Dr bank, Cr customer, Against Ref the invoice being settled.",
+  contra_voucher_basics:
+    "Cash to bank or bank to cash only, sized to the balances actually held.",
   journal_voucher_basics:
-    'Month-end adjustments: accruals to Outstanding Expenses, prepaid transfers, depreciation, and corrections by a reversal entry plus a fresh entry (never by editing history).',
+    "Month-end adjustments: accruals to Outstanding Expenses, prepaid transfers, depreciation, and corrections by a reversal entry plus a fresh entry (never by editing history).",
   gst_classification:
-    'Intra-state CGST plus SGST at half the rate each, inter-state IGST at the full rate, decided by the party state; Input on purchases, Output on sales; every GST figure is base times rate exactly.',
+    "Intra-state CGST plus SGST at half the rate each, inter-state IGST at the full rate, decided by the party state; Input on purchases, Output on sales; every GST figure is base times rate exactly.",
   tds_classification:
-    'TDS at booking on the taxable base, never the GST-inclusive total, at the section rate and only past the threshold in the TAX RULES block for this batch\'s financial year, on the running total for that payee; vendor credited net, TDS Payable per section. Tag tds_classification only on a voucher that carries a TDS leg.',
+    "TDS at booking on the taxable base, never the GST-inclusive total, at the section rate and only past the threshold in the TAX RULES block for this batch's financial year, on the running total for that payee; vendor credited net, TDS Payable per section. Tag tds_classification only on a voucher that carries a TDS leg.",
   bill_by_bill_referencing:
-    'Every party leg carries a reference: New Ref when a bill is raised, Against Ref (each bill named) when it is settled, Advance for money before a bill, On Account only when no bill can be identified.',
-  narration_discipline: 'Retired: narration is not scored beyond the bank reference on bank vouchers.',
-  trial_balance_tie_out: 'Nothing separate to write: every posting must leave the books consistent.',
+    "Every party leg carries a reference: New Ref when a bill is raised, Against Ref (each bill named) when it is settled, Advance for money before a bill, On Account only when no bill can be identified.",
+  narration_discipline:
+    "Retired: narration is not scored beyond the bank reference on bank vouchers.",
+  trial_balance_tie_out:
+    "Nothing separate to write: every posting must leave the books consistent.",
   customer_advance:
     'Advance received before any invoice (rulebook 9): Receipt Dr bank, Cr customer with a NEW reference of type Advance (bill_reference like "ADV-C01 (Advance)"). GOODS: no GST on the advance. SERVICE: the receipt credits the customer for the base and Output CGST on Advance plus Output SGST on Advance (or Output IGST on Advance) for the GST portion. When the invoice is raised, the Sales voucher allocates Against Ref ADV-C01 for the advance base and New Ref for the balance, and carries the regular Output CGST / Output SGST on the full invoice. For a service advance add, immediately after that Sales voucher, the reversal journal of rulebook 9B step 3: Dr Output CGST on Advance / Dr Output SGST on Advance for the GST that was recognised on the advance, Cr customer (Against Ref the invoice) for the same total, so the on-Advance ledgers return to zero and the customer is settled. Never credit the regular Output GST ledgers in that journal. Include the advance and the invoice that adjusts it.',
   supplier_advance:
@@ -98,29 +111,38 @@ export const CONCEPT_BRIEFS: Record<ConceptTag, string> = {
   multi_bill_settlement:
     'One payment or receipt across several bills (rulebook 6.4/7.4): one bank leg; the party allocation names EACH bill it clears with its amount, bill_reference like "MS-101, MS-102". A part payment allocates Against Ref for the amount paid and the balance stays open.',
   tds_on_receipt:
-    'The customer pays net of TDS (rulebook 7.2): Receipt Dr bank (net), Dr TDS Receivable of the section (the TDS the customer withheld: 10% of the base for professional services under 194J, 2% under 194C), Cr customer (gross, Against Ref the invoice); tds_section and tds_base on the TDS Receivable leg. Also include a receipt paid in full where no TDS applies.',
+    "The customer pays net of TDS (rulebook 7.2): Receipt Dr bank (net), Dr TDS Receivable of the section (the TDS the customer withheld: 10% of the base for professional services under 194J, 2% under 194C), Cr customer (gross, Against Ref the invoice); tds_section and tds_base on the TDS Receivable leg. Also include a receipt paid in full where no TDS applies.",
   gst_set_off:
-    'Do NOT write the set-off: the system appends the month-end GST set-off journal with figures taken from the ledger. Give the month enough GST sales and purchases for a set-off to matter.',
+    "Do NOT write the set-off: the system appends the month-end GST set-off journal with figures taken from the ledger. Give the month enough GST sales and purchases for a set-off to matter.",
   gst_payment:
-    'Do NOT write the payment: the system appends the payment of the previous month GST liability from the bank when one exists.',
+    "Do NOT write the payment: the system appends the payment of the previous month GST liability from the bank when one exists.",
   rcm_and_late_fee:
-    'Reverse charge (rulebook 13): a service from an unregistered supplier or a goods transport agency: Purchase Dr expense / Cr vendor (no vendor GST), plus a journal Dr Input CGST RCM and Dr Input SGST RCM / Cr Output CGST RCM and Cr Output SGST RCM for the tax the company pays itself (paid in cash at month end, never set off against input credit). Legal services from an advocate or a law firm are always reverse charge: the vendor bill shows no GST. A late fee or interest on a delayed GST payment: Payment Dr GST Late Fee and Interest (indirect expense) / Cr bank.',
+    "Reverse charge (rulebook 13): a service from an unregistered supplier or a goods transport agency: Purchase Dr expense / Cr vendor (no vendor GST), plus a journal Dr Input CGST RCM and Dr Input SGST RCM / Cr Output CGST RCM and Cr Output SGST RCM for the tax the company pays itself (paid in cash at month end, never set off against input credit). Legal services from an advocate or a law firm are always reverse charge: the vendor bill shows no GST. A late fee or interest on a delayed GST payment: Payment Dr GST Late Fee and Interest (indirect expense) / Cr bank.",
   fixed_assets_depreciation:
-    'A capital purchase goes to the asset ledger (Office Equipment, Furniture, Computers), never Purchases, with Input GST claimed in full in the month of purchase; depreciation at year end by journal Dr Depreciation / Cr the asset ledger at the stated rate.',
+    "A capital purchase goes to the asset ledger (Office Equipment, Furniture, Computers), never Purchases, with Input GST claimed in full in the month of purchase; depreciation at year end by journal Dr Depreciation / Cr the asset ledger at the stated rate.",
 };
 
 function buildConceptBriefsBlock(params: AdaptiveExerciseParams): string {
-  const tags = [...new Set([params.targetConceptTag, ...params.batchStrengthConcepts, ...params.batchWeaknessConcepts])];
+  const tags = [
+    ...new Set([
+      params.targetConceptTag,
+      ...params.batchStrengthConcepts,
+      ...params.batchWeaknessConcepts,
+    ]),
+  ];
   return `CONCEPT BRIEFS (house practice from the rulebook; follow them exactly for the concepts in this batch):
-${tags.map((tag) => `- ${tag}: ${CONCEPT_BRIEFS[tag]}`).join('\n')}
+${tags.map((tag) => `- ${tag}: ${CONCEPT_BRIEFS[tag]}`).join("\n")}
 `;
 }
 
 function buildPartyStatesBlock(classes: Map<string, PartyTaxClass>): string {
-  if (classes.size === 0) return '';
+  if (classes.size === 0) return "";
   const lines = [...classes.entries()]
-    .map(([party, cls]) => `- ${party}: ${cls === 'intra' ? 'Karnataka (intra-state: CGST + SGST)' : 'outside Karnataka (inter-state: IGST)'}`)
-    .join('\n');
+    .map(
+      ([party, cls]) =>
+        `- ${party}: ${cls === "intra" ? "Karnataka (intra-state: CGST + SGST)" : "outside Karnataka (inter-state: IGST)"}`,
+    )
+    .join("\n");
   return `PARTY STATES (hard requirement): these parties already exist in the books with
 the GST treatment below. A party's state never changes, so every new sale
 to or purchase from them MUST use the same treatment; do not relocate a
@@ -135,7 +157,7 @@ ${lines}
 // FY 2024-25 and FY 2025-26 batches are told their own thresholds.
 function buildTaxRulesBlock(monthLabel: string): string {
   const month = parseMonthLabel(monthLabel);
-  if (!month) return '';
+  if (!month) return "";
   return `TAX RULES (hard requirement; every figure is checked in code):
 ${taxRulesSummaryFor({ day: 1, monthIndex: month.monthIndex, year: month.year })}
 
@@ -146,15 +168,17 @@ ${taxRulesSummaryFor({ day: 1, monthIndex: month.monthIndex, year: month.year })
 // so the model is shown the list rather than left to guess. The most
 // recent 150 are listed; the check covers all of them.
 const MAX_LISTED_BILL_NUMBERS = 150;
-function buildUsedBillNumbersBlock(usedBillNumbers: string[] | undefined): string {
-  if (!usedBillNumbers || usedBillNumbers.length === 0) return '';
+function buildUsedBillNumbersBlock(
+  usedBillNumbers: string[] | undefined,
+): string {
+  if (!usedBillNumbers || usedBillNumbers.length === 0) return "";
   const listed = usedBillNumbers.slice(-MAX_LISTED_BILL_NUMBERS);
   return `DOCUMENT NUMBERS ALREADY USED (hard requirement): these invoice, bill, note and
 advance numbers exist in the books. Never raise any of them again (INV-18 and
 INV-018 count as the same number); every credit sale, purchase, credit note
 and debit note carries its own fresh number in bill_reference, and a number
 never contains a date:
-${listed.join(', ')}
+${listed.join(", ")}
 
 `;
 }
@@ -162,10 +186,13 @@ ${listed.join(', ')}
 function buildOpenBillsBlock(openBills: OpenBill[]): string {
   const lines =
     openBills.length === 0
-      ? '- (none: every earlier bill is fully settled)'
+      ? "- (none: every earlier bill is fully settled)"
       : openBills
-          .map((bill) => `- ${bill.party} (${bill.side}): ${bill.ref} — Rs ${Math.round(Math.abs(bill.open)).toLocaleString('en-IN')} outstanding`)
-          .join('\n');
+          .map(
+            (bill) =>
+              `- ${bill.party} (${bill.side}): ${bill.ref} — Rs ${Math.round(Math.abs(bill.open)).toLocaleString("en-IN")} outstanding`,
+          )
+          .join("\n");
   return `OPEN BILLS (hard requirement): these are the ONLY bills currently open in the
 company's books, with the balance outstanding on each:
 ${lines}
@@ -183,7 +210,10 @@ function buildCompanyContextBlock(params: AdaptiveExerciseParams): string {
 Every batch is set in this exact company — by name — for the learner's entire
 journey. Never rename it, never move it to another state.`;
 
-  if (params.companyLedgerRegistry.length === 0 && params.recentCompanyTransactionLog.length === 0) {
+  if (
+    params.companyLedgerRegistry.length === 0 &&
+    params.recentCompanyTransactionLog.length === 0
+  ) {
     return `${companyLine}
 
 This is the learner's first adaptive exercise — no ledgers or transactions exist yet in their company. Introduce new, realistic ledger/party names freely (within this company).`;
@@ -191,11 +221,11 @@ This is the learner's first adaptive exercise — no ledgers or transactions exi
 
   const ledgerLines = params.companyLedgerRegistry
     .map((entry) => `- ${entry.ledger_name} (${entry.ledger_type})`)
-    .join('\n');
+    .join("\n");
 
   const transactionLines = params.recentCompanyTransactionLog
     .map((entry) => `- ${JSON.stringify(entry.voucher_summary)}`)
-    .join('\n');
+    .join("\n");
 
   return `${companyLine}
 
@@ -215,10 +245,10 @@ contradicts a ledger already established) — that would be an internal
 contradiction in the same company's books.
 
 Ledgers already in this company:
-${ledgerLines || '(none yet)'}
+${ledgerLines || "(none yet)"}
 
 Recent transactions already posted in this company:
-${transactionLines || '(none yet)'}`;
+${transactionLines || "(none yet)"}`;
 }
 
 // Educational Mode date rule (2026-09-16): the allowed dates are computed in
@@ -226,7 +256,10 @@ ${transactionLines || '(none yet)'}`;
 // 30th in a 30-day month, a day Tally Educational Mode never saves. The
 // prompt is only a steer: generate-exercise.ts redates the batch in code
 // (educational-dates.ts) whatever the model writes.
-function buildEducationalDateRule(monthLabel: string, month: CalendarMonth | null): string {
+function buildEducationalDateRule(
+  monthLabel: string,
+  month: CalendarMonth | null,
+): string {
   if (!month) {
     return `EDUCATIONAL MODE DATE RULE (hard requirement): this learner's Tally
 Educational Mode only saves vouchers dated the 1st, the 2nd or the 31st of a
@@ -238,12 +271,12 @@ allowed date are fine and expected.`;
   const lastDay = daysInMonth(month.monthIndex, month.year);
   const reason =
     lastDay === 31
-      ? ''
+      ? ""
       : ` (${monthName(month.monthIndex)} has no 31st, and Tally Educational Mode never saves the ${lastDay}th)`;
   return `EDUCATIONAL MODE DATE RULE (hard requirement): this learner uses Tally
 Educational Mode, which only saves vouchers dated the 1st, the 2nd or the 31st
 of a month and never the 28th, 29th or 30th, even when that is the last day.
-Every transaction must be dated exactly one of: ${labels.join(', ')}${reason}.
+Every transaction must be dated exactly one of: ${labels.join(", ")}${reason}.
 Multiple vouchers on the same allowed date are fine and expected; any other
 date WITHIN ${monthLabel} makes the voucher unpostable for this learner. Keep
 the dates in step with the transaction order: a later transaction is never
@@ -252,12 +285,18 @@ dated earlier than the one before it.`;
 
 function buildSystemPrompt(params: AdaptiveExerciseParams): string {
   const companyContext = buildCompanyContextBlock(params);
-  const educationalMonth = params.licenseMode === 'educational' ? parseMonthLabel(params.exerciseMonthLabel) : null;
+  const educationalMonth =
+    params.licenseMode === "educational"
+      ? parseMonthLabel(params.exerciseMonthLabel)
+      : null;
   // Pointer examples: licensed keeps its spread-out dates; an educational
   // learner's examples use allowed dates of this batch's month, since a
   // "05-May" example invites exactly the date Tally will refuse.
   const exampleDates = educationalMonth
-    ? [educationalDateLabels(educationalMonth)[0], educationalDateLabels(educationalMonth)[1]]
+    ? [
+        educationalDateLabels(educationalMonth)[0],
+        educationalDateLabels(educationalMonth)[1],
+      ]
     : [`05-May-${BOOKS_BEGIN_YEAR}`, `12-May-${BOOKS_BEGIN_YEAR}`];
 
   const escalationInstruction = params.escalationActive
@@ -298,7 +337,7 @@ their next set (this is the exact format proven in the pilot programme):
   narration standard (bank reference verbatim PLUS party name on every payment and
   receipt).
 
-Primary target concept: "${params.targetConceptTag}" (from the fixed vocabulary: ${ACTIVE_CONCEPT_TAGS.join(', ')}).
+Primary target concept: "${params.targetConceptTag}" (from the fixed vocabulary: ${ACTIVE_CONCEPT_TAGS.join(", ")}).
 The primary target must genuinely appear in the batch; a scenario that never
 exercises it is wrong.
 
@@ -332,12 +371,16 @@ transactions and even if it targets the right concept overall:
 - Every transaction's answer key concept_tags name the concept(s) that
   transaction serves, so scoring can attribute each rep to its side.
 Strength concepts to step up: ${
-    params.batchStrengthConcepts.length > 0 ? params.batchStrengthConcepts.join(', ') : '(none yet: fill the step-up half with the primary target at the stated level instead)'
+    params.batchStrengthConcepts.length > 0
+      ? params.batchStrengthConcepts.join(", ")
+      : "(none yet: fill the step-up half with the primary target at the stated level instead)"
   }
-Weakness concepts to reinforce: ${params.batchWeaknessConcepts.length > 0 ? params.batchWeaknessConcepts.join(', ') : params.targetConceptTag}
+Weakness concepts to reinforce: ${params.batchWeaknessConcepts.length > 0 ? params.batchWeaknessConcepts.join(", ") : params.targetConceptTag}
 
 Recently strong areas (for the opening line): ${
-    params.recentStrengthDescriptions.length > 0 ? params.recentStrengthDescriptions.join('; ') : '(none yet)'
+    params.recentStrengthDescriptions.length > 0
+      ? params.recentStrengthDescriptions.join("; ")
+      : "(none yet)"
   }
 
 Difficulty level: ${params.difficultyLevel}.
@@ -375,21 +418,21 @@ deduction: tds_base x tds_rate / 100 is the TDS leg's amount.
 ${buildTaxRulesBlock(params.exerciseMonthLabel)}${buildPartyStatesBlock(params.partyTaxClasses)}${buildUsedBillNumbersBlock(params.usedBillNumbers)}${buildOpenBillsBlock(params.openBills)}
 
 OPENING BALANCES (hard requirement): entering this batch the company holds
-Rs ${Math.round(params.cashPosition.cash).toLocaleString('en-IN')} in Cash-in-Hand and
-Rs ${Math.round(params.cashPosition.bank).toLocaleString('en-IN')} in the bank. Do NOT
+Rs ${Math.round(params.cashPosition.cash).toLocaleString("en-IN")} in Cash-in-Hand and
+Rs ${Math.round(params.cashPosition.bank).toLocaleString("en-IN")} in the bank. Do NOT
 quote these opening figures in the scenario prose: the system prints the
 opening position itself, and any rupee figure you write in a sentence about
 cash, the bank or the till is checked digit-for-digit against the real
 position. You may say the till is overdrawn without stating the amount.${
     params.cashPosition.cash < 0
       ? `
-THE TILL IS OVERDRAWN by Rs ${Math.abs(Math.round(params.cashPosition.cash)).toLocaleString('en-IN')}
+THE TILL IS OVERDRAWN by Rs ${Math.abs(Math.round(params.cashPosition.cash)).toLocaleString("en-IN")}
 (an earlier batch called for a deposit larger than the cash actually held).
 Transaction 1 of THIS batch MUST therefore be a Contra withdrawal from the
 bank to Cash of at least that shortfall plus a sensible working float
 (round up to a clean figure), so the till is positive before anything else
 happens. No other cash movement may precede it.`
-      : ''
+      : ""
   }
 Every transaction must be POSTABLE from that position: cash can never go
 negative at any point in the batch, and the bank can never be overdrawn.
@@ -406,8 +449,8 @@ below, or genuinely new realistic parties introduced by this batch's own
 transactions. Never reference a vague holding account that isn't a real Tally
 ledger ("Wallet", "Money Account") — cash movements go through the company's
 actual Cash and bank ledgers.${
-    params.licenseMode === 'educational'
-      ? ''
+    params.licenseMode === "educational"
+      ? ""
       : ` Spread the transactions across DIFFERENT dates
 in the month (a real batch isn't all posted on one day).`
   }
@@ -425,11 +468,11 @@ be exactly the figure and reference its answer key carries.
 The learner's books begin ${BOOKS_BEGIN_LABEL}: a voucher dated before that, or in any
 other year, is REJECTED by the submission gate outright. Amounts are in
 Indian Rupees.${
-    params.licenseMode === 'educational'
+    params.licenseMode === "educational"
       ? `
 
 ${buildEducationalDateRule(params.exerciseMonthLabel, educationalMonth)}`
-      : ''
+      : ""
   }
 
 ${escalationInstruction}
@@ -475,8 +518,8 @@ text: date, parties with state, amounts with GST stated separately, bill
 numbers.
 
 ${
-    params.documentsMode
-      ? `
+  params.documentsMode
+    ? `
 DOCUMENTS MODE (overrides the "use judgment" rule above): this learner now
 works from paperwork only. EVERY Sales transaction (a cash counter sale too)
 has requires_source_document true with source_document_type "sales_invoice";
@@ -489,8 +532,8 @@ explicit details in their text; the system moves them onto a month-end notes
 sheet for the learner. Keep the usual mix of the batch, including two or more
 journal-type entries.
 `
-      : ''
-  }
+    : ""
+}
 Never use an em dash anywhere in learner-facing text; use a colon, comma, or full stop.
 
 Respond only with JSON matching the provided schema. The "variant" field should be "A".`;
@@ -502,11 +545,14 @@ export function buildAdaptivePrompt(params: AdaptiveExerciseParams): {
 } {
   return {
     messages: [
-      { role: 'system', content: buildSystemPrompt(params) },
-      { role: 'user', content: `Generate the adaptive exercise targeting "${params.targetConceptTag}" at ${params.difficultyLevel}.` },
+      { role: "system", content: buildSystemPrompt(params) },
+      {
+        role: "user",
+        content: `Generate the adaptive exercise targeting "${params.targetConceptTag}" at ${params.difficultyLevel}.`,
+      },
     ],
     jsonSchema: {
-      name: 'adaptive_exercise',
+      name: "adaptive_exercise",
       schema: EXERCISE_JSON_SCHEMA,
     },
   };
@@ -515,14 +561,17 @@ export function buildAdaptivePrompt(params: AdaptiveExerciseParams): {
 export function buildAdaptiveRetryPrompt(
   params: AdaptiveExerciseParams,
   validationError: string,
-): { messages: ChatMessage[]; jsonSchema: { name: string; schema: Record<string, unknown> } } {
+): {
+  messages: ChatMessage[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+} {
   const base = buildAdaptivePrompt(params);
   return {
     ...base,
     messages: [
       ...base.messages,
       {
-        role: 'user',
+        role: "user",
         content: `Your previous response failed schema validation with this error: ${validationError}. Respond again with corrected JSON matching the schema exactly.`,
       },
     ],

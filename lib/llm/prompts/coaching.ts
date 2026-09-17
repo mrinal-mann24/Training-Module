@@ -26,11 +26,11 @@ const COACHING_JSON_SCHEMA = {
   required: ["opening_line", "went_well", "needs_work"],
 } as const;
 
-// The REAL Karbon VA House Practices Rulebook v0.2, extracted from the
+// The REAL AI Accountant's VA House Practices Rulebook v0.2, extracted from the
 // source .docx (2026-08-19) — replaced the placeholder that stood in for it
 // since Unit 06. Regenerate lib/llm/grounding/rulebook.ts on a new Rulebook
 // version rather than editing here.
-const RULEBOOK_GROUNDING_PLACEHOLDER = `Grounding reference — Karbon VA House Practices Rulebook v0.2:
+const RULEBOOK_GROUNDING_PLACEHOLDER = `Grounding reference — AI Accountant's VA House Practices Rulebook v0.2:
 ${RULEBOOK_TEXT}`;
 
 // Grounded coaching (2026-09-16). The model used to receive loose lists of
@@ -152,7 +152,10 @@ export type QualitativeCoachingSignal = {
 
 // A rectification that has something true to say (NEW is dropped before it
 // gets here, see describeRectifications in lib/jobs/advance-learner.ts).
-export type RectificationNote = { classification: "FIXED" | "STILL_FAILING"; text: string };
+export type RectificationNote = {
+  classification: "FIXED" | "STILL_FAILING";
+  text: string;
+};
 
 // The closed fact ledger (2026-09-16). Ids are P# praise, I# issue,
 // U# unmatched voucher, L# ledger set-up finding, T# Trial Balance tie-out,
@@ -245,22 +248,33 @@ const TONE_BY_RESULT: Record<CoachingSignal["overallResult"], string> = {
 // have (an "issue from before" example is exactly how history got invented).
 const KIND_GUIDANCE: Record<CoachingFactKind, string> = {
   praise: "P (praise): what was handled correctly. went_well only.",
-  issue: "I (issue): a concept area with flagged entries. Point at the entries named, state the principle, never the fix.",
+  issue:
+    "I (issue): a concept area with flagged entries. Point at the entries named, state the principle, never the fix.",
   unmatched:
     "U (unmatched): Day Book vouchers that match no transaction of this batch. Name them as given and ask the learner to check whether each is a duplicate, a blank, a reversal or a posting that does not belong.",
-  ledger: "L (ledger): ledger set-up findings. Name the ledgers exactly as given.",
+  ledger:
+    "L (ledger): ledger set-up findings. Name the ledgers exactly as given.",
   tieout:
     "T (tieout): Trial Balance ledgers whose movement this month does not agree with the correct postings. Name the ledger, the side and the gap exactly as given (a ledger missing from the export has no figure), never what the figure should be.",
   books:
     "B (books): ledgers whose closing balance differs from the correct books, year to date. Name the ledger and the side exactly as given, never a figure and never what the balance should be.",
-  fixed: "F (fixed): a concept that was failing in the attempt named in the fact and is right now. Good news, went_well only.",
-  still: "S (still): a concept that was failing in the attempt named in the fact and is failing now too. needs_work only.",
+  fixed:
+    "F (fixed): a concept that was failing in the attempt named in the fact and is right now. Good news, went_well only.",
+  still:
+    "S (still): a concept that was failing in the attempt named in the fact and is failing now too. needs_work only.",
   missing: "M (missing): a required part that never arrived. State it plainly.",
 };
 
-function buildUserMessage(signal: CoachingSignal, facts: CoachingFact[]): string {
-  const kindsPresent = COACHING_FACT_KINDS.filter((kind) => facts.some((fact) => fact.kind === kind));
-  const hasHistoryFacts = facts.some((fact) => fact.kind === "fixed" || fact.kind === "still");
+function buildUserMessage(
+  signal: CoachingSignal,
+  facts: CoachingFact[],
+): string {
+  const kindsPresent = COACHING_FACT_KINDS.filter((kind) =>
+    facts.some((fact) => fact.kind === kind),
+  );
+  const hasHistoryFacts = facts.some(
+    (fact) => fact.kind === "fixed" || fact.kind === "still",
+  );
   const lines = [
     `How much rework is ahead (for TONE ONLY, never state this, never use the
 words pass, passes, partial or fail in your output): ${TONE_BY_RESULT[signal.overallResult]}`,
@@ -270,7 +284,9 @@ words pass, passes, partial or fail in your output): ${TONE_BY_RESULT[signal.ove
     hasHistoryFacts
       ? "History: only the F and S facts below speak about an earlier attempt, and only bullets citing them may mention it."
       : "History: there are no F or S facts, so say nothing at all about earlier attempts, rounds, batches or months.",
-    kindsPresent.length > 0 ? `How to use each kind of fact:\n${kindsPresent.map((kind) => `- ${KIND_GUIDANCE[kind]}`).join("\n")}` : null,
+    kindsPresent.length > 0
+      ? `How to use each kind of fact:\n${kindsPresent.map((kind) => `- ${KIND_GUIDANCE[kind]}`).join("\n")}`
+      : null,
     // Fenced (2026-09-17): U, L, T and B facts carry ledger names the learner
     // typed, so the list is marked as data between fixed boundaries.
     facts.length > 0

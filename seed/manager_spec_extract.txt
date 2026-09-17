@@ -41,7 +41,7 @@ Appendix F: Learner-facing Tally export how-to (the tutor can send this on reque
 Appendix G: XML parsing and model output contracts (for the builder)18
 Appendix H: Video module list to produce (reference material)19
 Prepared for: the developer building the learner UI and the model orchestration layer.
-Prepared by: Shruti's coaching-loop instance, derived from the live Karbon VA intern programme plus the new external-product brief.
+Prepared by: Shruti's coaching-loop instance, derived from the live AI Accountant's VA intern programme plus the new external-product brief.
 Status: v1 draft for build. Expect refinement.
 Formatting note: no em-dashes anywhere in this document or in any learner-facing text the tool produces. Use colon, comma, or full stop.
 0. How to read this document
@@ -56,7 +56,7 @@ B.Com graduates learning accounting on Tally and AIA (the v1 target).
 CA firms training their own employees (a later phase, needs an admin and cohort layer).
 The differentiator is the live coaching layer: not a video course, not a quiz bank, but a tutor that keeps returning to whatever a learner is weak at until it is genuinely strong, using graduated help that makes them think before it hands over an answer. A secondary goal is to get more people fluent with AIA.
 What is deliberately kept from the intern programme
-House rules as ground truth. The Karbon VA House Practices Rulebook is the standard everything is graded against.
+House rules as ground truth. The AI Accountant's VA House Practices Rulebook is the standard everything is graded against.
 Mastery, not completion. A learner advances by demonstrating a concept is solid, not by clicking Next.
 Adaptive routing. The next exercise is generated from the learner's own error pattern, not pulled from a fixed queue.
 Measured tone. Honest, plain, lightly encouraging, never inflating praise. Over-praise breeds overconfidence.
@@ -280,10 +280,10 @@ Tag every error with a code (Appendix A). Codes drive routing; they never appear
 Compute the result, weighting GST and TDS codes at twice the narration and discipline codes.
 Update state (Section 12): error history, mastery per concept, anomaly history, deepest hint rung used.
 9.4 Grading standard
-The Karbon VA House Practices Rulebook is ground truth (Appendix C is the section map). Two standing rules from the intern programme carry over:
+The AI Accountant's VA House Practices Rulebook is ground truth (Appendix C is the section map). Two standing rules from the intern programme carry over:
 House rule beats a wrong key. If a generated answer key contradicts the Rulebook, the Rulebook wins. Score on the house rule, coach the concept, and log the key for correction.
 TDS is on the taxable base, not the gross. GST head follows the party's state. These are the two most common and most consequential fresher errors; grade them strictly and coach them hard.
-For the CA-firm phase, the Rulebook is made configurable so a firm can substitute its own house rules. For v1, Karbon's Rulebook is the standard.
+For the CA-firm phase, the Rulebook is made configurable so a firm can substitute its own house rules. For v1, AI Accountant's's Rulebook is the standard.
 9.5 The qualitative layer (Modules 11 to 12, and the capstone)
 Once mechanics are solid, add three threads, delivered together in the qualitative modules, never as a separate mid-module add-on:
 ELABORATE: for one or two rich entries per exercise (advance-GST, TDS, place of supply), the learner writes the full journal in the chat, each ledger, Dr or Cr, amount, and one line on why it moves. Assess whether they grasp the meaning of each Dr and Cr, not just the mechanics. This is the muscle that lets them catch a wrong balance.
@@ -397,7 +397,7 @@ Phase 3: CA-firm edition. Trainer and admin dashboard, cohort rollups, configura
 Phase 4: localisation. Hindi and regional language support (the whole engine is built English-first but structured so the learner-facing layer can be translated).
 17. Open items to confirm as we refine
 AIA specifics: what the learner actually does in AIA at Module 13, and how AIA hands its output to Tally for the graded export.
-Whether the certificate carries any Karbon or partner branding, and completion criteria beyond the capstone.
+Whether the certificate carries any AI Accountant's or partner branding, and completion criteria beyond the capstone.
 Video production ownership and timeline (Appendix H is the list to produce against).
 The exact Detailed export field mapping, to be finalised against real sample XML files (Appendix G).
 CA-firm phase: the trainer's visibility scope, before that dashboard is designed.

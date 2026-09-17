@@ -69,7 +69,10 @@ export const HERO = {
   payoff: "We Make it Practical",
 } as const;
 
-export const TRACKS_TITLE = ["Targeted Training,", "Built Around Your Level"] as const;
+export const TRACKS_TITLE = [
+  "Targeted Training,",
+  "Built Around Your Level",
+] as const;
 
 export const TRACKS: readonly TrainingCard[] = [
   {
@@ -125,27 +128,61 @@ export type JourneyState = {
 
 /** The three states the beam carries you through, in scroll order. */
 export const JOURNEY: readonly [JourneyState, JourneyState, JourneyState] = [
-  { id: "start", eyebrow: "Start", figure: "Day 1", caption: "A diagnostic maps what you already know" },
-  { id: "train", eyebrow: "Train", figure: "0–12", caption: "Modules, each more real than the last" },
-  { id: "finish", eyebrow: "Finish", figure: "1 Month", caption: "A messy client month, then your certificate" },
+  {
+    id: "start",
+    eyebrow: "Start",
+    figure: "Day 1",
+    caption: "A diagnostic maps what you already know",
+  },
+  {
+    id: "train",
+    eyebrow: "Train",
+    figure: "0–12",
+    caption: "Modules, each more real than the last",
+  },
+  {
+    id: "finish",
+    eyebrow: "Finish",
+    figure: "1 Month",
+    caption: "A messy client month, then your certificate",
+  },
 ];
 
 export const WHY = {
   title: "Why AIA Academy?",
   left: [
-    "Every exercise is scored against the Karbon VA House Practices Rulebook, the standard a real practice holds its own staff to.",
+    "Every exercise is scored against the AI Accountant's VA House Practices Rulebook, the standard a real practice holds its own staff to.",
     "The same entry gets the same verdict every time, on your first batch and on your capstone.",
   ],
   right: [
     "Post the work in your own copy of Tally, then upload the Detailed Day Book and Trial Balance XML. No retyping answers into a form.",
     "Got an entry wrong? The tutor points you at it, you fix it in Tally and send it again. The help climbs one step each time until it gets you there.",
   ],
-  caption: { name: "Your AI tutor", role: "Scores, coaches, never leads with the answer" },
+  caption: {
+    name: "Your AI tutor",
+    role: "Scores, coaches, never leads with the answer",
+  },
   stats: [
-    { figure: "7", unit: "checks", text: "on every voucher: ledger, Dr/Cr, GST, TDS, voucher type, bill reference, narration" },
-    { figure: "2×", unit: "", text: "the weight on GST and TDS errors, compared with narration slips" },
-    { figure: "3", unit: "steps", text: "on the help ladder, ending in a full worked answer so you are never stuck" },
-    { figure: "3", unit: "runs", text: "clean in a row before a concept counts as mastered" },
+    {
+      figure: "7",
+      unit: "checks",
+      text: "on every voucher: ledger, Dr/Cr, GST, TDS, voucher type, bill reference, narration",
+    },
+    {
+      figure: "2×",
+      unit: "",
+      text: "the weight on GST and TDS errors, compared with narration slips",
+    },
+    {
+      figure: "3",
+      unit: "steps",
+      text: "on the help ladder, ending in a full worked answer so you are never stuck",
+    },
+    {
+      figure: "3",
+      unit: "runs",
+      text: "clean in a row before a concept counts as mastered",
+    },
   ],
 } as const;
 
@@ -168,18 +205,75 @@ export type ConceptTile = {
   checks: string;
 };
 
-export const CONCEPTS_TITLE = ["We Don’t Believe in Guesswork...", "And We Check Every Voucher."] as const;
+export const CONCEPTS_TITLE = [
+  "We Don’t Believe in Guesswork...",
+  "And We Check Every Voucher.",
+] as const;
 
 export const CONCEPTS: readonly ConceptTile[] = [
-  { id: "sales", name: "Sales", icon: "sales", checks: "Party and sales ledgers, Dr/Cr direction, the GST head and rate, and a bill reference on every invoice." },
-  { id: "purchase", name: "Purchase", icon: "purchase", checks: "Expense or asset classification, input GST head and rate, and a bill reference the payment can settle." },
-  { id: "bank", name: "Bank", icon: "bank", checks: "Receipts, payments and contras posted to the right ledgers, straight from a mock bank statement." },
-  { id: "gst", name: "GST", icon: "gst", checks: "The head and the rate on every taxable voucher. GST errors carry double weight." },
-  { id: "tds", name: "TDS", icon: "tds", checks: "Section, rate and base amount on every deduction. TDS errors carry double weight." },
-  { id: "assets", name: "Fixed Assets", icon: "assets", checks: "Capital purchases classified to the asset ledger, not buried in expenses." },
-  { id: "payables", name: "Payables", icon: "payables", checks: "Bill-by-bill references, so a payment settles the bill or advance it belongs to." },
-  { id: "receivables", name: "Receivables", icon: "receivables", checks: "Receipts matched to the invoice or advance they clear, never parked as a new reference." },
-  { id: "journal", name: "Journal", icon: "journal", checks: "The right voucher type, and a narration that explains why the entry exists." },
+  {
+    id: "sales",
+    name: "Sales",
+    icon: "sales",
+    checks:
+      "Party and sales ledgers, Dr/Cr direction, the GST head and rate, and a bill reference on every invoice.",
+  },
+  {
+    id: "purchase",
+    name: "Purchase",
+    icon: "purchase",
+    checks:
+      "Expense or asset classification, input GST head and rate, and a bill reference the payment can settle.",
+  },
+  {
+    id: "bank",
+    name: "Bank",
+    icon: "bank",
+    checks:
+      "Receipts, payments and contras posted to the right ledgers, straight from a mock bank statement.",
+  },
+  {
+    id: "gst",
+    name: "GST",
+    icon: "gst",
+    checks:
+      "The head and the rate on every taxable voucher. GST errors carry double weight.",
+  },
+  {
+    id: "tds",
+    name: "TDS",
+    icon: "tds",
+    checks:
+      "Section, rate and base amount on every deduction. TDS errors carry double weight.",
+  },
+  {
+    id: "assets",
+    name: "Fixed Assets",
+    icon: "assets",
+    checks:
+      "Capital purchases classified to the asset ledger, not buried in expenses.",
+  },
+  {
+    id: "payables",
+    name: "Payables",
+    icon: "payables",
+    checks:
+      "Bill-by-bill references, so a payment settles the bill or advance it belongs to.",
+  },
+  {
+    id: "receivables",
+    name: "Receivables",
+    icon: "receivables",
+    checks:
+      "Receipts matched to the invoice or advance they clear, never parked as a new reference.",
+  },
+  {
+    id: "journal",
+    name: "Journal",
+    icon: "journal",
+    checks:
+      "The right voucher type, and a narration that explains why the entry exists.",
+  },
 ];
 
 export type BuiltBlock = {
@@ -196,7 +290,7 @@ export const BUILT: readonly BuiltBlock[] = [
     id: "rulebook",
     number: "01",
     title: "Rulebook-Grounded",
-    body: "Scoring, hints and feedback all come from one source of truth, the Karbon VA House Practices Rulebook. The same entry is judged the same way every time.",
+    body: "Scoring, hints and feedback all come from one source of truth, the AI Accountant's VA House Practices Rulebook. The same entry is judged the same way every time.",
   },
   {
     id: "tally",
@@ -221,23 +315,107 @@ export const BUILT: readonly BuiltBlock[] = [
 export const CATEGORIES_TITLE = "Training by Category";
 
 export const CATEGORY_CONCEPTS: readonly TrainingCard[] = [
-  { id: "c-sales", tag: "Core", pills: ["Sales register", "Bill ref"], title: ["Sales Entries"], discs: ["sales", "gst"] },
-  { id: "c-purchase", tag: "Core", pills: ["Purchase register", "Input GST"], title: ["Purchase Entries"], discs: ["purchase", "documents"] },
-  { id: "c-bank", tag: "Core", pills: ["Bank statement", "Contra"], title: ["Bank Entries"], discs: ["bank", "journal", "receivables"] },
-  { id: "c-gst", tag: "Tax", pills: ["Head and rate", "2× weight"], title: ["GST Postings"], discs: ["gst"] },
-  { id: "c-tds", tag: "Tax", pills: ["Section and base", "2× weight"], title: ["TDS Deductions"], discs: ["tds", "payables"] },
-  { id: "c-assets", tag: "Ledgers", pills: ["Capital or revenue", "Asset ledger"], title: ["Fixed Assets"], discs: ["assets"] },
-  { id: "c-payables", tag: "Ledgers", pills: ["Bill by bill", "Advances"], title: ["Payables"], discs: ["payables", "purchase"] },
-  { id: "c-receivables", tag: "Ledgers", pills: ["Receipts", "Advances"], title: ["Receivables"], discs: ["receivables", "sales"] },
-  { id: "c-journal", tag: "Core", pills: ["Voucher type", "Narration"], title: ["Journal Entries"], discs: ["journal"] },
+  {
+    id: "c-sales",
+    tag: "Core",
+    pills: ["Sales register", "Bill ref"],
+    title: ["Sales Entries"],
+    discs: ["sales", "gst"],
+  },
+  {
+    id: "c-purchase",
+    tag: "Core",
+    pills: ["Purchase register", "Input GST"],
+    title: ["Purchase Entries"],
+    discs: ["purchase", "documents"],
+  },
+  {
+    id: "c-bank",
+    tag: "Core",
+    pills: ["Bank statement", "Contra"],
+    title: ["Bank Entries"],
+    discs: ["bank", "journal", "receivables"],
+  },
+  {
+    id: "c-gst",
+    tag: "Tax",
+    pills: ["Head and rate", "2× weight"],
+    title: ["GST Postings"],
+    discs: ["gst"],
+  },
+  {
+    id: "c-tds",
+    tag: "Tax",
+    pills: ["Section and base", "2× weight"],
+    title: ["TDS Deductions"],
+    discs: ["tds", "payables"],
+  },
+  {
+    id: "c-assets",
+    tag: "Ledgers",
+    pills: ["Capital or revenue", "Asset ledger"],
+    title: ["Fixed Assets"],
+    discs: ["assets"],
+  },
+  {
+    id: "c-payables",
+    tag: "Ledgers",
+    pills: ["Bill by bill", "Advances"],
+    title: ["Payables"],
+    discs: ["payables", "purchase"],
+  },
+  {
+    id: "c-receivables",
+    tag: "Ledgers",
+    pills: ["Receipts", "Advances"],
+    title: ["Receivables"],
+    discs: ["receivables", "sales"],
+  },
+  {
+    id: "c-journal",
+    tag: "Core",
+    pills: ["Voucher type", "Narration"],
+    title: ["Journal Entries"],
+    discs: ["journal"],
+  },
 ];
 
 export const CATEGORY_TOOLS: readonly TrainingCard[] = [
-  { id: "t-tally", tag: "Where you post", pills: ["Licensed", "Educational"], title: ["Tally"], discs: ["tally"] },
-  { id: "t-daybook", tag: "What you upload", pills: ["XML export", "Every voucher"], title: ["Detailed Day Book"], discs: ["daybook", "tally"] },
-  { id: "t-tb", tag: "What ties out", pills: ["XML export", "Tie-out check"], title: ["Trial Balance"], discs: ["trialBalance"] },
-  { id: "t-hints", tag: "When stuck", pills: ["3 steps", "Full answer last"], title: ["Help Ladder"], discs: ["hints", "journal", "diagnostic"] },
-  { id: "t-aia", tag: "After mastery", pills: ["Bill ingestion", "Sync to Tally"], title: ["AI Accountant"], discs: ["aia", "daybook"] },
+  {
+    id: "t-tally",
+    tag: "Where you post",
+    pills: ["Licensed", "Educational"],
+    title: ["Tally"],
+    discs: ["tally"],
+  },
+  {
+    id: "t-daybook",
+    tag: "What you upload",
+    pills: ["XML export", "Every voucher"],
+    title: ["Detailed Day Book"],
+    discs: ["daybook", "tally"],
+  },
+  {
+    id: "t-tb",
+    tag: "What ties out",
+    pills: ["XML export", "Tie-out check"],
+    title: ["Trial Balance"],
+    discs: ["trialBalance"],
+  },
+  {
+    id: "t-hints",
+    tag: "When stuck",
+    pills: ["3 steps", "Full answer last"],
+    title: ["Help Ladder"],
+    discs: ["hints", "journal", "diagnostic"],
+  },
+  {
+    id: "t-aia",
+    tag: "After mastery",
+    pills: ["Bill ingestion", "Sync to Tally"],
+    title: ["AI Accountant"],
+    discs: ["aia", "daybook"],
+  },
 ];
 
 export type VoiceCard = {
@@ -248,24 +426,79 @@ export type VoiceCard = {
 };
 
 export const VOICES_TITLE = "Straight From the Tutor";
-export const VOICES_NOTE = "Sample messages, written the way the tutor coaches. Not learner testimonials.";
+export const VOICES_NOTE =
+  "Sample messages, written the way the tutor coaches. Not learner testimonials.";
 
 /** Three columns, in reading order. */
 export const VOICES: readonly (readonly VoiceCard[])[] = [
   [
-    { id: "result", kind: "Result", topic: "Sales batch", quote: "14 of 15 vouchers clean and your Trial Balance ties out. That is a strong first run." },
-    { id: "hint", kind: "Help, step 2", topic: "TDS", quote: "Before you pick a rate, check which section covers a professional fee. The reference video at 04:12 walks through it." },
-    { id: "upload", kind: "Validity check", topic: "Upload", quote: "This Day Book is the condensed format, so it cannot be scored yet. Export the Detailed Day Book and send it again." },
+    {
+      id: "result",
+      kind: "Result",
+      topic: "Sales batch",
+      quote:
+        "14 of 15 vouchers clean and your Trial Balance ties out. That is a strong first run.",
+    },
+    {
+      id: "hint",
+      kind: "Help, step 2",
+      topic: "TDS",
+      quote:
+        "Before you pick a rate, check which section covers a professional fee. The reference video at 04:12 walks through it.",
+    },
+    {
+      id: "upload",
+      kind: "Validity check",
+      topic: "Upload",
+      quote:
+        "This Day Book is the condensed format, so it cannot be scored yet. Export the Detailed Day Book and send it again.",
+    },
   ],
   [
-    { id: "flag", kind: "Flag", topic: "GST", quote: "Look again at the tax on the Deccan Traders invoice. Is that supply inside your state or outside it?" },
-    { id: "fixed", kind: "Rectification", topic: "Bank", quote: "Bank charges were failing last batch. This time every one landed in the right ledger. Marked FIXED." },
-    { id: "praise", kind: "Praise", topic: "Narration", quote: "Your narrations say why, not just what. A reviewer could follow every entry without opening the bill." },
+    {
+      id: "flag",
+      kind: "Flag",
+      topic: "GST",
+      quote:
+        "Look again at the tax on the Deccan Traders invoice. Is that supply inside your state or outside it?",
+    },
+    {
+      id: "fixed",
+      kind: "Rectification",
+      topic: "Bank",
+      quote:
+        "Bank charges were failing last batch. This time every one landed in the right ledger. Marked FIXED.",
+    },
+    {
+      id: "praise",
+      kind: "Praise",
+      topic: "Narration",
+      quote:
+        "Your narrations say why, not just what. A reviewer could follow every entry without opening the bill.",
+    },
   ],
   [
-    { id: "payables", kind: "Flag", topic: "Payables", quote: "This payment went in as a new reference. Which open bill or advance was it meant to settle?" },
-    { id: "mastered", kind: "Next step", topic: "Mastery", quote: "GST heads: three clean runs. Mastered. Your next batch moves on to a mock bank statement." },
-    { id: "reflect", kind: "Reflection", topic: "Capstone", quote: "Put this month next to your diagnostic. Which mistake from day one did you not make even once?" },
+    {
+      id: "payables",
+      kind: "Flag",
+      topic: "Payables",
+      quote:
+        "This payment went in as a new reference. Which open bill or advance was it meant to settle?",
+    },
+    {
+      id: "mastered",
+      kind: "Next step",
+      topic: "Mastery",
+      quote:
+        "GST heads: three clean runs. Mastered. Your next batch moves on to a mock bank statement.",
+    },
+    {
+      id: "reflect",
+      kind: "Reflection",
+      topic: "Capstone",
+      quote:
+        "Put this month next to your diagnostic. Which mistake from day one did you not make even once?",
+    },
   ],
 ];
 
@@ -275,7 +508,8 @@ export const FINAL_CTA = {
 } as const;
 
 export const FOOTER = {
-  blurb: "AIA Academy turns B.Com graduates into bookkeepers who can close a real client month in Tally.",
+  blurb:
+    "AIA Academy turns B.Com graduates into bookkeepers who can close a real client month in Tally.",
   links: [
     { label: "Home", href: "/#top" },
     { label: "Training tracks", href: "/#tracks" },

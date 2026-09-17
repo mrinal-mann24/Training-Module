@@ -1,4 +1,4 @@
-Karbon VA — House Practices Rulebook
+AI Accountant's VA — House Practices Rulebook
 v0.2 — full rebuild
 Standard practices for Virtual Accountant team members. All new joiners are expected to follow these unless explicitly overridden by the reviewer. This document is the seed for the coaching-loop rulebook — Claude coaches interns against these rules during bootcamp and beyond.
 Contents
@@ -506,7 +506,7 @@ If TDS was deducted and now advance is refunded — reviewer-handled (TDS revers
 One-off transaction, no formal invoice cycle
 Payment same day as consumption
 No follow-up expected (returns, reconciliation)
-Amount below materiality threshold (Karbon rule: below ₹5,000)
+Amount below materiality threshold (AI Accountant's rule: below ₹5,000)
 Vendor won't be tracked over time
 No TDS involved
 No GST ITC to be claimed

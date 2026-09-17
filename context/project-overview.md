@@ -11,7 +11,7 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 3. Personalize every exercise, hint, and piece of feedback from the learner's own stored error and mastery history, not a fixed curriculum queue.
 4. Get learners fluent in AI Accountant (AIA) as a faster path to the same correct books, introduced only after core accounting judgment is solid, and always verified against the same Tally export standard.
 5. Never let a learner get permanently stuck: coaching climbs a graduated hint ladder that always eventually resolves to a full answer, so self-serve learners don't churn from being stuck with no human reviewer.
-6. Keep the tutor's judgments grounded in a single source of truth (the Karbon VA House Practices Rulebook) so scoring, coaching, and feedback are consistent and defensible.
+6. Keep the tutor's judgments grounded in a single source of truth (the AI Accountant's VA House Practices Rulebook) so scoring, coaching, and feedback are consistent and defensible.
 7. Produce a certificate and a measurable before/after (diagnostic re-run at the capstone) as proof of the learner's improvement.
 
 ## Core User Flow (Start to Finish)
@@ -82,7 +82,7 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 
 ### Content Generation
 
-- Authored exercise packs for diagnostic (and capstone): source-file sets (xlsx registers, bank statement, opening TB) + hand-authored answer keys, seeded per variant (A/B). Real reference content now exists: `Karbon_VA_House_Practices_Rulebook_v0.2.docx` and 8 training-module docs (Sales, Purchase, Bank, TDS, GST, Fixed Assets, Payables, Receivables, Journal) — these replace the placeholder Rulebook grounding and the "video slot" placeholders as the tutor's reference material
+- Authored exercise packs for diagnostic (and capstone): source-file sets (xlsx registers, bank statement, opening TB) + hand-authored answer keys, seeded per variant (A/B). Real reference content now exists: `AI Accountant's_VA_House_Practices_Rulebook_v0.2.docx` and 8 training-module docs (Sales, Purchase, Bank, TDS, GST, Fixed Assets, Payables, Receivables, Journal) — these replace the placeholder Rulebook grounding and the "video slot" placeholders as the tutor's reference material
 - Scenario and transaction generation for adaptive drills, calibrated by difficulty (L0–L4)
 - Source-document generation (PDF invoices/bills, mock bank statements) with seeded source-integrity traps
 - Seeded ledger anomalies for open review, drawn from an anomaly library, with clean distractors
@@ -118,7 +118,7 @@ AIA Academy is a self-serve, chat-based training product that makes B.Com fresh 
 ## Out of Scope (v1)
 
 - CA-firm / multi-org / cohort layer (trainer accounts, admin dashboard, cohort rollups, per-trainer visibility controls) — Phase 3
-- Configurable house rules per firm (Rulebook stays fixed to Karbon's standard for v1)
+- Configurable house rules per firm (Rulebook stays fixed to AI Accountant's's standard for v1)
 - Full anti-copy variant generation at cohort scale — v1 uses lightweight variant seeding only
 - Clerk or any third-party identity provider — Supabase Auth only for v1
 - Sentry / application crash monitoring
