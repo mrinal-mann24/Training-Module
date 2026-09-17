@@ -137,6 +137,17 @@ async function main(): Promise<void> {
     if (scoredExercises.has(exercise.id as string)) continue;
     if (exercise.kind === 'review') continue;
 
+    // Diagnostic pack exercises are not adaptive-generated (insertPackExercise
+    // stores no `variant` inside scenario and no transactions), so they never
+    // match GeneratedExerciseSchema. That is expected, not an error: the pack
+    // has its own re-dated files (packs/variant-a-edu/*, see
+    // apply-pack-year-shift.mjs) and assignPackDiagnostic already serves them
+    // to educational learners, so there is nothing for this script to redate.
+    if ((exercise.scenario as { pack_files?: unknown[] }).pack_files) {
+      console.log(`  ${label}: skipped, diagnostic pack — dated separately via the pack files`);
+      continue;
+    }
+
     const parsed = GeneratedExerciseSchema.safeParse({ ...(exercise.scenario as object), answer_key: exercise.answer_key });
     if (!parsed.success) {
       console.log(`  ${label}: skipped, stored exercise does not parse (${parsed.error.issues[0]?.message ?? 'invalid'})`);
