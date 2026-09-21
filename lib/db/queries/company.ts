@@ -260,6 +260,22 @@ export function partyLegOf<T extends { correct_account: string; dr_cr?: 'Dr' | '
 }
 
 export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
+  return replayBillsAndAdvances(keys).bills;
+}
+
+// An advance paid or received that no invoice or bill has adjusted yet
+// (2026-09-21). Praveen's April pack paid Bharat Machinery Rs 50,000 as
+// ADV-02; his June batch raised Bharat's bill BM/2025-06 without naming the
+// advance, so the key marked his correct adjustment wrong. Generation reads
+// these to name the advance on the next bill of the same party
+// (lib/tutor/advance-adjustment.ts).
+export type OpenAdvance = { party: string; ref: string; open: number; side: OpenBill['side'] };
+
+export function openAdvancesFromKeys(keys: AnswerKey[]): OpenAdvance[] {
+  return replayBillsAndAdvances(keys).advances;
+}
+
+function replayBillsAndAdvances(keys: AnswerKey[]): { bills: OpenBill[]; advances: OpenAdvance[] } {
   const bills = new Map<string, OpenBill>();
   // Per-party credits with no bill of their own — a debit note raised as a
   // New Ref, an advance receipt — are applied to that party's open bills
@@ -269,6 +285,7 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
   // Advances by party and reference, consumed by the invoice or bill that
   // names them (2026-09-15).
   const advanceCredits = new Map<string, number>();
+  const advanceInfo = new Map<string, Omit<OpenAdvance, 'open'>>();
   const billId =(party: string, ref: string) => `${party}|${normalizeBillReference(ref)}`;
   // The pack's opening balances are bills too — "Mumbai Suppliers Cr
   // 1,20,000" is the March bill the April payment "against MS-M1" settles.
@@ -391,6 +408,7 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
             // never adjusted falls back to a party credit at the end.
             if (parsedRefs[index]?.kind === 'advance') {
               advanceCredits.set(id, (advanceCredits.get(id) ?? 0) + remaining);
+              advanceInfo.set(id, { party: party.correct_account, ref, side });
               remaining = 0;
               return;
             }
@@ -417,8 +435,11 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
     }
   }
 
+  const advances: OpenAdvance[] = [];
   for (const [id, credit] of advanceCredits) {
     if (credit <= 0.005) continue;
+    const info = advanceInfo.get(id);
+    if (info && credit >= 0.5) advances.push({ ...info, open: Math.round(credit * 100) / 100 });
     const party = id.slice(0, id.lastIndexOf('|'));
     credits.set(party, (credits.get(party) ?? 0) + credit);
   }
@@ -434,10 +455,13 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
     }
   }
 
-  return [...bills.values()]
-    // Only positive balances are open; anything at or below zero is settled.
-    .filter((bill) => bill.open >= 0.5)
-    .map((bill) => ({ ...bill, open: Math.round(bill.open * 100) / 100 }));
+  return {
+    bills: [...bills.values()]
+      // Only positive balances are open; anything at or below zero is settled.
+      .filter((bill) => bill.open >= 0.5)
+      .map((bill) => ({ ...bill, open: Math.round(bill.open * 100) / 100 })),
+    advances,
+  };
 }
 
 export async function getOpenBills(supabase: SupabaseClient, learnerId: string): Promise<OpenBill[]> {

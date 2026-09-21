@@ -46,6 +46,7 @@ import type {
 } from "@/lib/llm/prompts/source-document";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
 import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
+import { adjustOpenAdvances, advancesToAdjust } from "@/lib/tutor/advance-adjustment";
 import {
   billTokensIn,
   checkBillNumberUniqueness,
@@ -1514,6 +1515,13 @@ export async function generateAdaptiveExercise(
       `Adaptive exercise generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
     );
   }
+
+  // Advances from earlier months (2026-09-21): the next bill or invoice of
+  // the same party names the advance it adjusts ("ADV-02 (Advance),
+  // BM/2025-06"), so a learner who adjusts it is scored correct and one who
+  // books the whole bill as new is not. Done in code, after validation, so
+  // it never depends on the model remembering an April advance.
+  generated = adjustOpenAdvances(generated, advancesToAdjust(priorKeys, openingBalances));
 
   generated = stampOpeningPosition(
     scrubOpeningFigureSentences(stripDuplicateTransactionList(generated), cashPosition),

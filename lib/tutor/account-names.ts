@@ -278,6 +278,12 @@ export function partyAccountsOf(
     if (CORE_PROFIT_AND_LOSS.test(entry.correct_account)) continue;
     const side = PARTY_SIDE[entry.voucher_type.trim().toLowerCase()];
     if (side !== undefined && entry.dr_cr !== side) continue;
+    // A journal has no party side, and its expense leg carries the bill
+    // reference too: "Dr Bad Debts Written Off / Cr Delhi Bazaar" against
+    // INV-2231 made Bad Debts Written Off a party, so a month-only export
+    // without that ledger was reported as "no ledger in your export"
+    // (Praveen's June, 2026-09-21). Only the customer or supplier is a party.
+    if (side === undefined && classifyLedger(entry.correct_account, new Set()) === 'profit_and_loss') continue;
     parties.add(normalizeAccountName(entry.correct_account));
   }
   return parties;
