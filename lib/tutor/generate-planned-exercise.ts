@@ -23,6 +23,7 @@ import { educationalDaysFor } from '@/lib/tutor/educational-dates';
 import {
   attachSourceDocuments,
   checkBatchComposition,
+  dropOneLevel,
   exerciseMonthForModule,
   finalizeBatch,
   planSourceDocuments,
@@ -47,7 +48,7 @@ import { buildPartyMaster } from '@/lib/tutor/party-master';
 const MAX_ATTEMPTS = 3;
 const DEFAULT_COMPANY = 'Blossom Retail Pvt Ltd';
 
-export type PlannedExerciseOutcome = { id: string } | 'unsupported';
+export type PlannedExerciseOutcome = { id: string };
 
 // Everything up to, and excluding, the first write: the books are read, the
 // model plans, code builds and checks. Split from the persistence below so
@@ -74,12 +75,18 @@ export async function buildPlannedBatch(
   licenseMode: LicenseMode,
   exerciseOrdinal: number,
   documentsMode: boolean,
-): Promise<PlannedBatch | 'unsupported'> {
+): Promise<PlannedBatch> {
   const concepts: ConceptTag[] = [
     target.conceptTag,
     ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
   ];
-  if (!supportsConcepts(concepts)) return 'unsupported';
+  if (!supportsConcepts(concepts)) {
+    throw new Error(`The key builder does not cover every concept of this batch (${concepts.join(', ')}); add builder support before adding a concept tag.`);
+  }
+  // Reinforcement drops one difficulty level and re-targets (the spec's
+  // rule, which the legacy generator applied; carried over when it was
+  // deleted).
+  const level = target.reinforcementActive ? dropOneLevel(difficultyLevel) : difficultyLevel;
 
   const [company, priorKeys] = await Promise.all([getCompanyState(supabase, learnerId), loadAnswerKeys(supabase, learnerId)]);
   const rectifications = await getPendingRectifications(supabase, learnerId, priorKeys);
@@ -91,7 +98,7 @@ export async function buildPlannedBatch(
   for (const key of priorKeys) for (const party of partyAccountsOf(key.entries)) partyKeys.add(party);
   const partyNames = registryNames.filter((name) => partyKeys.has(normalizeAccountName(name)));
   const master = buildPartyMaster(partyNames);
-  const menu = eventMenuFor(difficultyLevel, concepts, target.escalationActive);
+  const menu = eventMenuFor(level, concepts, target.escalationActive);
   const bankAccount = company.openingBalances.find((opening) => isBankLedger(opening.account))?.account ?? 'HDFC Bank — 1234';
   const yearStartIndex = Math.floor((exerciseOrdinal - 1) / 12) * 12;
   const tdsHistory = tdsHistoryFromKeys(priorKeys.slice(yearStartIndex));
@@ -101,7 +108,7 @@ export async function buildPlannedBatch(
     companyName,
     monthLabel: month.label,
     month: { day: 1, monthIndex: month.monthIndex, year: month.year },
-    difficultyLevel,
+    difficultyLevel: level,
     targetConcept: target.conceptTag,
     strengthConcepts: target.escalationActive || !batchPlan ? [] : batchPlan.strengths,
     weaknessConcepts: target.escalationActive || !batchPlan ? [] : batchPlan.weaknesses,
@@ -160,7 +167,7 @@ export async function buildPlannedBatch(
       master,
       menu,
       month: { monthIndex: month.monthIndex, year: month.year },
-      difficultyLevel,
+      difficultyLevel: level,
       licenseMode,
       bankAccount,
       usedDocumentNumbers: params.usedDocumentNumbers,
@@ -282,21 +289,10 @@ export async function generatePlannedExercise(
   exerciseOrdinal: number,
   documentsMode: boolean,
 ): Promise<PlannedExerciseOutcome> {
-  // Nothing has been written while the batch is being built, so a failure
-  // here (the model's provider refusing the request, three plans the books
-  // reject) can safely hand the month to the legacy generator instead of
-  // leaving the learner with a scored submission and no next batch
-  // (pre-launch review, 2026-09-22). Failures AFTER this point are not
-  // caught: the exercise row may exist, and the step's own retry guard
-  // handles that.
-  let built: PlannedBatch | 'unsupported';
-  try {
-    built = await buildPlannedBatch(supabase, learnerId, target, difficultyLevel, recentStrengthDescriptions, batchPlan, licenseMode, exerciseOrdinal, documentsMode);
-  } catch (error) {
-    console.error(`[planned-generator] learner ${learnerId}: could not build a batch, falling back to the legacy generator: ${error instanceof Error ? error.message : String(error)}`);
-    return 'unsupported';
-  }
-  if (built === 'unsupported') return 'unsupported';
+  // The only generator since the legacy one was deleted (2026-09-22): a
+  // failure to build throws, the job step retries (a fresh plan each time),
+  // and scripts/advance-learner.ts regenerates by hand if every retry fails.
+  const built = await buildPlannedBatch(supabase, learnerId, target, difficultyLevel, recentStrengthDescriptions, batchPlan, licenseMode, exerciseOrdinal, documentsMode);
   const finalExercise = built.exercise;
   const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, built.companyName, built.statementContent, built.codeBuiltDocuments, built.documentLines);
 

@@ -208,7 +208,7 @@ export function openBillsFromKeys(keys: AnswerKey[]): OpenBill[] {
 // ADV-02; his June batch raised Bharat's bill BM/2025-06 without naming the
 // advance, so the key marked his correct adjustment wrong. Generation reads
 // these to name the advance on the next bill of the same party
-// (lib/tutor/advance-adjustment.ts).
+// (the key builder, lib/tutor/build-key/index.ts advanceToAdjust).
 export type OpenAdvance = { party: string; ref: string; open: number; side: OpenBill['side'] };
 
 export function openAdvancesFromKeys(keys: AnswerKey[]): OpenAdvance[] {

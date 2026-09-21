@@ -9,10 +9,6 @@ import {
   buildDiagnosticRetryPrompt,
 } from "@/lib/llm/prompts/diagnostic-exercise";
 import {
-  buildAdaptivePrompt,
-  buildAdaptiveRetryPrompt,
-} from "@/lib/llm/prompts/adaptive-exercise";
-import {
   GeneratedExerciseSchema,
   EXERCISE_DIFFICULTY_LEVELS,
   type ConceptTag,
@@ -22,15 +18,11 @@ import {
 } from "@/lib/schemas/exercise";
 import { insertExercise } from "@/lib/db/queries/exercises";
 import {
-  getCompanyState,
   isBankLedger,
-  registerCompanyLedgers,
-  appendCompanyTransactionLog,
   parseBillReferences,
   partyLegOf,
   type OpenBill,
   type PartyTaxClass,
-  loadAnswerKeys,
 } from "@/lib/db/queries/company";
 import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/build-bank-statement";
 import type { BankStatementContent } from "@/lib/schemas/source-document";
@@ -40,10 +32,7 @@ import { buildVendorInvoiceContent, type VendorInvoiceLine } from "@/lib/documen
 import { renderSourceDocument } from "@/lib/documents/render-source-document";
 import { extractTransactionDate, type BankStatementLineInput, type VendorInvoiceInput } from "@/lib/documents/invoice-figures";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
-import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
-import { adjustOpenAdvances, advancesToAdjust } from "@/lib/tutor/advance-adjustment";
-import { appendCarriedRectifications } from "@/lib/tutor/carried-rectifications";
-import { getPendingRectifications, markRectificationsCarried } from "@/lib/db/queries/carried-rectifications";
+import { checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
 import {
   billTokensIn,
   checkBillNumberUniqueness,
@@ -56,9 +45,6 @@ import {
   checkTdsThresholds,
   checkTextMatchesKey,
   normalizeDocumentNumber,
-  priorBillReferences,
-  priorDocumentNumbers,
-  tdsHistoryFromKeys,
   transactionDateOf,
   type PayeeTypeOf,
   type StateCodeOf,
@@ -67,7 +53,6 @@ import {
 import { appendMonthEndJournals, type MonthEndParams } from "@/lib/tutor/month-end-journals";
 import { checkCanonicalDateFormat, checkDatesExist, enforceEducationalDates } from "@/lib/tutor/educational-dates";
 import { partyIdentityFor } from "@/lib/documents/party-directory";
-import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
 const MAX_ATTEMPTS = 3;
@@ -1306,7 +1291,7 @@ export function finalizeBatch(
 // One level down from currentLevel, floored at L0 — used when reinforcement
 // is active, per the spec's "drops one difficulty level and re-targets"
 // rule. Never below the lowest defined level.
-function dropOneLevel(
+export function dropOneLevel(
   currentLevel: ExerciseDifficultyLevel,
 ): ExerciseDifficultyLevel {
   const index = EXERCISE_DIFFICULTY_LEVELS.indexOf(currentLevel);
@@ -1314,14 +1299,6 @@ function dropOneLevel(
   return EXERCISE_DIFFICULTY_LEVELS[droppedIndex];
 }
 
-// Generates an adaptive exercise targeting the given weak concept, aware of
-// everything already posted in the learner's single persistent Tally
-// company (company_ledger_registry + a recent slice of
-// company_transaction_log), so the LLM reuses or safely introduces
-// ledger/party names rather than colliding with prior exercises. Persists
-// the exercise, then registers any new ledgers and appends the transaction
-// summary to the company log — this is what keeps the registry accurate for
-// the *next* generation call.
 // Diagnostics for a generation that keeps failing validation: with
 // DEBUG_GENERATION set, every rejected attempt (the model's output plus the
 // violation text) is written under the OS temp dir so the actual output can
@@ -1338,315 +1315,4 @@ function dumpFailedAttempt(learnerId: string, attempt: number, error: string, ou
   } catch {
     // diagnostics must never break generation
   }
-}
-
-export async function generateAdaptiveExercise(
-  supabase: SupabaseClient,
-  learnerId: string,
-  target: WeakConceptTarget,
-  baseDifficultyLevel: ExerciseDifficultyLevel,
-  // Unit 14R wiring: an 'explain' exercise is the same generated posting
-  // batch plus an explain-the-entry text part — the kind drives
-  // required_parts (REQUIRED_PARTS_BY_KIND) and nothing else about
-  // generation. Scheduled by select-exercise-kind.ts.
-  kind: "adaptive" | "explain" = "adaptive",
-  recentStrengthDescriptions: string[] = [],
-  // Phase 2: the 50/50 composition plan. Ignored (forced empty) in
-  // escalation mode, which narrows to the single target concept.
-  batchPlan: {
-    strengths: ConceptTag[];
-    weaknesses: ConceptTag[];
-  } | null = null,
-  // Phase 3 (spec 15): educational-mode learners can only post on the 1st,
-  // 2nd, or 31st of a month. The prompt lists the dates and, since
-  // 2026-09-16, the batch is redated in code after generation.
-  licenseMode: LicenseMode = "licensed",
-  // Month-per-batch (2026-09-01): this exercise's ordinal in the learner's
-  // journey — 1 is the diagnostic pack (April 2026), 2 the first adaptive
-  // batch (May 2026), and so on, one calendar month per exercise. Computed
-  // in code by the caller (run-scoring passes priorExerciseCount + 1),
-  // stated to the prompt as a hard rule, and enforced by checkBatchMonth in
-  // the retry loop below.
-  exerciseOrdinal = 2,
-  // Documents mode (2026-09-09): every transaction is delivered as
-  // paperwork — see lib/tutor/documents-mode.ts. Decided by the caller from
-  // the learner's mastery.
-  documentsMode = false,
-): Promise<{ id: string }> {
-  const difficultyLevel = target.reinforcementActive
-    ? dropOneLevel(baseDifficultyLevel)
-    : baseDifficultyLevel;
-  const exerciseMonth = exerciseMonthForModule(exerciseOrdinal);
-
-  // One read of the company's state feeds BOTH the prompt and every
-  // deterministic check below (getCompanyState, 2026-09-03).
-  const {
-    ledgerRegistry: companyLedgerRegistry,
-    recentTransactionLog: recentCompanyTransactionLog,
-    companyName,
-    cashPosition,
-    openingBalances,
-    openBills,
-    partyTaxClasses,
-  } = await getCompanyState(supabase, learnerId);
-
-  // Every answer key so far (2026-09-10): bill numbers already used, this
-  // year's TDS totals per payee, and the GST position the month-end
-  // journals are computed from. exerciseOrdinal is 1-based (1 = the April
-  // pack), the keys 0-based, so this financial year's keys start at index
-  // floor((ordinal - 1) / 12) * 12.
-  const priorKeys = await loadAnswerKeys(supabase, learnerId);
-  // Carried rectifications (2026-09-22): the owner's correcting journals for
-  // an earlier month, appended to this batch inside the loop below.
-  const rectifications = await getPendingRectifications(supabase, learnerId, priorKeys);
-  const yearStartIndex = Math.floor((exerciseOrdinal - 1) / 12) * 12;
-  const priorRefs = priorBillReferences(priorKeys);
-  const tdsHistory = tdsHistoryFromKeys(priorKeys.slice(yearStartIndex));
-
-  const promptParams = {
-    targetConceptTag: target.conceptTag,
-    batchStrengthConcepts:
-      target.escalationActive || !batchPlan ? [] : batchPlan.strengths,
-    batchWeaknessConcepts:
-      target.escalationActive || !batchPlan ? [] : batchPlan.weaknesses,
-    recentStrengthDescriptions,
-    difficultyLevel,
-    licenseMode,
-    escalationActive: target.escalationActive,
-    companyLedgerRegistry,
-    recentCompanyTransactionLog,
-    exerciseMonthLabel: exerciseMonth.label,
-    // Fallback covers a learner whose pack-assignment log row predates the
-    // company field (or test paths with no pack) — the product's one live
-    // company is Blossom Retail.
-    companyName: companyName ?? "Blossom Retail Pvt Ltd",
-    cashPosition,
-    openBills,
-    partyTaxClasses,
-    documentsMode,
-    usedBillNumbers: priorDocumentNumbers(priorKeys),
-  };
-
-  let lastError: string | null = null;
-  let generated: GeneratedExercise | null = null;
-  // Only SOFT violations (batch composition, an opening figure quoted in
-  // the prose) may fall back to the last attempt when the model never
-  // complies within MAX_ATTEMPTS. HARD violations — wrong month, figures in
-  // document-backed lines, single-leg entries, cash going negative, a
-  // settlement against a bill that does not exist — are never delivered:
-  // a wrong batch costs the learner far more than a delayed one (the job
-  // step retries), and a delivered fallback silently defeats every guard.
-  let unbalancedFallback: GeneratedExercise | null = null;
-
-  // Month-end GST journals with figures from the ledger (2026-09-10): the
-  // set-off and the payment to the government are appended when the
-  // batch's concepts call for them, replacing anything the model wrote.
-  // Since 2026-09-17 they are appended INSIDE the loop, so a payment the
-  // bank cannot fund on its date sends the batch back for a retry instead
-  // of being silently skipped or overdrawing the statement.
-  const batchConcepts: ConceptTag[] = [
-    target.conceptTag,
-    ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
-  ];
-  const bankAccount = openingBalances.find((opening) => isBankLedger(opening.account))?.account ?? "HDFC Bank — 1234";
-  const checkContext: GenerationCheckContext = {
-    month: exerciseMonth,
-    cashPosition,
-    openBills,
-    partyTaxClasses,
-    priorRefs,
-    tdsHistory,
-    documentsMode,
-    companyName: companyName ?? "Blossom Retail Pvt Ltd",
-  };
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { messages, jsonSchema } =
-      lastError === null
-        ? buildAdaptivePrompt(promptParams)
-        : buildAdaptiveRetryPrompt(promptParams, lastError);
-
-    const raw = await getTracedStructuredCompletion({
-      messages,
-      jsonSchema,
-      traceName: "adaptive-generation",
-      learnerId,
-      callType: "adaptive-generation",
-      extraMetadata: {
-        targetConceptTag: target.conceptTag,
-        reason: target.reason,
-      },
-    });
-
-    const parsedRaw = GeneratedExerciseSchema.safeParse(raw);
-    const parsed = parsedRaw.success
-      ? { success: true as const, data: fillBillReferencesFromText(parsedRaw.data) }
-      : parsedRaw;
-
-    if (parsed.success) {
-      // Every violation is combined into one retry message so a single
-      // retry can fix everything at once.
-      const compositionError = checkBatchComposition(
-        parsed.data,
-        batchPlan,
-        target.escalationActive,
-      );
-      const { hard, soft } = runGenerationChecks(parsed.data, checkContext);
-      let finalized: GeneratedExercise | null = null;
-      if (hard.length === 0) {
-        // The rectification journals ride after the model's lines passed
-        // the checks and before the month-end journals, so the bank walk
-        // and the final dating include them.
-        const withRectifications = appendCarriedRectifications(parsed.data, rectifications, exerciseMonth);
-        const bankAfterBatch =
-          cashPosition.bank +
-          withRectifications.answer_key.entries
-            .filter((entry) => isBankLedger(entry.correct_account))
-            .reduce((sum, entry) => sum + (entry.dr_cr === "Dr" ? entry.amount : -entry.amount), 0);
-        const outcome = finalizeBatch(withRectifications, {
-          licenseMode,
-          month: exerciseMonth,
-          cashPosition,
-          monthEnd: {
-            priorKeys,
-            concepts: batchConcepts,
-            month: exerciseMonth,
-            licenseMode,
-            bankAccount,
-            bankAfterBatch,
-            ledgerNames: companyLedgerRegistry.map((entry) => entry.ledger_name),
-          },
-        });
-        hard.push(...outcome.errors);
-        finalized = outcome.generated;
-      }
-      const batchError = [compositionError, ...hard, ...soft].filter(Boolean).join(" ");
-      if (batchError === "" && finalized) {
-        generated = finalized;
-        break;
-      }
-      if (hard.length === 0 && finalized) {
-        unbalancedFallback = finalized;
-      }
-      lastError = batchError;
-      dumpFailedAttempt(learnerId, attempt, batchError, parsed.data);
-      continue;
-    }
-
-    lastError = parsed.error.message;
-    dumpFailedAttempt(learnerId, attempt, lastError, raw);
-  }
-
-  if (!generated && unbalancedFallback) {
-    generated = unbalancedFallback;
-  }
-
-  if (!generated) {
-    throw new Error(
-      `Adaptive exercise generation failed validation after ${MAX_ATTEMPTS} attempts: ${lastError}`,
-    );
-  }
-
-  // Advances from earlier months (2026-09-21): the next bill or invoice of
-  // the same party names the advance it adjusts ("ADV-02 (Advance),
-  // BM/2025-06"), so a learner who adjusts it is scored correct and one who
-  // books the whole bill as new is not. Done in code, after validation, so
-  // it never depends on the model remembering an April advance.
-  generated = adjustOpenAdvances(generated, advancesToAdjust(priorKeys, openingBalances));
-
-  generated = stampOpeningPosition(
-    scrubOpeningFigureSentences(stripDuplicateTransactionList(generated), cashPosition),
-    cashPosition,
-    openingBalances,
-  );
-
-  // Slow work (LLM + PDF render + upload) BEFORE the exercise row exists —
-  // the chat's poll delivers the exercise as soon as the row appears, so
-  // documents must already be uploaded by then (2026-09-01 race fix).
-  // The learner keeps ONE continuous set of books, so this batch's answer
-  // key must describe the company's cumulative position, not just its own
-  // movements: expected closing = carried-forward opening + this batch.
-  // Without it checkTrialBalanceTieOut compared batch-only movements against
-  // the learner's cumulative Tally export and failed a flawless submission,
-  // capping every adaptive result at 'partial' (2026-09-02).
-  const generatedWithOpenings: GeneratedExercise = {
-    ...generated,
-    answer_key: { ...generated.answer_key, opening_balances: openingBalances, engine: "legacy" },
-  };
-
-  // Documents mode: every transaction becomes document-backed, the brief
-  // lines become pointers, and the sales invoices / month-end notes are
-  // built here by code from the key. Applied AFTER every validation and
-  // stamp above so the checks saw the model's full-detail text, and BEFORE
-  // the statement so the pointers and narrations line up.
-  const documentsPlan = documentsMode
-    ? applyDocumentsMode(generatedWithOpenings, {
-        companyName: companyName ?? "Blossom Retail Pvt Ltd",
-        monthLabel: exerciseMonth.label,
-        priorKeys,
-      })
-    : null;
-  const modeApplied = documentsPlan ? documentsPlan.generated : generatedWithOpenings;
-
-  // Statement lines, running balance and reference numbers come from the
-  // key and the real opening bank balance; the same references are written
-  // into the key's narrations so "copy the bank reference verbatim" is
-  // satisfiable (2026-09-03).
-  const statement =
-    planSourceDocuments(modeApplied).bankLines.length > 0
-      ? buildBankStatementContent({
-          companyName: companyName ?? "Blossom Retail Pvt Ltd",
-          openingBankBalance: cashPosition.bank,
-          generated: modeApplied,
-        })
-      : null;
-  const finalExercise = statement
-    ? applyBankReferences(modeApplied, statement.referenceBySequence)
-    : modeApplied;
-
-  const codeBuiltDocuments = documentsPlan
-    ? [
-        ...documentsPlan.salesInvoices.map(({ sequence, content }) => ({
-          document: { doc_type: "sales_invoice" as const, content },
-          seed: `sales:${sequence}`,
-        })),
-        ...(documentsPlan.monthEndNotes
-          ? [{ document: { doc_type: "month_end_note" as const, content: documentsPlan.monthEndNotes }, seed: "month-end-notes" }]
-          : []),
-        // Sales register CSV for AI Accountant's sales upload (2026-09-09):
-        // same figures as the sales invoices, one file per batch.
-        ...(documentsPlan.salesRegister
-          ? [{ document: { doc_type: "sales_register" as const, content: documentsPlan.salesRegister }, seed: "sales-register" }]
-          : []),
-      ]
-    : [];
-
-  const documents = await prepareSourceDocuments(
-    supabase,
-    learnerId,
-    finalExercise,
-    companyName ?? "Blossom Retail Pvt Ltd",
-    statement?.content ?? null,
-    codeBuiltDocuments,
-  );
-
-  const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
-  await markRectificationsCarried(supabase, rectifications.map((rectification) => rectification.id), id);
-
-  await attachSourceDocuments(supabase, id, documents);
-
-  const newLedgers = generated.answer_key.entries.map((entry) => ({
-    ledgerName: entry.correct_account,
-    ledgerType: entry.voucher_type,
-  }));
-  await registerCompanyLedgers(supabase, learnerId, id, newLedgers);
-
-  await appendCompanyTransactionLog(supabase, learnerId, id, {
-    voucherType: generated.answer_key.entries[0]?.voucher_type ?? null,
-    ledgers: newLedgers.map((ledger) => ledger.ledgerName),
-    transactionCount: generated.transactions.length,
-    difficultyLevel: generated.difficulty_level,
-  });
-
-  return { id };
 }

@@ -143,7 +143,7 @@ export async function assignPackDiagnostic(
   // told to invent ledgers freely — observed live 2026-08-24 as a Batch 2
   // set in a fictional Maharashtra company with Savings/Current accounts,
   // unrelated to the pack's Blossom Retail (Karnataka). Same registry
-  // convention as generateAdaptiveExercise: ledgerType carries the voucher
+  // convention as generatePlannedExercise: ledgerType carries the voucher
   // type the account first appeared under.
   const seenNames = new Set<string>();
   const packLedgers: { ledgerName: string; ledgerType: string }[] = [];

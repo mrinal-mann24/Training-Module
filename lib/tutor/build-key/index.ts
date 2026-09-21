@@ -288,7 +288,7 @@ function resolveParty(context: EventContext, ref: { name: string; new_party: boo
 
 // A bill or invoice for a party that holds an open advance ALWAYS adjusts
 // it, whatever the plan said: that is what a bookkeeper does, the legacy
-// engine did it in code (adjustOpenAdvances), and a learner who adjusts it
+// engine did it in code after validation, and a learner who adjusts it
 // would otherwise be scored against a key that booked the whole document as
 // new (dry run, Praveen's Bharat Machinery, 2026-09-22).
 function advanceToAdjust(context: EventContext, party: PartyRecord, side: OpenItem['side'], planned: string | null): string | null {

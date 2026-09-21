@@ -98,10 +98,6 @@ async function main(): Promise<void> {
     priorExerciseCount + 1,
     documentsMode,
   );
-  if (built === 'unsupported') {
-    console.log('UNSUPPORTED: production would fall back to the legacy generator for this batch.');
-    return;
-  }
   console.log(`\nBuilt in ${Math.round((Date.now() - started) / 1000)}s after ${built.rejectedAttempts.length} rejected attempt(s).`);
   built.rejectedAttempts.forEach((violations, index) => {
     console.log(`  Attempt ${index + 1} was rejected for:`);

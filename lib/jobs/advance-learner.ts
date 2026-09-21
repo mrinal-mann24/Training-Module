@@ -12,9 +12,7 @@ import { decideCorrection } from '@/lib/tutor/correction-round';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { insertConceptAttempts, getConceptAttempts, getConceptMasteryMap, applyStatePatch } from '@/lib/db/queries/mastery';
 import { recomputeMastery, selectWeakConcept } from '@/lib/tutor/mastery';
-import { generateAdaptiveExercise } from '@/lib/tutor/generate-exercise';
 import { generatePlannedExercise } from '@/lib/tutor/generate-planned-exercise';
-import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
 import { generateReviewExercise } from '@/lib/tutor/generate-review-exercise';
 import { selectNextExerciseKind } from '@/lib/tutor/select-exercise-kind';
 import { isDocumentsModeUnlocked } from '@/lib/tutor/documents-mode';
@@ -30,6 +28,7 @@ import { getPreviousScoredTrialBalancePath } from '@/lib/db/queries/submissions'
 import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
 import { expectedClosingBalances, type ExpectedClosing } from '@/lib/tutor/books-reconciliation';
 import type { AnswerKey } from '@/lib/schemas/exercise';
+import type { LicenseMode as OnboardingLicenseMode } from '@/lib/schemas/onboarding';
 import { openAdvancesOf, replayKeys } from '@/lib/tutor/ledger-state';
 import type { RectificationNote } from '@/lib/llm/prompts/coaching';
 
@@ -147,7 +146,7 @@ export async function loadOpenAdvanceReferences(supabase: SupabaseClient, learne
 // bodies live here so the two jobs cannot drift again; the jobs keep their
 // own step ids around these calls.
 
-export type LicenseMode = Parameters<typeof generateAdaptiveExercise>[7];
+export type LicenseMode = OnboardingLicenseMode | undefined;
 
 export async function logAttemptsAndClassifyRectifications(
   supabase: SupabaseClient,
@@ -298,26 +297,10 @@ export async function generateNextExercise(
   // priorExerciseCount includes the diagnostic, so the first adaptive batch
   // lands in May, the next in June, and so on.
   //
-  // Rebuild Stage 4 (2026-09-22): a learner flipped to the planned engine
-  // gets a batch whose key is built by code from the books; concepts the
-  // builder does not yet cover fall back to the legacy generator.
-  const profile = await getLearnerProfile(supabase, params.learnerId);
-  if (profile?.generation_engine === 'planned') {
-    const planned = await generatePlannedExercise(
-      supabase,
-      params.learnerId,
-      target,
-      baseDifficultyLevel,
-      nextKind === 'explain' ? 'explain' : 'adaptive',
-      recentStrengthDescriptions,
-      batchPlan,
-      params.licenseMode ?? 'licensed',
-      priorExerciseCount + 1,
-      isDocumentsModeUnlocked(currentMastery.values()),
-    );
-    if (planned !== 'unsupported') return 'generated';
-  }
-  await generateAdaptiveExercise(
+  // The rebuilt engine is the only generator (the legacy LLM-authored one
+  // was deleted on 2026-09-22): the model plans the month, code builds the
+  // key from the books (lib/tutor/generate-planned-exercise.ts).
+  await generatePlannedExercise(
     supabase,
     params.learnerId,
     target,
@@ -325,7 +308,7 @@ export async function generateNextExercise(
     nextKind === 'explain' ? 'explain' : 'adaptive',
     recentStrengthDescriptions,
     batchPlan,
-    params.licenseMode,
+    params.licenseMode ?? 'licensed',
     priorExerciseCount + 1,
     isDocumentsModeUnlocked(currentMastery.values()),
   );
@@ -475,7 +458,7 @@ export async function openCorrectionRoundOrAdvance(
 
 // The next exercise's starting difficulty before any reinforcement drop is
 // applied: one level up from whatever exercise was just scored, capped at
-// the highest defined level. generateAdaptiveExercise then drops it back
+// the highest defined level. buildPlannedBatch then drops it back
 // down a level if reinforcement is active for the target concept.
 export function deriveBaseDifficultyLevel(previousLevel: ExerciseDifficultyLevel): ExerciseDifficultyLevel {
   const index = EXERCISE_DIFFICULTY_LEVELS.indexOf(previousLevel);
