@@ -58,7 +58,11 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
   /tutor                      → Grading/generation engine, grouped by concern:
     generate-exercise.ts, generate-review-exercise.ts, assign-pack-exercise.ts, select-exercise-kind.ts,
       select-batch-concepts.ts, generation-checks.ts, documents-mode.ts
-                              → Exercise generation and assignment
+                              → Exercise generation and assignment (legacy engine: the LLM authors the key)
+    generate-planned-exercise.ts, build-key/, key-invariants.ts, party-master.ts, ledger-state.ts, bill-reference.ts
+                              → Rebuilt engine (2026-09-22): the LLM plans events, code builds the key, one
+                                replay of the books, one party identity, one bill-reference parser/formatter,
+                                one final invariant on the persisted object (invariant 7)
     score-submission.ts, score-qualitative.ts, ledger-findings.ts, adjudicate-findings.ts, rectification.ts,
       submission-gate.ts, books-reconciliation.ts, month-end-journals.ts
                               → Scoring, findings and the pre-scoring validity gate
@@ -208,7 +212,9 @@ These rules must never be violated by any code path, feature, or shortcut:
 
 5. **Mastery state changes only through the defined state-update pipeline** (`/lib/tutor/mastery.ts`, invoked from the mastery recompute job). No UI action, admin tool, or ad-hoc script may mutate `mastery_map`, `error_history`, or `hint_rung_usage` directly — mastery history must stay a complete, auditable trail of how a learner got to their current state.
 
-6. **A generated exercise's answer key is immutable once created.** The same answer key that scored the first submission for that exercise scores any resubmission for it. Regenerating or editing an answer key after the fact would silently invalidate prior scoring and break the mastery history's integrity.
+6. **A generated exercise's answer key is immutable once created.** The same answer key that scored the first submission for that exercise scores any resubmission for it. Regenerating or editing an answer key after the fact would silently invalidate prior scoring and break the mastery history's integrity. Bounded exception (owner decision 2026-09-22): a stored key may be corrected only by an owner-run, backed-up (`answer_key_corrections`), chain-recomputed and verified correction of a defect that was ours, never by app code, never by the generator, never silently; scores already recorded are never recomputed.
+
+7. **Answer keys are computed, never authored** (rebuild, 2026-09-22). On the planned engine (`learner_profile.generation_engine = 'planned'`) the LLM returns only commercial events (`lib/schemas/batch-plan.ts`); every ledger leg, GST head and amount, TDS figure, bill allocation, concept tag, opening balance and learner-facing line is built by code from `LedgerState` (`lib/tutor/ledger-state.ts`) and the party master (`lib/tutor/party-master.ts`) in `lib/tutor/build-key/`, and `assertKeyValid` (`lib/tutor/key-invariants.ts`) runs on the exact object that is persisted. A plan the books cannot support is regenerated, never patched. Bill references are produced only by `formatBillReference` (`lib/tutor/bill-reference.ts`).
 
 8. **Tax and identity facts come from code, not the model (2026-09-17).** Every party has one canonical identity (`partyIdentityFor`: one mock GSTIN, PAN, state and address, unique and stable across months); documents are stamped from the answer key; TDS and GST rates, bases and thresholds are checked against the dated table in `lib/tutor/tax-rules.ts`; place of supply follows the party's fixed state; reverse-charge tax is paid in cash. A generated answer key that disagrees with these rules is rejected, never shipped.
 
