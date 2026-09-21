@@ -238,8 +238,13 @@ export function inferPayeeType(partyName: string, entityType?: string | null): P
 const GST_SLABS_BASE = [0, 0.25, 3, 5, 12, 18, 28];
 
 export function allowedGstRates(date: CalendarDate | null): number[] {
-  // 40% slab from 22-Sep-2025 (Notification 9/2025-Central Tax (Rate)).
-  if (date && onOrAfter(date, 22, 8, 2025)) return [...GST_SLABS_BASE, 40];
+  // From 22-Sep-2025 (Notification 9/2025-Central Tax (Rate), the 56th
+  // Council's rate rationalisation): the 12% and 28% slabs are withdrawn
+  // and a 40% slab is added, leaving 5%, 18% and 40% beside nil and the
+  // special 0.25% and 3% rates. The table added 40% but kept 12 and 28
+  // until the pre-launch review (2026-09-22). Nothing this company trades
+  // stayed at 28% (that carve-out is tobacco).
+  if (date && onOrAfter(date, 22, 8, 2025)) return GST_SLABS_BASE.filter((rate) => rate !== 12 && rate !== 28).concat(40);
   return [...GST_SLABS_BASE];
 }
 

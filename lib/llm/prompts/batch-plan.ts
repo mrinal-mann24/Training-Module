@@ -50,15 +50,15 @@ export const CONCEPT_STORIES: Partial<Record<ConceptTag, string>> = {
   gst_classification: 'sales and purchases with GST at a real slab; the tax head follows the party state (the system computes it)',
   tds_classification: 'a service or expense bill (legal, audit, rent, contractor work) large enough for TDS to apply',
   bill_by_bill_referencing: 'bills raised and later settled by name',
-  customer_advance: 'a customer paying before you invoice (settlement mode "advance"), then an invoice that adjusts that advance (settlement "adjust_advance")',
-  supplier_advance: 'paying a vendor before their bill (settlement mode "advance"), then the bill that adjusts it (settlement "adjust_advance")',
-  on_account_reference: 'a receipt or payment that no bill can be identified for (settlement mode "on_account", with the reason)',
-  multi_bill_settlement: 'one receipt or payment clearing two or three open bills of the same party (settlement mode "full" naming each)',
+  customer_advance: 'a customer paying before you invoice (settlement_mode "advance"), then an invoice that adjusts that advance (settlement "adjust_advance")',
+  supplier_advance: 'paying a vendor before their bill (settlement_mode "advance"), then the bill that adjusts it (settlement "adjust_advance")',
+  on_account_reference: 'a receipt or payment that no bill can be identified for (settlement_mode "on_account", with the reason in "why")',
+  multi_bill_settlement: 'one receipt or payment clearing two or three open bills of the same party (settlement_mode "full" with each bill in "bills")',
   gst_set_off: 'enough GST sales and purchases in the month for a set-off to matter; the system appends the set-off itself',
   gst_payment: "nothing to plan: the system appends the payment of last month's GST when one is due",
   fixed_assets_depreciation: 'buying equipment, furniture or computers (purchase nature "asset") and a depreciation event on an asset ledger with a balance',
-  tds_on_receipt: 'a corporate customer paying an invoice for services or contract work net of TDS (receipt with "tds_withheld" set), plus an ordinary receipt paid in full',
-  rcm_and_late_fee: 'a legal bill from an advocate or law firm, or a goods transport agency bill (the system books the reverse charge itself), and a payment with no payee for the expense ledger "GST Late Fee and Interest" on a delayed GST payment',
+  tds_on_receipt: 'a sale with nature "service" to a corporate customer, later paid net of TDS (a receipt settling that invoice with "tds_withheld" set: "194J" for professional or consultancy work, "194C" for contract or installation work), plus an ordinary receipt paid in full',
+  rcm_and_late_fee: 'a legal bill from an advocate or law firm, or a goods transport agency bill (the system books the reverse charge itself), and a payment with party null and ledger "GST Late Fee and Interest" on a delayed GST payment',
 };
 
 function rupees(value: number): string {
@@ -97,11 +97,27 @@ Recently strong areas (open the scenario by naming what it builds on, then the t
 EVENT MENU (checked in code):
 ${describeMenu(params.menu)}
 - Days allowed: ${days}. "day" is the day of ${params.monthLabel}.
+- EVERY event carries EVERY field of the schema; a field that does not apply to the event's type is null (or [] for "lines" and "bills", false for "new_party"). Fields by type:
+  - sale: party (the customer; for a counter sale use "Cash" with settlement "cash"), nature ("goods", or "service" when the company bills a service such as consultancy or installation), lines, gst_rate, doc_number (our invoice number), settlement ("credit" | "cash" | "adjust_advance"), adjust_advance_ref (only with "adjust_advance").
+  - purchase: party (the vendor), nature ("goods" | "service" | "expense" | "asset"), ledger (null for goods), lines, gst_rate (null only for an exempt bill), doc_number (the vendor's bill number), settlement ("credit" | "adjust_advance"), adjust_advance_ref.
+  - receipt: party (the customer), instrument ("bank" | "cash"), settlement_mode, bills, amount, why, tds_withheld.
+  - payment to a party: party (the payee), instrument, settlement_mode, bills, amount, why. Direct expense payment: party null, ledger (the expense ledger), amount, instrument.
+  - contra: direction, amount. depreciation: ledger (the asset ledger), months, annual_rate_percent.
+  - credit_note: party (the customer), bills (exactly the one invoice it is against), lines, gst_rate, doc_number (the new note number). debit_note: the same with the vendor and their bill.
+- settlement_mode "full": "bills" lists every bill settled and "amount" is null (the books know the balance). "part": "bills" holds the one bill and "amount" the payment. "advance" and "on_account": "bills" is [] and "amount" is the money; "on_account" also needs "why".
 - A sale's "doc_number" is our invoice number (INV-...); a purchase's is the vendor's bill number. Every number must be new (see USED NUMBERS) and must not contain a date.
 - "lines" carry quantity and a taxable rate per unit; GST is added by the system at "gst_rate", a slab in force.
 - A purchase of nature "goods" posts to Purchases; "service" or "expense" names the expense ledger in "ledger" (e.g. "Legal & Professional Charges", "Rent", "Advertisement & Marketing"); "asset" names the asset ledger (e.g. "Office Equipment").
 - A receipt or payment settles what the books hold: mode "full" names open bills of that party (the amount is their balance), "part" names one bill and an amount below its balance, "advance" is money before any bill, "on_account" only when no bill can be identified.
-- A payment with no payee is a direct expense: give "expense_ledger" and "amount".
+- A payment with no party is a direct expense: give "ledger" and "amount".
+- PARTIES: use a name from PARTIES exactly as written. Never respell an existing party (no "M/s", "Pvt Ltd", "LLP", "& Co" variants). A genuinely new party needs new_party true and a plain trading name that does not start with "Cash" and does not contain Bank, HDFC, GST or TDS.
+- LEDGERS: an expense or asset ledger is a plain ledger name, never a party, a cash or bank ledger, or a GST/TDS ledger. Name the expense ledger after what was bought, so a fee for legal, audit, consultancy, rent, repairs, advertising, freight or commission work is visibly that ("Legal & Professional Charges", "Audit Fees", "Rent", "Repairs & Maintenance", "Advertisement & Marketing", "Freight & Delivery Charges", "Commission"). Goods lines must describe goods, not services.
+- DOCUMENT NUMBERS: one plain number in capitals with a serial, like INV-3012, MS/1001 or CN-07. No spaces, brackets, commas or dates, and never starting with ADV (the system numbers advances).
+- LINES: describe the item in plain words. No amounts, percentages, dates or product codes in a description. Choose quantities and rates so every figure, GST included, is a whole rupee (for example a taxable value that is a multiple of 100).
+- A credit_note or debit_note uses the same GST slab as the bill it is against.
+- Depreciation is one month at a time: "months" is 1, on a fixed asset ledger with a balance, at an annual rate of 40 or below.
+- "tds_withheld" is allowed only on a receipt that settles invoices raised with nature "service".
+- Events on the same day are posted in "seq" order: give a receipt, payment or note a higher seq than the bill it settles.
 - Keep cash and the bank positive at every step: cash withdrawals and deposits within what is held, payments within the bank balance on their day. Receipts dated later do not fund earlier payments.
 
 PARTIES (each has ONE fixed state; a new party may be introduced with new_party true):
@@ -114,7 +130,7 @@ POSITION entering this month: Cash ${rupees(params.cash)}; ${params.bankAccount}
 
 USED NUMBERS (never reuse; INV-18 and INV-018 are the same number): ${params.usedDocumentNumbers.slice(-150).join(', ') || 'none'}
 
-LEDGERS the company already uses (reuse names exactly where they fit): ${params.ledgerNames.join(', ') || 'none'}
+EXPENSE, INCOME AND ASSET LEDGERS the company already uses (reuse names exactly where they fit): ${params.ledgerNames.join(', ') || 'none'}
 
 TDS EXPOSURE this financial year (the system deducts TDS when a bill or the running total crosses the threshold):
 ${params.tdsExposure.map((row) => `- ${row.payee}, ${row.section}: ${rupees(row.paidSoFar)} so far`).join('\n') || '- none'}
@@ -122,7 +138,7 @@ ${taxRulesSummaryFor(params.month)}
 
 ${params.documentsMode ? 'DOCUMENTS MODE: the learner works from paperwork; keep the story to events that produce a document (invoices, bills, bank movements) plus at most two month-end journals.' : ''}
 
-"scenario": two or three sentences of story with NO rupee figures (the system prints the opening position). Never use an em dash.
+"scenario": two or three sentences of story. No amounts, percentages, figures, bill numbers or dashes, and no mention of a tax treatment (TDS, CGST, SGST, IGST, reverse charge): the learner works those out.
 
 Respond only with JSON matching the schema.`;
 }

@@ -133,3 +133,63 @@ describe('buildVendorInvoiceContent (every printed fact is the key\'s or the par
     expect(() => buildVendorInvoiceContent(broken, description)).toThrow(/do not add up/);
   });
 });
+
+// The fallback engine's keys are looser than the builder's (pre-launch
+// review, 2026-09-22): these shapes pass every generation check and used to
+// print a wrong bill or throw after the retry loop.
+describe('buildVendorInvoiceContent on the legacy engine key shapes', () => {
+  const dt = (overrides: Partial<AnswerKeyEntry> & Pick<AnswerKeyEntry, 'correct_account' | 'dr_cr' | 'amount'>) => leg({ bill_reference: 'DT/503', ...overrides });
+  const text = 'On 09-Jun-2025, an invoice arrived from Deccan Traders (Ref DT/503): post it from the attached invoice.';
+
+  it('never takes a credited Round Off or Discount leg for the vendor, whatever the order', () => {
+    const roundOffFirst = [
+      dt({ correct_account: 'Purchases', dr_cr: 'Dr', amount: 10000.4 }),
+      dt({ correct_account: 'Input CGST', dr_cr: 'Dr', amount: 900.04, gst_head: 'CGST', gst_rate: 9 }),
+      dt({ correct_account: 'Input SGST', dr_cr: 'Dr', amount: 900.04, gst_head: 'SGST', gst_rate: 9 }),
+      dt({ correct_account: 'Round Off', dr_cr: 'Cr', amount: 0.48 }),
+      dt({ correct_account: 'Deccan Traders', dr_cr: 'Cr', amount: 11800 }),
+    ];
+    const content = buildVendorInvoiceContent(roundOffFirst, text);
+    expect(content.vendorName).toBe('Deccan Traders');
+    expect(content.totalAmount).toBe(11800);
+    expect(content.roundOff).toBe(-0.48);
+    expect(content.lineItems).toHaveLength(1);
+  });
+
+  it('adds a settlement discount the company books back to the bill total, like TDS', () => {
+    const discounted = [
+      dt({ correct_account: 'Discount Received', dr_cr: 'Cr', amount: 500 }),
+      dt({ correct_account: 'Purchases', dr_cr: 'Dr', amount: 10000 }),
+      dt({ correct_account: 'Input CGST', dr_cr: 'Dr', amount: 900, gst_head: 'CGST', gst_rate: 9 }),
+      dt({ correct_account: 'Input SGST', dr_cr: 'Dr', amount: 900, gst_head: 'SGST', gst_rate: 9 }),
+      dt({ correct_account: 'Deccan Traders', dr_cr: 'Cr', amount: 11300 }),
+    ];
+    const content = buildVendorInvoiceContent(discounted, text);
+    expect(content.vendorName).toBe('Deccan Traders');
+    expect(content.totalAmount).toBe(11800);
+  });
+
+  it("prints no GST for a bill whose voucher carries the company's own reverse-charge legs", () => {
+    const rcmInside = [
+      leg({ correct_account: 'Legal & Professional Charges', dr_cr: 'Dr', amount: 20000, bill_reference: 'SL/77' }),
+      leg({ correct_account: 'Input CGST RCM', dr_cr: 'Dr', amount: 1800, gst_head: 'CGST', gst_rate: 9, bill_reference: 'SL/77' }),
+      leg({ correct_account: 'Input SGST RCM', dr_cr: 'Dr', amount: 1800, gst_head: 'SGST', gst_rate: 9, bill_reference: 'SL/77' }),
+      leg({ correct_account: 'Output CGST RCM', dr_cr: 'Cr', amount: 1800, gst_head: 'CGST', gst_rate: 9, bill_reference: 'SL/77' }),
+      leg({ correct_account: 'Output SGST RCM', dr_cr: 'Cr', amount: 1800, gst_head: 'SGST', gst_rate: 9, bill_reference: 'SL/77' }),
+      leg({ correct_account: 'Sharma Legal', dr_cr: 'Cr', amount: 20000, bill_reference: 'SL/77' }),
+    ];
+    const content = buildVendorInvoiceContent(rcmInside, 'On 09-Jun-2025, a legal bill SL/77 arrived from Sharma Legal.');
+    expect(content.taxBreakup).toEqual({ cgst_amount: null, sgst_amount: null, igst_amount: null });
+    expect(content.totalAmount).toBe(20000);
+    expect(content.reverseCharge).toBe(true);
+  });
+
+  it('refuses a "round-off" of a rupee or more instead of letting it absorb legs that do not add up', () => {
+    const absorbed = [
+      dt({ correct_account: 'Purchases', dr_cr: 'Dr', amount: 10000 }),
+      dt({ correct_account: 'Round Off', dr_cr: 'Dr', amount: 500 }),
+      dt({ correct_account: 'Deccan Traders', dr_cr: 'Cr', amount: 10500 }),
+    ];
+    expect(() => buildVendorInvoiceContent(absorbed, text)).toThrow(/is not a round-off/);
+  });
+});

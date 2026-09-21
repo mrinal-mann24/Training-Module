@@ -137,7 +137,10 @@ export function planSourceDocuments(
         partyAccounts: legs.map((leg) => leg.correct_account),
         transactionDescription,
       });
-    } else if (docType === "vendor_invoice") {
+    } else if (docType === "vendor_invoice" && /^purchase$/i.test(entry.voucher_type.trim())) {
+      // Only a Purchase is a vendor's bill. A debit note or journal the model
+      // marked vendor_invoice used to reach the invoice builder and throw
+      // after the retry loop (pre-launch review, 2026-09-22).
       plan.invoices.push({ legs, transactionDescription });
     }
     // sales_invoice / month_end_note are built by code in documents mode
@@ -1231,9 +1234,26 @@ export function runGenerationChecks(
     checkTextMatchesKey(generated, context.openBills ?? []),
     checkConceptTagsMatchContent(generated),
     context.documentsMode ? checkSalesInvoicesBuildable(generated, context.companyName) : null,
+    // Every vendor bill must be printable from the key BEFORE the batch leaves
+    // the loop: buildVendorInvoiceContent throws on legs it cannot print, and
+    // a throw after the loop fails the whole generation with no retry.
+    checkVendorInvoicesBuildable(generated, context.companyName),
   ].filter((message): message is string => message !== null);
   const soft = [checkOpeningFigures(generated, context.cashPosition)].filter((message): message is string => message !== null);
   return { hard, soft };
+}
+
+export function checkVendorInvoicesBuildable(generated: GeneratedExercise, companyName: string): string | null {
+  const problems: string[] = [];
+  for (const invoice of planSourceDocuments(generated).invoices) {
+    try {
+      buildVendorInvoiceContent(invoice.legs, invoice.transactionDescription, companyName);
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (problems.length === 0) return null;
+  return `Vendor invoices cannot be printed from the key: ${problems.join(" ")} Post a purchase as the expense or Purchases debit, the GST legs as their own debits, and the vendor credit for the bill total (less any TDS); give every credit purchase its own bill number in bill_reference and its date in the text.`;
 }
 
 // The code-owned steps that change a checked batch before it is built:
@@ -1378,7 +1398,7 @@ export async function generateAdaptiveExercise(
   const priorKeys = await loadAnswerKeys(supabase, learnerId);
   // Carried rectifications (2026-09-22): the owner's correcting journals for
   // an earlier month, appended to this batch inside the loop below.
-  const rectifications = await getPendingRectifications(supabase, learnerId);
+  const rectifications = await getPendingRectifications(supabase, learnerId, priorKeys);
   const yearStartIndex = Math.floor((exerciseOrdinal - 1) / 12) * 12;
   const priorRefs = priorBillReferences(priorKeys);
   const tdsHistory = tdsHistoryFromKeys(priorKeys.slice(yearStartIndex));
@@ -1551,7 +1571,7 @@ export async function generateAdaptiveExercise(
   // capping every adaptive result at 'partial' (2026-09-02).
   const generatedWithOpenings: GeneratedExercise = {
     ...generated,
-    answer_key: { ...generated.answer_key, opening_balances: openingBalances },
+    answer_key: { ...generated.answer_key, opening_balances: openingBalances, engine: "legacy" },
   };
 
   // Documents mode: every transaction becomes document-backed, the brief

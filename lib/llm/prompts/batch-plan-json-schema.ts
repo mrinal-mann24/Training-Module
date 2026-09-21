@@ -1,58 +1,26 @@
 import { EXERCISE_DIFFICULTY_LEVELS } from '@/lib/schemas/exercise';
 
-// JSON Schema for BatchPlanSchema (lib/schemas/batch-plan.ts), stated by
-// hand the way exercise-json-schema.ts is, with additionalProperties false
-// everywhere: a model that wants to write a ledger leg, a GST head or a
-// bill_reference gets a parse failure, not a wrong key.
+// The wire format of a batch plan: ONE flat event object with nullable
+// fields, converted to the typed union of lib/schemas/batch-plan.ts by
+// batchPlanFromWire (lib/schemas/batch-plan-wire.ts).
+//
+// It was a JSON Schema `anyOf` of eight event variants with two nested
+// settlement unions until the first dry run against a learner's real books
+// (2026-09-22): the provider's strict structured-output compiler refused
+// it ("The compiled grammar is too large"), so every planned generation
+// would have thrown in production. The legacy exercise schema, which the
+// same provider accepts, uses no `anyOf` at all; this one follows it: plain
+// objects, `type: [x, 'null']` and enums on non-nullable fields only (the
+// provider rejects an enum on a nullable type, so the nullable choice
+// fields are plain strings whose values the prompt lists and
+// BatchPlanSchema enforces). additionalProperties stays
+// false, so a model that wants to write a ledger leg, a GST head or a
+// bill_reference still gets a parse failure, not a wrong key.
 
-const party = {
-  type: 'object',
-  additionalProperties: false,
-  properties: { name: { type: 'string' }, new_party: { type: 'boolean' } },
-  required: ['name', 'new_party'],
-} as const;
+const nullableString = { type: ['string', 'null'] } as const;
+const nullableNumber = { type: ['number', 'null'] } as const;
 
-const lines = {
-  type: 'array',
-  minItems: 1,
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    properties: { description: { type: 'string' }, quantity: { type: 'number' }, rate: { type: 'number' } },
-    required: ['description', 'quantity', 'rate'],
-  },
-} as const;
-
-const settlement = {
-  anyOf: [
-    {
-      type: 'object',
-      additionalProperties: false,
-      properties: { mode: { type: 'string', enum: ['full'] }, bills: { type: 'array', minItems: 1, items: { type: 'string' } } },
-      required: ['mode', 'bills'],
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      properties: { mode: { type: 'string', enum: ['part'] }, bill: { type: 'string' }, amount: { type: 'number' } },
-      required: ['mode', 'bill', 'amount'],
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      properties: { mode: { type: 'string', enum: ['advance'] }, amount: { type: 'number' } },
-      required: ['mode', 'amount'],
-    },
-    {
-      type: 'object',
-      additionalProperties: false,
-      properties: { mode: { type: 'string', enum: ['on_account'] }, amount: { type: 'number' }, why: { type: 'string' } },
-      required: ['mode', 'amount', 'why'],
-    },
-  ],
-} as const;
-
-const seqDay = { seq: { type: 'integer' }, day: { type: 'integer', minimum: 1, maximum: 31 } } as const;
+export const BATCH_PLAN_EVENT_TYPES = ['sale', 'purchase', 'receipt', 'payment', 'contra', 'depreciation', 'credit_note', 'debit_note'] as const;
 
 export const BATCH_PLAN_JSON_SCHEMA = {
   type: 'object',
@@ -65,117 +33,77 @@ export const BATCH_PLAN_JSON_SCHEMA = {
       minItems: 1,
       maxItems: 14,
       items: {
-        anyOf: [
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['sale'] },
-              ...seqDay,
-              customer: party,
-              lines,
-              gst_rate: { type: 'number' },
-              settlement: { type: 'string', enum: ['credit', 'cash', 'adjust_advance'] },
-              adjust_advance_ref: { type: ['string', 'null'] },
-              doc_number: { type: 'string' },
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: [...BATCH_PLAN_EVENT_TYPES] },
+          seq: { type: 'integer' },
+          day: { type: 'integer', minimum: 1, maximum: 31 },
+          // The customer, vendor or payee; null for a contra, a depreciation
+          // and a direct expense payment.
+          party: nullableString,
+          new_party: { type: 'boolean' },
+          // Sale, purchase, credit_note, debit_note; empty otherwise.
+          lines: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { description: { type: 'string' }, quantity: { type: 'number' }, rate: { type: 'number' } },
+              required: ['description', 'quantity', 'rate'],
             },
-            required: ['type', 'seq', 'day', 'customer', 'lines', 'gst_rate', 'settlement', 'adjust_advance_ref', 'doc_number'],
           },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['purchase'] },
-              ...seqDay,
-              vendor: party,
-              nature: { type: 'string', enum: ['goods', 'service', 'expense', 'asset'] },
-              ledger: { type: ['string', 'null'] },
-              lines,
-              gst_rate: { type: ['number', 'null'] },
-              settlement: { type: 'string', enum: ['credit', 'adjust_advance'] },
-              adjust_advance_ref: { type: ['string', 'null'] },
-              doc_number: { type: 'string' },
-            },
-            required: ['type', 'seq', 'day', 'vendor', 'nature', 'ledger', 'lines', 'gst_rate', 'settlement', 'adjust_advance_ref', 'doc_number'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['receipt'] },
-              ...seqDay,
-              customer: party,
-              instrument: { type: 'string', enum: ['bank', 'cash'] },
-              settlement,
-              tds_withheld: { anyOf: [{ type: 'string', enum: ['194J', '194C'] }, { type: 'null' }] },
-            },
-            required: ['type', 'seq', 'day', 'customer', 'instrument', 'settlement', 'tds_withheld'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['credit_note'] },
-              ...seqDay,
-              customer: party,
-              against_bill: { type: 'string' },
-              lines,
-              gst_rate: { type: 'number' },
-              note_number: { type: 'string' },
-            },
-            required: ['type', 'seq', 'day', 'customer', 'against_bill', 'lines', 'gst_rate', 'note_number'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['debit_note'] },
-              ...seqDay,
-              vendor: party,
-              against_bill: { type: 'string' },
-              lines,
-              gst_rate: { type: ['number', 'null'] },
-              note_number: { type: 'string' },
-            },
-            required: ['type', 'seq', 'day', 'vendor', 'against_bill', 'lines', 'gst_rate', 'note_number'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['payment'] },
-              ...seqDay,
-              payee: { anyOf: [party, { type: 'null' }] },
-              settlement: { anyOf: [settlement, { type: 'null' }] },
-              expense_ledger: { type: ['string', 'null'] },
-              amount: { type: ['number', 'null'] },
-              instrument: { type: 'string', enum: ['bank', 'cash'] },
-            },
-            required: ['type', 'seq', 'day', 'payee', 'settlement', 'expense_ledger', 'amount', 'instrument'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['contra'] },
-              ...seqDay,
-              direction: { type: 'string', enum: ['cash_to_bank', 'bank_to_cash'] },
-              amount: { type: 'number' },
-            },
-            required: ['type', 'seq', 'day', 'direction', 'amount'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              type: { type: 'string', enum: ['depreciation'] },
-              ...seqDay,
-              asset_ledger: { type: 'string' },
-              months: { type: 'integer', minimum: 1, maximum: 12 },
-              annual_rate_percent: { type: 'number' },
-            },
-            required: ['type', 'seq', 'day', 'asset_ledger', 'months', 'annual_rate_percent'],
-          },
+          gst_rate: nullableNumber,
+          // Our invoice number, the vendor's bill number, or the note number.
+          doc_number: nullableString,
+          // Sale: credit | cash | adjust_advance. Purchase: credit | adjust_advance.
+          settlement: nullableString,
+          adjust_advance_ref: nullableString,
+          // Purchase only.
+          nature: nullableString,
+          // Purchase: the expense or asset ledger (null for goods). Payment
+          // with no party: the expense ledger. Depreciation: the asset ledger.
+          ledger: nullableString,
+          // Receipt and payment.
+          instrument: nullableString,
+          settlement_mode: nullableString,
+          // Mode full: every bill settled. Mode part: the one bill. Credit
+          // and debit notes: the one bill the note is against. Empty otherwise.
+          bills: { type: 'array', items: { type: 'string' } },
+          // Mode part, advance, on_account; a direct expense payment; a contra.
+          amount: nullableNumber,
+          // Mode on_account: why no bill can be identified.
+          why: nullableString,
+          // Receipt: the section under which the customer withheld TDS.
+          tds_withheld: nullableString,
+          // Contra.
+          direction: nullableString,
+          // Depreciation.
+          months: { type: ['integer', 'null'] },
+          annual_rate_percent: nullableNumber,
+        },
+        required: [
+          'type',
+          'seq',
+          'day',
+          'party',
+          'new_party',
+          'lines',
+          'gst_rate',
+          'doc_number',
+          'settlement',
+          'adjust_advance_ref',
+          'nature',
+          'ledger',
+          'instrument',
+          'settlement_mode',
+          'bills',
+          'amount',
+          'why',
+          'tds_withheld',
+          'direction',
+          'months',
+          'annual_rate_percent',
         ],
       },
     },

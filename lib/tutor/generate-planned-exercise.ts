@@ -11,10 +11,10 @@ import { getPendingRectifications, markRectificationsCarried } from '@/lib/db/qu
 import { insertExercise } from '@/lib/db/queries/exercises';
 import { buildBatchPlanPrompt, buildBatchPlanRetryPrompt, type BatchPlanParams } from '@/lib/llm/prompts/batch-plan';
 import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
-import { BatchPlanSchema } from '@/lib/schemas/batch-plan';
+import { batchPlanFromWire } from '@/lib/schemas/batch-plan-wire';
 import type { ConceptTag, ExerciseDifficultyLevel, GeneratedExercise } from '@/lib/schemas/exercise';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
-import { normalizeAccountName, partyAccountsOf } from '@/lib/tutor/account-names';
+import { classifyLedger, normalizeAccountName, partyAccountsOf } from '@/lib/tutor/account-names';
 import { buildAnswerKey } from '@/lib/tutor/build-key';
 import { eventMenuFor, supportsConcepts } from '@/lib/tutor/build-key/event-menu';
 import { appendCarriedRectifications } from '@/lib/tutor/carried-rectifications';
@@ -49,29 +49,40 @@ const DEFAULT_COMPANY = 'Blossom Retail Pvt Ltd';
 
 export type PlannedExerciseOutcome = { id: string } | 'unsupported';
 
-export async function generatePlannedExercise(
+// Everything up to, and excluding, the first write: the books are read, the
+// model plans, code builds and checks. Split from the persistence below so
+// scripts/dry-run-planned-batch.ts can run the real pipeline against a
+// learner's real books and save nothing.
+export type PlannedBatch = {
+  exercise: GeneratedExercise;
+  companyName: string;
+  statementContent: NonNullable<ReturnType<typeof buildBankStatementContent>>['content'] | null;
+  codeBuiltDocuments: Parameters<typeof prepareSourceDocuments>[5];
+  documentLines: Map<number, { description: string; quantity: number; rate: number }[]>;
+  rectificationIds: string[];
+  // What each rejected attempt was sent back for (empty when the first plan held).
+  rejectedAttempts: string[][];
+};
+
+export async function buildPlannedBatch(
   supabase: SupabaseClient,
   learnerId: string,
   target: WeakConceptTarget,
   difficultyLevel: ExerciseDifficultyLevel,
-  kind: 'adaptive' | 'explain',
   recentStrengthDescriptions: string[],
   batchPlan: { strengths: ConceptTag[]; weaknesses: ConceptTag[] } | null,
   licenseMode: LicenseMode,
   exerciseOrdinal: number,
   documentsMode: boolean,
-): Promise<PlannedExerciseOutcome> {
+): Promise<PlannedBatch | 'unsupported'> {
   const concepts: ConceptTag[] = [
     target.conceptTag,
     ...(target.escalationActive || !batchPlan ? [] : [...batchPlan.strengths, ...batchPlan.weaknesses]),
   ];
   if (!supportsConcepts(concepts)) return 'unsupported';
 
-  const [company, priorKeys, rectifications] = await Promise.all([
-    getCompanyState(supabase, learnerId),
-    loadAnswerKeys(supabase, learnerId),
-    getPendingRectifications(supabase, learnerId),
-  ]);
+  const [company, priorKeys] = await Promise.all([getCompanyState(supabase, learnerId), loadAnswerKeys(supabase, learnerId)]);
+  const rectifications = await getPendingRectifications(supabase, learnerId, priorKeys);
   const companyName = company.companyName ?? DEFAULT_COMPANY;
   const state = replayKeys(priorKeys);
   const month = exerciseMonthForModule(exerciseOrdinal);
@@ -104,7 +115,10 @@ export async function generatePlannedExercise(
     bank: position.bank,
     bankAccount,
     usedDocumentNumbers: priorDocumentNumbers(priorKeys),
-    ledgerNames: registryNames,
+    ledgerNames: registryNames.filter((name) => {
+      const kind = classifyLedger(name, partyKeys);
+      return kind === 'profit_and_loss' || (kind === 'balance_sheet' && /equipment|furniture|fixture|computer|machinery|vehicle|plant/i.test(name));
+    }),
     tdsExposure: [...tdsHistory.entries()].map(([id, paidSoFar]) => {
       const [payee, section] = id.split('|');
       return { payee, section, paidSoFar };
@@ -118,8 +132,10 @@ export async function generatePlannedExercise(
   let statement: ReturnType<typeof buildBankStatementContent> = null;
   // The plan's line items per sale/purchase, for the printed vendor invoice.
   let documentLines: Map<number, { description: string; quantity: number; rate: number }[]> = new Map();
+  const rejectedAttempts: string[][] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS && finalExercise === null; attempt += 1) {
+    if (violations.length > 0) rejectedAttempts.push(violations);
     const { messages, jsonSchema } = violations.length === 0 ? buildBatchPlanPrompt(params) : buildBatchPlanRetryPrompt(params, violations);
     const raw = await getTracedStructuredCompletion({
       messages,
@@ -129,11 +145,14 @@ export async function generatePlannedExercise(
       callType: 'batch-plan',
       extraMetadata: { targetConceptTag: target.conceptTag, reason: target.reason, attempt },
     });
-    const parsed = BatchPlanSchema.safeParse(raw);
-    if (!parsed.success) {
-      violations = [`the plan did not match the schema: ${parsed.error.message.slice(0, 600)}`];
+    // The model answers in the flat wire shape; the typed plan is derived
+    // and validated in code (lib/schemas/batch-plan-wire.ts).
+    const converted = batchPlanFromWire(raw);
+    if (!converted.ok) {
+      violations = converted.violations;
       continue;
     }
+    const parsed = { data: converted.plan };
 
     const built = buildAnswerKey({
       plan: parsed.data,
@@ -191,7 +210,7 @@ export async function generatePlannedExercise(
 
     const stamped: GeneratedExercise = {
       ...stampOpeningPosition(finalized.generated, position, company.openingBalances),
-      answer_key: { ...finalized.generated.answer_key, opening_balances: openingBalancesOf(state) },
+      answer_key: { ...finalized.generated.answer_key, opening_balances: openingBalancesOf(state), engine: 'planned' },
     };
     documentsPlan = documentsMode ? applyDocumentsMode(stamped, { companyName, monthLabel: month.label, priorKeys }) : null;
     const modeApplied = documentsPlan ? documentsPlan.generated : stamped;
@@ -230,10 +249,49 @@ export async function generatePlannedExercise(
         ...(documentsPlan.salesRegister ? [{ document: { doc_type: 'sales_register' as const, content: documentsPlan.salesRegister }, seed: 'sales-register' }] : []),
       ]
     : [];
-  const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, companyName, statement?.content ?? null, codeBuiltDocuments, documentLines);
+  return {
+    exercise: finalExercise,
+    companyName,
+    statementContent: statement?.content ?? null,
+    codeBuiltDocuments,
+    documentLines,
+    rectificationIds: rectifications.map((rectification) => rectification.id),
+    rejectedAttempts,
+  };
+}
+
+export async function generatePlannedExercise(
+  supabase: SupabaseClient,
+  learnerId: string,
+  target: WeakConceptTarget,
+  difficultyLevel: ExerciseDifficultyLevel,
+  kind: 'adaptive' | 'explain',
+  recentStrengthDescriptions: string[],
+  batchPlan: { strengths: ConceptTag[]; weaknesses: ConceptTag[] } | null,
+  licenseMode: LicenseMode,
+  exerciseOrdinal: number,
+  documentsMode: boolean,
+): Promise<PlannedExerciseOutcome> {
+  // Nothing has been written while the batch is being built, so a failure
+  // here (the model's provider refusing the request, three plans the books
+  // reject) can safely hand the month to the legacy generator instead of
+  // leaving the learner with a scored submission and no next batch
+  // (pre-launch review, 2026-09-22). Failures AFTER this point are not
+  // caught: the exercise row may exist, and the step's own retry guard
+  // handles that.
+  let built: PlannedBatch | 'unsupported';
+  try {
+    built = await buildPlannedBatch(supabase, learnerId, target, difficultyLevel, recentStrengthDescriptions, batchPlan, licenseMode, exerciseOrdinal, documentsMode);
+  } catch (error) {
+    console.error(`[planned-generator] learner ${learnerId}: could not build a batch, falling back to the legacy generator: ${error instanceof Error ? error.message : String(error)}`);
+    return 'unsupported';
+  }
+  if (built === 'unsupported') return 'unsupported';
+  const finalExercise = built.exercise;
+  const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, built.companyName, built.statementContent, built.codeBuiltDocuments, built.documentLines);
 
   const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
-  await markRectificationsCarried(supabase, rectifications.map((rectification) => rectification.id), id);
+  await markRectificationsCarried(supabase, built.rectificationIds, id);
   await attachSourceDocuments(supabase, id, documents);
 
   const newLedgers = finalExercise.answer_key.entries.map((entry) => ({ ledgerName: entry.correct_account, ledgerType: entry.voucher_type }));

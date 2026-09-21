@@ -2,7 +2,9 @@ import type { AnswerKey, GeneratedExercise } from '@/lib/schemas/exercise';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { allocationsFromReference, formatBillReference, parseBillReferences } from '@/lib/tutor/bill-reference';
 import { checkEducationalDates } from '@/lib/tutor/educational-dates';
-import { runGenerationChecks, type ExerciseMonth } from '@/lib/tutor/generate-exercise';
+import { buildVendorInvoiceContent } from '@/lib/documents/build-vendor-invoice';
+import { checkSalesInvoicesBuildable } from '@/lib/tutor/documents-mode';
+import { planSourceDocuments, runGenerationChecks, type ExerciseMonth } from '@/lib/tutor/generate-exercise';
 import { priorBillReferences, tdsHistoryFromKeys } from '@/lib/tutor/generation-checks';
 import { applyKey, cashPositionOf, cloneLedgerState, openBillsOf, openingBalancesOf, type LedgerState } from '@/lib/tutor/ledger-state';
 import { payeeTypeFor, type PartyMaster } from '@/lib/tutor/party-master';
@@ -48,12 +50,34 @@ export function assertKeyValid(input: KeyInvariantInput): Violation[] {
     partyTaxClasses: new Map(),
     priorRefs: priorBillReferences(input.priorKeys),
     tdsHistory: tdsHistoryFromKeys(input.priorKeys.slice(yearStartIndex)),
-    documentsMode: input.documentsMode,
+    // Not the model's documents-mode checks: this object is already past
+    // applyDocumentsMode, so a journal's line is a pointer to the notes
+    // sheet built from its full text, and the code-appended GST set-off
+    // states no figure on purpose. checkMonthEndNoteDetails polices a
+    // model's figure-less journal and would reject every such batch (first
+    // dry run, 2026-09-22). What matters here is checked below: every
+    // document the batch needs can actually be built.
+    documentsMode: false,
     companyName: input.companyName,
     stateCodeOf: (party) => input.master.resolve(party).stateCode,
     payeeTypeOf: (party) => payeeTypeFor(input.master.resolve(party)),
   });
   for (const message of hard) violations.push({ code: codeOf(message), message });
+
+  // DOCUMENTS: a document that cannot be printed from the key is a plan
+  // problem to retry, not a crash after the loop (buildVendorInvoiceContent
+  // and buildSalesInvoiceContent throw on legs they cannot print).
+  if (input.documentsMode) {
+    const sales = checkSalesInvoicesBuildable(generated, input.companyName);
+    if (sales) violations.push({ code: 'DOCUMENTS', message: sales });
+  }
+  for (const invoice of planSourceDocuments(generated).invoices) {
+    try {
+      buildVendorInvoiceContent(invoice.legs, invoice.transactionDescription, input.companyName);
+    } catch (error) {
+      violations.push({ code: 'DOCUMENTS', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   if (input.licenseMode === 'educational') {
     const message = checkEducationalDates(generated, { monthIndex: input.month.monthIndex, year: input.month.year });

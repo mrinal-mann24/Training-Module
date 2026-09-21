@@ -50,8 +50,13 @@ function rawTokens(name: string): string[] {
 // count only as words of their own ("GST@18%", "TDS194C" still count).
 const TAX_WORD = /(?<![a-z])(?:[csi]|ut)?gst(?![a-z])|(?<![a-z])tds(?![a-z])/i;
 
+// A GST- or TDS-worded EXPENSE is not a tax control ledger: "GST Late Fee
+// and Interest" (rulebook 13) is an indirect expense with a balance to
+// carry and tie out like any other (pre-launch review, 2026-09-22).
+const TAX_WORDED_EXPENSE = /late fee|interest|penalt/i;
+
 export function isTaxLedgerName(name: string): boolean {
-  return TAX_WORD.test(name);
+  return TAX_WORD.test(name) && !TAX_WORDED_EXPENSE.test(name);
 }
 
 // Balance-sheet markers (2026-09-17). "payable" is a filler word for the

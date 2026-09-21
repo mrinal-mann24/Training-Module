@@ -4,13 +4,23 @@ import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import { canonicalRef, formatBillReference, looksLikeDate, type Allocation } from '@/lib/tutor/bill-reference';
 import { daysInMonth, educationalDayFor } from '@/lib/tutor/educational-dates';
-import { applyVoucher, billTaxableRatioOf, cashPositionOf, cloneLedgerState, openItemsOf, referenceKey, type LedgerState, type OpenItem } from '@/lib/tutor/ledger-state';
+import { applyVoucher, billTaxableRatioOf, cashPositionOf, cloneLedgerState, isServiceBill, openItemsOf, referenceKey, type LedgerState, type OpenItem } from '@/lib/tutor/ledger-state';
 import type { PartyMaster, PartyRecord } from '@/lib/tutor/party-master';
 import { reverseChargeCategoryFor, type CalendarDate } from '@/lib/tutor/tax-rules';
 import { findOpenAdvance, resolveSettlement } from './allocate';
 import { conceptTagsFor } from './concept-tags';
 import { allocationPhrase, describeVoucher, type DescribedVoucher } from './describe';
 import type { EventMenu } from './event-menu';
+import {
+  assetLedgerViolation,
+  documentNumberViolation,
+  ledgerViolation,
+  lineDescriptionViolation,
+  loosePartyKey,
+  partyNameViolation,
+  purchaseNatureViolation,
+  scenarioViolation,
+} from './validate';
 import { gstEntry, gstLegsFor, newTdsTracker, rcmLegsFor, round2, tdsDecisionFor, tdsWithheldFor, type BuiltLeg, type TdsDecision } from './tax';
 
 // The deterministic key builder (2026-09-22, rebuild Stage 3): a batch
@@ -47,6 +57,7 @@ export type BuildKeyResult =
 
 const CASH = 'Cash';
 const SALES = 'Sales';
+const SERVICE_INCOME = 'Service Income';
 const PURCHASES = 'Purchases';
 const DEPRECIATION = 'Depreciation';
 
@@ -122,6 +133,8 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
     seqs.add(event.seq);
     if (!menu.allowedTypes.includes(event.type)) violations.push(`event ${event.seq}: type "${event.type}" is not allowed at this level`);
   }
+  const scenarioProblem = scenarioViolation(plan.scenario, month.year);
+  if (scenarioProblem) violations.push(scenarioProblem);
   if (violations.length > 0) return { generated: null, violations };
 
   // Dates: a licensed learner posts on the day the plan says (clamped to
@@ -150,6 +163,11 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
     return `ADV-${side}${String(advanceCounter[side]).padStart(2, '0')}`;
   };
   const claimDocumentNumber = (sequence: number, number: string): boolean => {
+    const shape = documentNumberViolation(number);
+    if (shape) {
+      violations.push(`transaction ${sequence}: ${shape}`);
+      return false;
+    }
     const key = canonicalRef(number);
     if (!key) {
       violations.push(`transaction ${sequence}: "${number}" is not a usable document number`);
@@ -170,11 +188,14 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
   const entries: AnswerKeyEntry[] = [];
   const transactions: GeneratedExercise['transactions'] = [];
   const documentLines = new Map<number, LineItem[]>();
+  // New parties this plan has already introduced, so a later event may name
+  // them again without new_party.
+  const batchParties = new Set<string>();
 
   let sequence = 0;
   for (const { event, date } of dated) {
     sequence += 1;
-    const result = buildEvent({ event, date, sequence, working, input, mintAdvance, claimDocumentNumber, tracker, violations });
+    const result = buildEvent({ event, date, sequence, working, input, mintAdvance, claimDocumentNumber, tracker, violations, batchParties });
     if (!result) continue;
     if (event.type === 'sale' || event.type === 'purchase') documentLines.set(sequence, event.lines.map((line) => ({ ...line })));
     const vouchers: { legs: BuiltLeg[]; voucher: DescribedVoucher; docType: SourceDocumentType | null }[] = [
@@ -192,6 +213,12 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
     }
     for (const { legs: built, voucher, docType } of vouchers) {
       const seq = built[0]?.sequence ?? sequence;
+      // The learner's line states whole rupees while the key and the scorer
+      // are exact, so a figure with paise would read wrong in the text.
+      const paise = built.find((item) => Math.abs(item.amount - Math.round(item.amount)) > 0.004);
+      if (paise) {
+        violations.push(`transaction ${seq}: ${paise.correct_account} comes to Rs ${paise.amount.toFixed(2)}; choose quantities and rates so every figure, GST included, is a whole rupee`);
+      }
       const tags = conceptTagsFor(built, { assetPurchase: event.type === 'purchase' && event.nature === 'asset' });
       const fullLegs: AnswerKeyEntry[] = built.map((item) => ({
         ...item,
@@ -237,7 +264,34 @@ type EventContext = {
   claimDocumentNumber: (sequence: number, number: string) => boolean;
   tracker: ReturnType<typeof newTdsTracker>;
   violations: string[];
+  batchParties: Set<string>;
 };
+
+// The party a plan names, refused when the name would be read as another
+// kind of ledger, is a second spelling of an existing party, or is unknown
+// without new_party. Null after pushing the violation.
+function resolveParty(context: EventContext, ref: { name: string; new_party: boolean }): PartyRecord | null {
+  const problem = partyNameViolation({ name: ref.name, newParty: ref.new_party, master: context.input.master, raisedInBatch: context.batchParties });
+  if (problem) {
+    context.violations.push(`transaction ${context.sequence}: ${problem}`);
+    return null;
+  }
+  const party = context.input.master.resolve(ref.name);
+  if (!party.known) context.batchParties.add(loosePartyKey(ref.name));
+  return party;
+}
+
+function linesOk(context: EventContext, lines: readonly LineItem[]): boolean {
+  let ok = true;
+  for (const line of lines) {
+    const problem = lineDescriptionViolation(line.description);
+    if (problem) {
+      context.violations.push(`transaction ${context.sequence}: ${problem}`);
+      ok = false;
+    }
+  }
+  return ok;
+}
 
 type EventResult = { legs: BuiltLeg[]; voucher: DescribedVoucher; derived?: { legs: BuiltLeg[]; voucher: DescribedVoucher } };
 
@@ -289,8 +343,10 @@ function buildEvent(context: EventContext): EventResult | null {
     case 'sale': {
       if (event.lines.length > input.menu.maxLinesPerDocument) violations.push(`transaction ${sequence}: at most ${input.menu.maxLinesPerDocument} line items`);
       if (!context.claimDocumentNumber(sequence, event.doc_number)) return null;
+      if (!linesOk(context, event.lines)) return null;
       const taxable = lineTotal(event.lines);
-      const customer = event.settlement === 'cash' ? null : input.master.resolve(event.customer.name);
+      const customer = event.settlement === 'cash' ? null : resolveParty(context, event.customer);
+      if (event.settlement !== 'cash' && !customer) return null;
       const gst = gstLegsFor(taxable, event.gst_rate, customer, 'output', date);
       if (gst.violation) {
         violations.push(`transaction ${sequence}: ${gst.violation}`);
@@ -315,7 +371,7 @@ function buildEvent(context: EventContext): EventResult | null {
       const legs = stampReference(
         [
           leg(sequence, 'Sales', customer ? customer.ledgerName : CASH, 'Dr', total),
-          leg(sequence, 'Sales', SALES, 'Cr', taxable),
+          leg(sequence, 'Sales', event.nature === 'service' ? SERVICE_INCOME : SALES, 'Cr', taxable),
           ...gst.legs.map((item) => gstEntry(sequence, 'Sales', item, 'Cr')),
         ],
         reference,
@@ -339,10 +395,20 @@ function buildEvent(context: EventContext): EventResult | null {
     case 'purchase': {
       if (event.lines.length > input.menu.maxLinesPerDocument) violations.push(`transaction ${sequence}: at most ${input.menu.maxLinesPerDocument} line items`);
       if (!context.claimDocumentNumber(sequence, event.doc_number)) return null;
-      const vendor = input.master.resolve(event.vendor.name);
+      const vendor = resolveParty(context, event.vendor);
+      if (!vendor || !linesOk(context, event.lines)) return null;
       const ledger = event.nature === 'goods' ? PURCHASES : event.ledger?.trim() || null;
       if (!ledger) {
         violations.push(`transaction ${sequence}: a ${event.nature} purchase must name its ledger`);
+        return null;
+      }
+      const ledgerProblem =
+        event.nature === 'goods'
+          ? null
+          : (ledgerViolation({ ledger, master: input.master, bankAccount: bank, role: event.nature === 'asset' ? 'asset' : 'expense' }) ?? (event.nature === 'asset' ? assetLedgerViolation(ledger) : null));
+      const natureProblem = purchaseNatureViolation({ nature: event.nature, ledger, descriptions: event.lines.map((line) => line.description) });
+      if (ledgerProblem || natureProblem) {
+        violations.push(`transaction ${sequence}: ${ledgerProblem ?? natureProblem}`);
         return null;
       }
       if (event.nature === 'asset' && !input.menu.allowAssets) violations.push(`transaction ${sequence}: asset purchases are not allowed at this level`);
@@ -352,6 +418,13 @@ function buildEvent(context: EventContext): EventResult | null {
       // GST; the company books the tax on itself in a journal that follows.
       const category = event.nature === 'service' || event.nature === 'expense' ? reverseChargeCategoryFor({ party: vendor.ledgerName, expenseLedgers: [ledger] }) : null;
       const reverseCharge = category?.mandatory === true;
+      // A foreign supplier has no GSTIN and no Indian state; the party
+      // master cannot print one, so an import is refused rather than booked
+      // with a Karnataka identity and CGST/SGST under reverse charge.
+      if (category?.id === 'import_of_services') {
+        violations.push(`transaction ${sequence}: an import of services is not supported; use a domestic vendor`);
+        return null;
+      }
       if (reverseCharge && event.gst_rate === null) {
         violations.push(`transaction ${sequence}: ${category?.description ?? 'this supply'} is under reverse charge; give the purchase its GST slab in gst_rate (18 for legal services)`);
         return null;
@@ -372,6 +445,10 @@ function buildEvent(context: EventContext): EventResult | null {
         event.nature === 'service' || event.nature === 'expense'
           ? tdsDecisionFor({ party: vendor, expenseLedger: ledger, taxable, date, tracker: context.tracker })
           : { applies: false, section: null };
+      if ((tds.applies || reverseCharge) && !input.menu.allowTds) {
+        violations.push(`transaction ${sequence}: this bill carries ${reverseCharge ? 'reverse charge' : 'TDS'}, which is not allowed at this level; keep purchases to goods`);
+        return null;
+      }
       const partyAmount = round2(total - (tds.applies ? tds.amount : 0));
       let allocations: Allocation[];
       let consumed: { ref: string; amount: number } | null = null;
@@ -428,7 +505,8 @@ function buildEvent(context: EventContext): EventResult | null {
     }
 
     case 'receipt': {
-      const customer = input.master.resolve(event.customer.name);
+      const customer = resolveParty(context, event.customer);
+      if (!customer) return null;
       if (event.settlement.mode === 'advance' && !input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
       if (event.settlement.mode === 'on_account' && !input.menu.allowOnAccount) violations.push(`transaction ${sequence}: on-account settlements are not allowed at this level`);
       if (event.settlement.mode === 'full' && event.settlement.bills.length > 1 && !input.menu.allowMultiBill) violations.push(`transaction ${sequence}: settle one bill per receipt at this level`);
@@ -456,6 +534,10 @@ function buildEvent(context: EventContext): EventResult | null {
         }
         let base = 0;
         for (const allocation of resolved.allocations) {
+          if (!isServiceBill(context.working, customer.ledgerName, allocation.ref)) {
+            violations.push(`transaction ${sequence}: ${allocation.ref} is an invoice for goods; a customer withholds TDS only on a service invoice (a sale with nature "service")`);
+            return null;
+          }
           const ratio = billTaxableRatioOf(context.working, customer.ledgerName, allocation.ref);
           if (ratio === null) {
             violations.push(`transaction ${sequence}: the books hold no taxable value for ${allocation.ref}; TDS cannot be withheld on an opening-balance bill`);
@@ -493,7 +575,8 @@ function buildEvent(context: EventContext): EventResult | null {
       if (event.lines.length > input.menu.maxLinesPerDocument) violations.push(`transaction ${sequence}: at most ${input.menu.maxLinesPerDocument} line items`);
       if (!context.claimDocumentNumber(sequence, event.note_number)) return null;
       const isCredit = event.type === 'credit_note';
-      const party = input.master.resolve(isCredit ? event.customer.name : event.vendor.name);
+      const party = resolveParty(context, isCredit ? event.customer : event.vendor);
+      if (!party || !linesOk(context, event.lines)) return null;
       const side: OpenItem['side'] = isCredit ? 'receivable' : 'payable';
       const open = openItemsOf(context.working).filter((item) => item.kind === 'bill' && item.party === party.ledgerName && item.side === side);
       const bill = open.find((item) => item.key === referenceKey(event.against_bill));
@@ -502,6 +585,16 @@ function buildEvent(context: EventContext): EventResult | null {
           `transaction ${sequence}: ${party.ledgerName} has no open bill ${event.against_bill} for a ${isCredit ? 'credit' : 'debit'} note; open: ${open.map((item) => `${item.ref} (Rs ${Math.round(item.open).toLocaleString('en-IN')})`).join(', ') || 'none'}`,
         );
         return null;
+      }
+      // A note reverses the bill's own GST: the slab is the one the bill was
+      // raised at, read back from the taxable share the books remember.
+      const ratio = billTaxableRatioOf(context.working, party.ledgerName, bill.ref);
+      if (ratio !== null) {
+        const raisedAt = Math.round((1 / ratio - 1) * 1000) / 10;
+        if (Math.abs(raisedAt - (event.gst_rate ?? 0)) > 0.3) {
+          violations.push(`transaction ${sequence}: ${bill.ref} was raised at ${raisedAt}% GST; a note against it uses the same slab (gst_rate ${raisedAt === 0 ? 'null' : raisedAt})`);
+          return null;
+        }
       }
       const taxable = lineTotal(event.lines);
       const gst = event.gst_rate === null ? { legs: [], violation: null } : gstLegsFor(taxable, event.gst_rate, party, isCredit ? 'output' : 'input', date);
@@ -549,7 +642,8 @@ function buildEvent(context: EventContext): EventResult | null {
           violations.push(`transaction ${sequence}: a payment to a party needs a settlement`);
           return null;
         }
-        const payee = input.master.resolve(event.payee.name);
+        const payee = resolveParty(context, event.payee);
+        if (!payee) return null;
         if (event.settlement.mode === 'advance' && !input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
         if (event.settlement.mode === 'on_account' && !input.menu.allowOnAccount) violations.push(`transaction ${sequence}: on-account settlements are not allowed at this level`);
         if (event.settlement.mode === 'full' && event.settlement.bills.length > 1 && !input.menu.allowMultiBill) violations.push(`transaction ${sequence}: settle one bill per payment at this level`);
@@ -576,7 +670,12 @@ function buildEvent(context: EventContext): EventResult | null {
       }
       const expenseLedger = event.expense_ledger?.trim() || null;
       if (!expenseLedger || event.amount === null) {
-        violations.push(`transaction ${sequence}: a direct expense payment needs expense_ledger and amount`);
+        violations.push(`transaction ${sequence}: a direct expense payment needs ledger and amount`);
+        return null;
+      }
+      const expenseProblem = ledgerViolation({ ledger: expenseLedger, master: input.master, bankAccount: bank, role: 'expense' });
+      if (expenseProblem) {
+        violations.push(`transaction ${sequence}: ${expenseProblem}`);
         return null;
       }
       // A direct expense has no party; the threshold check keys the exposure
@@ -604,6 +703,16 @@ function buildEvent(context: EventContext): EventResult | null {
     }
 
     case 'depreciation': {
+      // One month's charge per monthly batch, on a real asset ledger, at a
+      // rate a fixed asset can carry.
+      const depreciationProblem =
+        assetLedgerViolation(event.asset_ledger) ??
+        (event.months !== 1 ? 'depreciation is charged one month at a time: months must be 1' : null) ??
+        (event.annual_rate_percent > 40 ? 'annual_rate_percent must be 40 or below' : null);
+      if (depreciationProblem) {
+        violations.push(`transaction ${sequence}: ${depreciationProblem}`);
+        return null;
+      }
       const balance = context.working.balances.get(event.asset_ledger) ?? 0;
       if (balance < 0.5) {
         const assets = [...context.working.balances]

@@ -141,5 +141,6 @@ export function appendCarriedRectifications(
       ),
     ];
   }
-  return { ...generated, transactions, answer_key: { ...generated.answer_key, entries } };
+  const carried = [...(generated.answer_key.carried_rectification_ids ?? []), ...rectifications.map((rectification) => rectification.id)];
+  return { ...generated, transactions, answer_key: { ...generated.answer_key, entries, carried_rectification_ids: carried } };
 }

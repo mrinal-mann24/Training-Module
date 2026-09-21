@@ -52,6 +52,9 @@ export const SaleEventSchema = z.object({
   seq: Seq,
   day: Day,
   customer: PartyRefSchema,
+  // goods -> Sales; service -> Service Income. Only a service invoice can
+  // later be paid net of TDS (194J/194C do not apply to a sale of goods).
+  nature: z.enum(['goods', 'service']),
   lines: z.array(LineItemSchema).min(1),
   // Combined GST slab (18 for CGST 9 + SGST 9). The head comes from the
   // customer's state.

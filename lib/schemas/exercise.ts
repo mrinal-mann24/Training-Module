@@ -272,6 +272,13 @@ const AnswerKeySchema = z.object({
       }),
     )
     .optional(),
+  // Server-only bookkeeping (2026-09-22). The carried_rectifications rows
+  // whose journals this key contains: written in the SAME row as the key, so
+  // "was it carried?" has one atomic answer even when the separate stamp on
+  // carried_rectifications fails and the job step retries. And which engine
+  // built the key, so a fallback to the legacy generator is visible.
+  carried_rectification_ids: z.array(z.string()).optional(),
+  engine: z.enum(['planned', 'legacy']).optional(),
 });
 export type AnswerKey = z.infer<typeof AnswerKeySchema>;
 

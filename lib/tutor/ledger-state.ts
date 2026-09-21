@@ -45,11 +45,16 @@ export type LedgerState = {
   // receipt net of TDS can put the deduction on the taxable value of what
   // it settles (Stage 6). Bills the keys never raised have no ratio.
   billTaxableRatio: Map<string, number>;
+  // Sales invoices raised on a service income ledger: the only bills a
+  // customer can lawfully pay net of TDS under 194J/194C.
+  serviceBills: Set<string>;
 };
 
 const CASH_LEDGER = /^cash\b|cash-in-hand/i;
 const NON_PARTY_ACCOUNT_PATTERN = /^(sales|purchases?|cash|sales returns?|purchase returns?)$|\bbank\b|hdfc|gst|tds/i;
 const TAX_LEDGER_PATTERN = /gst|tds/i;
+// Same carve-out as company.ts, so the two replays stay in step.
+const TAX_WORDED_EXPENSE = /late fee|interest|penalt/i;
 
 export function emptyLedgerState(): LedgerState {
   return {
@@ -62,6 +67,7 @@ export function emptyLedgerState(): LedgerState {
     openingsSeeded: false,
     ledgerNames: new Set(),
     billTaxableRatio: new Map(),
+    serviceBills: new Set(),
   };
 }
 
@@ -78,7 +84,14 @@ export function cloneLedgerState(state: LedgerState): LedgerState {
     openingsSeeded: state.openingsSeeded,
     ledgerNames: new Set(state.ledgerNames),
     billTaxableRatio: new Map(state.billTaxableRatio),
+    serviceBills: new Set(state.serviceBills),
   };
+}
+
+const SERVICE_INCOME_LEDGER = /service|consultanc|professional/i;
+
+export function isServiceBill(state: LedgerState, party: string, ref: string): boolean {
+  return state.serviceBills.has(billId(party, ref));
 }
 
 // Taxable value per rupee of a bill's total as raised, or null when the
@@ -182,16 +195,20 @@ export function applyVoucher(state: LedgerState, legs: readonly AnswerKeyEntry[]
     const raisedBills: OpenBill[] = [];
     // The taxable value: the base-side legs that are neither the party nor
     // a tax ledger (Sales on a sale, the expense or Purchases on a bill).
-    const taxable = legs
-      .filter((leg) => leg.correct_account !== party.correct_account && leg.dr_cr !== party.dr_cr && !TAX_LEDGER_PATTERN.test(leg.correct_account))
-      .reduce((sum, leg) => sum + leg.amount, 0);
+    const baseLegs = legs.filter((leg) => leg.correct_account !== party.correct_account && leg.dr_cr !== party.dr_cr && !TAX_LEDGER_PATTERN.test(leg.correct_account));
+    const taxable = baseLegs.reduce((sum, leg) => sum + leg.amount, 0);
+    // The document's gross total: the party leg plus anything else on its
+    // side (TDS withheld on a purchase), so the ratio is taxable / invoice.
+    const gross = legs.filter((leg) => leg.dr_cr === party.dr_cr).reduce((sum, leg) => sum + leg.amount, 0);
+    const service = /^sales$/i.test(type) && baseLegs.some((leg) => SERVICE_INCOME_LEDGER.test(leg.correct_account));
     for (const ref of raisedRefs) {
       const id = billId(party.correct_account, ref);
       const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
       current.open += partyAmount / raisedRefs.length;
       bills.set(id, current);
       raisedBills.push(current);
-      if (partyAmount > 0 && taxable > 0) state.billTaxableRatio.set(id, Math.min(1, taxable / partyAmount));
+      if (gross > 0 && taxable > 0) state.billTaxableRatio.set(id, Math.min(1, taxable / gross));
+      if (service) state.serviceBills.add(id);
     }
     if (ownRefs.length > 0) {
       for (const parsed of parsedRefs) {
@@ -325,6 +342,6 @@ export function cashPositionOf(state: LedgerState): { cash: number; bank: number
 // rebuilt path carries them (Stage 1b).
 export function openingBalancesOf(state: LedgerState, options: { includeTaxLedgers?: boolean } = {}): OpeningBalance[] {
   return [...state.balances.entries()]
-    .filter(([account, signed]) => (options.includeTaxLedgers || !TAX_LEDGER_PATTERN.test(account)) && Math.abs(signed) >= 0.005)
+    .filter(([account, signed]) => (options.includeTaxLedgers || !TAX_LEDGER_PATTERN.test(account) || TAX_WORDED_EXPENSE.test(account)) && Math.abs(signed) >= 0.005)
     .map(([account, signed]) => ({ account, dr_cr: signed > 0 ? ('Dr' as const) : ('Cr' as const), amount: Math.abs(signed) }));
 }

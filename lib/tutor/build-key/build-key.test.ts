@@ -70,9 +70,9 @@ const plan: BatchPlan = {
   scenario: 'Same company, continuing. Your invoices were strong, so this month works on advances and settlements.',
   difficulty_level: 'L3',
   events: [
-    { type: 'sale', seq: 1, day: 2, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton bed sheets', quantity: 100, rate: 500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3001' },
-    { type: 'sale', seq: 2, day: 4, customer: { name: 'Ahmedabad Elite', new_party: false }, lines: [{ description: 'Curtains', quantity: 20, rate: 2500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3002' },
-    { type: 'sale', seq: 3, day: 6, customer: { name: 'Cash', new_party: false }, lines: [{ description: 'Cushion covers', quantity: 10, rate: 1200 }], gst_rate: 18, settlement: 'cash', adjust_advance_ref: null, doc_number: 'CM-06' },
+    { type: 'sale', nature: 'goods', seq: 1, day: 2, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton bed sheets', quantity: 100, rate: 500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3001' },
+    { type: 'sale', nature: 'goods', seq: 2, day: 4, customer: { name: 'Ahmedabad Elite', new_party: false }, lines: [{ description: 'Curtains', quantity: 20, rate: 2500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3002' },
+    { type: 'sale', nature: 'goods', seq: 3, day: 6, customer: { name: 'Cash', new_party: false }, lines: [{ description: 'Cushion covers', quantity: 10, rate: 1200 }], gst_rate: 18, settlement: 'cash', adjust_advance_ref: null, doc_number: 'CM-06' },
     { type: 'purchase', seq: 4, day: 7, vendor: { name: 'Deccan Traders', new_party: false }, nature: 'goods', ledger: null, lines: [{ description: 'Cotton fabric', quantity: 200, rate: 150 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'DT/2027-06' },
     { type: 'purchase', seq: 5, day: 9, vendor: { name: 'Mehta & Associates', new_party: false }, nature: 'service', ledger: 'Legal & Professional Charges', lines: [{ description: 'Retainer for June', quantity: 1, rate: 60000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'SL/2027-06' },
     { type: 'purchase', seq: 6, day: 11, vendor: { name: 'Bharat Machinery', new_party: false }, nature: 'asset', ledger: 'Office Equipment', lines: [{ description: 'Label printer', quantity: 1, rate: 85000 }], gst_rate: 18, settlement: 'adjust_advance', adjust_advance_ref: 'ADV-S01', doc_number: 'BM/2025-06' },
@@ -203,7 +203,7 @@ describe('buildAnswerKey rejects what the books cannot support', () => {
   });
 
   it('a reused document number', () => {
-    const result = rejected([{ type: 'sale', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'x', quantity: 1, rate: 100 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3000' }]);
+    const result = rejected([{ type: 'sale', nature: 'goods', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton sheets', quantity: 1, rate: 100 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3000' }]);
     expect(result.violations[0]).toContain('already used');
   });
 
@@ -213,9 +213,9 @@ describe('buildAnswerKey rejects what the books cannot support', () => {
   });
 
   it('an advance the party does not hold, and a GST slab not in force', () => {
-    const noAdvance = rejected([{ type: 'purchase', seq: 1, day: 3, vendor: { name: 'Deccan Traders', new_party: false }, nature: 'goods', ledger: null, lines: [{ description: 'x', quantity: 1, rate: 100000 }], gst_rate: 18, settlement: 'adjust_advance', adjust_advance_ref: 'ADV-S09', doc_number: 'DT/9' }]);
+    const noAdvance = rejected([{ type: 'purchase', seq: 1, day: 3, vendor: { name: 'Deccan Traders', new_party: false }, nature: 'goods', ledger: null, lines: [{ description: 'Cotton sheets', quantity: 1, rate: 100000 }], gst_rate: 18, settlement: 'adjust_advance', adjust_advance_ref: 'ADV-S09', doc_number: 'DT/9' }]);
     expect(noAdvance.violations[0]).toContain('holds no open advance ADV-S09');
-    const badRate = rejected([{ type: 'sale', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'x', quantity: 1, rate: 100 }], gst_rate: 10, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3009' }]);
+    const badRate = rejected([{ type: 'sale', nature: 'goods', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton sheets', quantity: 1, rate: 100 }], gst_rate: 10, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3009' }]);
     expect(badRate.violations[0]).toContain('not a slab in force');
   });
 });
@@ -227,12 +227,13 @@ import { checkBillNumberUniqueness, checkReverseCharge } from '@/lib/tutor/gener
 
 describe('buildAnswerKey, Stage 6 events', () => {
   const stage6: BatchPlan = {
-    scenario: "The same company, a month of returns, an advocate's bill and a customer that deducts TDS.",
+    scenario: "The same company, a month of returns, an advocate's bill and a corporate customer settling a service invoice.",
     difficulty_level: 'L3',
     events: [
-      { type: 'sale', seq: 1, day: 2, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton bed sheets', quantity: 100, rate: 500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3001' },
+      { type: 'sale', nature: 'goods', seq: 1, day: 2, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton bed sheets', quantity: 100, rate: 500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3001' },
       { type: 'purchase', seq: 2, day: 4, vendor: { name: 'Sharma Legal', new_party: false }, nature: 'service', ledger: 'Legal & Professional Charges', lines: [{ description: 'Retainer for June', quantity: 1, rate: 60000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'SL/2027-06' },
-      { type: 'receipt', seq: 3, day: 8, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3000'] }, tds_withheld: '194J' },
+      { type: 'sale', nature: 'service', seq: 3, day: 6, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Store layout consultancy', quantity: 1, rate: 40000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3003' },
+      { type: 'receipt', seq: 9, day: 8, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3003'] }, tds_withheld: '194J' },
       { type: 'credit_note', seq: 4, day: 10, customer: { name: 'Karnataka Emporium', new_party: false }, against_bill: 'INV-3001', lines: [{ description: 'Cotton bed sheets returned', quantity: 10, rate: 500 }], gst_rate: 18, note_number: 'CN-01' },
       { type: 'debit_note', seq: 5, day: 12, vendor: { name: 'Mumbai Suppliers', new_party: false }, against_bill: 'MS/980', lines: [{ description: 'Damaged rolls returned', quantity: 1, rate: 5000 }], gst_rate: 18, note_number: 'DN-01' },
       { type: 'payment', seq: 6, day: 14, payee: null, settlement: null, expense_ledger: 'GST Late Fee and Interest', amount: 500, instrument: 'bank' },
@@ -285,12 +286,13 @@ describe('buildAnswerKey, Stage 6 events', () => {
     expect(generated.transactions[2].description).toContain('pass the reverse-charge journal for the bill of Sharma Legal booked above');
     expect(generated.transactions[2].description).toContain('Rs 10,800');
     // Sequences stay contiguous with the derived voucher in the middle.
-    expect(generated.transactions.map((transaction) => transaction.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(generated.transactions.map((transaction) => transaction.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
   it("puts the customer's TDS on the taxable value of the invoice settled and books TDS Receivable", () => {
-    const receipt = legsOf(entries, 4);
-    // INV-3000: 40,000 taxable of 47,200; 194J at 10% on 40,000.
+    expect(legsOf(entries, 4).map((item) => item.correct_account)).toEqual(['Karnataka Emporium', 'Service Income', 'Output CGST', 'Output SGST']);
+    const receipt = legsOf(entries, 5);
+    // INV-3003, a service invoice: 40,000 taxable of 47,200; 194J at 10% on 40,000.
     expect(receipt.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
       ['HDFC Bank — 1234', 'Dr', 43200],
       ['TDS Receivable — u/s 194J', 'Dr', 4000],
@@ -301,7 +303,7 @@ describe('buildAnswerKey, Stage 6 events', () => {
   });
 
   it('raises the credit note against the open invoice, reversing output GST, and the debit note against the vendor bill', () => {
-    const credit = legsOf(entries, 5);
+    const credit = legsOf(entries, 6);
     expect(credit.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
       ['Sales Returns', 'Dr', 5000],
       ['Output CGST', 'Dr', 450],
@@ -310,7 +312,7 @@ describe('buildAnswerKey, Stage 6 events', () => {
     ]);
     expect(credit[3].bill_reference).toBe('INV-3001 (Against Ref), CN-01');
     expect(credit[0].concept_tags).toContain('sales_voucher_basics');
-    const debit = legsOf(entries, 6);
+    const debit = legsOf(entries, 7);
     expect(debit.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
       ['Mumbai Suppliers', 'Dr', 5900],
       ['Purchase Returns', 'Cr', 5000],
@@ -320,15 +322,67 @@ describe('buildAnswerKey, Stage 6 events', () => {
   });
 
   it('tags the late fee payment and leaves an ordinary advance receipt without TDS', () => {
-    expect(legsOf(entries, 7)[0].concept_tags).toContain('rcm_and_late_fee');
-    expect(legsOf(entries, 8).some((item) => /tds/i.test(item.correct_account))).toBe(false);
+    expect(legsOf(entries, 8)[0].concept_tags).toContain('rcm_and_late_fee');
+    expect(legsOf(entries, 9).some((item) => /tds/i.test(item.correct_account))).toBe(false);
   });
 
   it("rejects TDS withheld on an advance and a note above the bill's balance", () => {
     const rejected = (events: BatchPlan['events']) => buildAnswerKey({ ...stage6Input, plan: { ...stage6, events } });
     const onAdvance = rejected([{ type: 'receipt', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'advance', amount: 10000 }, tds_withheld: '194J' }]);
     expect(onAdvance.violations[0]).toContain('only on a receipt that settles invoices');
-    const tooBig = rejected([{ type: 'debit_note', seq: 1, day: 3, vendor: { name: 'Mumbai Suppliers', new_party: false }, against_bill: 'MS/980', lines: [{ description: 'x', quantity: 1, rate: 40000 }], gst_rate: 18, note_number: 'DN-09' }]);
+    const tooBig = rejected([{ type: 'debit_note', seq: 1, day: 3, vendor: { name: 'Mumbai Suppliers', new_party: false }, against_bill: 'MS/980', lines: [{ description: 'Cotton sheets', quantity: 1, rate: 40000 }], gst_rate: 18, note_number: 'DN-09' }]);
     expect(tooBig.violations[0]).toContain('exceeds the open balance of MS/980');
+  });
+});
+
+describe('buildAnswerKey refuses what the model may not decide by free text (pre-launch review, 2026-09-22)', () => {
+  const only = (events: BatchPlan['events'], scenario = plan.scenario) => buildAnswerKey({ ...input, plan: { ...plan, scenario, events }, menu: { ...input.menu, minEvents: 1 } });
+  const sale = (overrides: Record<string, unknown>) =>
+    ({ type: 'sale', nature: 'goods', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton sheets', quantity: 1, rate: 1000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3050', ...overrides }) as BatchPlan['events'][number];
+  const purchase = (overrides: Record<string, unknown>) =>
+    ({ type: 'purchase', seq: 1, day: 3, vendor: { name: 'Deccan Traders', new_party: false }, nature: 'expense', ledger: 'Office Expenses', lines: [{ description: 'Stationery', quantity: 1, rate: 75000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'DT/3050', ...overrides }) as BatchPlan['events'][number];
+
+  it('a party that reads as a bank, cash or tax ledger, a second spelling of a party, and an unknown party without new_party', () => {
+    expect(only([sale({ customer: { name: 'HDFC Ergo Insurance', new_party: true } })]).violations[0]).toContain('cannot be a party');
+    expect(only([sale({ customer: { name: 'Cash & Carry Wholesale', new_party: true } })]).violations[0]).toContain('cannot be a party');
+    expect(only([sale({ customer: { name: 'M/s Karnataka Emporium LLP', new_party: true } })]).violations[0]).toContain('looks like the existing party "Karnataka Emporium"');
+    expect(only([sale({ customer: { name: 'Pune Furnishings', new_party: false } })]).violations[0]).toContain('is not a party in the books');
+    expect(only([sale({ customer: { name: 'Pune Furnishings', new_party: true } })]).generated).not.toBeNull();
+  });
+
+  it('a document number the reference parser would read as something else', () => {
+    for (const number of ['ADV-C05', 'INV-3001 (Against Ref)', 'INV-1, INV-2', 'inv 77', 'INVOICE']) {
+      expect(only([sale({ doc_number: number })]).violations[0]).toContain('must be one plain number');
+    }
+  });
+
+  it('figures with paise, amounts or codes in a line description, and figures or tax words in the scenario', () => {
+    expect(only([sale({ lines: [{ description: 'Cotton sheets', quantity: 15, rate: 450 }], gst_rate: 5 })]).violations[0]).toContain('whole rupee');
+    expect(only([sale({ lines: [{ description: 'Gift hampers worth Rs 2,000', quantity: 1, rate: 2000 }] })]).violations[0]).toContain('must not state an amount');
+    expect(only([sale({ lines: [{ description: 'HP-1020 toner', quantity: 1, rate: 2000 }] })]).violations[0]).toContain('shaped like a bill number');
+    expect(only([sale({})], 'Opening bank is Rs 8,93,150 and the month has several sales to post.').violations[0]).toContain('must not state any amount');
+    expect(only([sale({})], 'Remember that TDS applies on the audit bill this month, so look at it carefully.').violations[0]).toContain('must not name a tax treatment');
+  });
+
+  it('an expense ledger that hides the TDS section, a service billed as goods, and a party or tax ledger used as an expense', () => {
+    expect(only([purchase({ lines: [{ description: 'Statutory audit fee', quantity: 1, rate: 75000 }] })]).violations[0]).toContain('does not say so');
+    expect(only([purchase({ nature: 'goods', ledger: null, lines: [{ description: 'Annual retainer fees', quantity: 1, rate: 75000 }] })]).violations[0]).toContain('describe a service');
+    expect(only([purchase({ ledger: 'Mumbai Suppliers' })]).violations[0]).toContain('is a party');
+    expect(only([purchase({ ledger: 'Input CGST' })]).violations[0]).toContain('GST or TDS ledger');
+    const direct = { type: 'payment', seq: 1, day: 3, payee: null, settlement: null, expense_ledger: 'Deccan Traders', amount: 5000, instrument: 'bank' } as BatchPlan['events'][number];
+    expect(only([direct]).violations[0]).toContain('is a party');
+  });
+
+  it('TDS withheld on an invoice for goods, a note at another slab, depreciation on a non-asset or for several months, and an import of services', () => {
+    const tdsOnGoods = { type: 'receipt', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3000'] }, tds_withheld: '194J' } as BatchPlan['events'][number];
+    expect(only([tdsOnGoods]).violations[0]).toContain('is an invoice for goods');
+    const note = { type: 'credit_note', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, against_bill: 'INV-3000', lines: [{ description: 'Sheets returned', quantity: 1, rate: 1000 }], gst_rate: 5, note_number: 'CN-09' } as BatchPlan['events'][number];
+    expect(only([note]).violations[0]).toContain('was raised at 18% GST');
+    const depreciation = (overrides: Record<string, unknown>) => ({ type: 'depreciation', seq: 1, day: 30, asset_ledger: 'Office Equipment', months: 1, annual_rate_percent: 15, ...overrides }) as BatchPlan['events'][number];
+    expect(only([depreciation({ asset_ledger: 'Karnataka Emporium' })]).violations[0]).toContain('not a fixed asset ledger');
+    expect(only([depreciation({ months: 12 })]).violations[0]).toContain('months must be 1');
+    expect(
+      only([purchase({ vendor: { name: 'Nimbus Overseas Inc', new_party: true }, nature: 'service', ledger: 'Import of Services Software', lines: [{ description: 'Cloud hosting', quantity: 1, rate: 50000 }] })]).violations[0],
+    ).toContain('import of services is not supported');
   });
 });

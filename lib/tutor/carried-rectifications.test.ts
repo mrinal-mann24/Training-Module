@@ -151,3 +151,19 @@ describe.skipIf(!existsSync(fixture))('Garima Suspense rectification against the
     expect(reopened).toMatchObject({ ref: 'KE-305', open: 34900, side: 'receivable' });
   });
 });
+
+// The saved key lists what it carried, in the same row as the key, so a
+// failed stamp and a retried job step cannot carry a journal twice
+// (pre-launch review, 2026-09-22).
+describe('the key records the rectifications it carries', () => {
+  it('stamps their ids and keeps them through the month-end journals and final dating', async () => {
+    const { finalizeBatch } = await import('@/lib/tutor/generate-exercise');
+    const appended = appendCarriedRectifications(empty, [garima], june2025);
+    expect(appended.answer_key.carried_rectification_ids).toEqual(['r1']);
+    const finalized = finalizeBatch(appended, { licenseMode: 'educational', month: june2025, cashPosition: { cash: 5000, bank: 100000 }, monthEnd: null });
+    expect(finalized.errors).toEqual([]);
+    expect(finalized.generated.answer_key.carried_rectification_ids).toEqual(['r1']);
+    // Educational Mode moved the journal to a day Tally will save.
+    expect(finalized.generated.transactions[0].description.startsWith('On 02-Jun-2025, post a rectification journal.')).toBe(true);
+  });
+});

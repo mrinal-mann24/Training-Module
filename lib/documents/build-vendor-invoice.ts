@@ -89,6 +89,11 @@ export function buildVendorInvoiceContent(
   const taxable = round2(lineItems.reduce((sum, item) => sum + item.amount, 0));
   const hasRoundOff = legs.some((leg) => ROUND_OFF_PATTERN.test(leg.correct_account));
   const roundOff = hasRoundOff ? round2(total - taxable - (cgst ?? 0) - (sgst ?? 0) - (igst ?? 0)) : null;
+  // A round-off is paise. Anything larger is a key whose legs do not describe
+  // one bill, which the round-off line would otherwise silently absorb.
+  if (roundOff !== null && Math.abs(roundOff) >= 1) {
+    throw new Error(`Vendor invoice for transaction ${sequence}: a round-off of ${roundOff} is not a round-off; the legs do not add up to the party total ${total}.`);
+  }
   const computed = round2(taxable + (cgst ?? 0) + (sgst ?? 0) + (igst ?? 0) + (roundOff ?? 0));
   if (Math.abs(computed - total) > AMOUNT_TOLERANCE) {
     throw new Error(`Vendor invoice for transaction ${sequence}: lines ${computed} do not add up to the party total ${total}.`);

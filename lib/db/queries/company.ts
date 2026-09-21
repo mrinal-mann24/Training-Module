@@ -115,6 +115,9 @@ export async function getExpectedCashPosition(
 // derived from the keys — which is exactly why checkTrialBalanceTieOut
 // already exempts them from comparison.
 const TAX_LEDGER_PATTERN = /gst|tds/i;
+// A GST- or TDS-worded EXPENSE ("GST Late Fee and Interest") carries forward
+// like any other ledger (account-names.ts isTaxLedgerName has the same rule).
+const TAX_WORDED_EXPENSE = /late fee|interest|penalt/i;
 
 export type OpeningBalance = { account: string; dr_cr: 'Dr' | 'Cr'; amount: number };
 
@@ -129,7 +132,7 @@ export type OpeningBalance = { account: string; dr_cr: 'Dr' | 'Cr'; amount: numb
 // submission scored 100% with tb_tie_out false).
 export function openingBalancesFromNet(net: Map<string, number>): OpeningBalance[] {
   return [...net.entries()]
-    .filter(([account, signed]) => !TAX_LEDGER_PATTERN.test(account) && Math.abs(signed) >= 0.005)
+    .filter(([account, signed]) => (!TAX_LEDGER_PATTERN.test(account) || TAX_WORDED_EXPENSE.test(account)) && Math.abs(signed) >= 0.005)
     .map(([account, signed]) => ({
       account,
       dr_cr: signed > 0 ? ('Dr' as const) : ('Cr' as const),

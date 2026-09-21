@@ -120,6 +120,9 @@ describe('GST rates and split (CGST/IGST Acts; Notification 1/2017 and 9/2025-CT
     expect(isAllowedGstRate(10, d(1, 5, 2024))).toBe(false);
     expect(isAllowedGstRate(40, d(21, 9, 2025))).toBe(false);
     expect(isAllowedGstRate(40, d(22, 9, 2025))).toBe(true);
+    // The 12% and 28% slabs end the day the 40% slab begins.
+    expect(allowedGstRates(d(21, 9, 2025))).toEqual([0, 0.25, 3, 5, 12, 18, 28]);
+    expect(allowedGstRates(d(22, 9, 2025))).toEqual([0, 0.25, 3, 5, 18, 40]);
   });
 
   it('splits intra-state tax half and half and charges IGST in full inter-state', () => {

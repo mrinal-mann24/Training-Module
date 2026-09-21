@@ -42,10 +42,17 @@ export type VendorInvoiceFigures = {
 
 const GST_LEG_PATTERN = /\b(cgst|sgst|igst)\b/i;
 const TDS_LEG_PATTERN = /\btds\b/i;
+// The company's own reverse-charge legs are not the vendor's tax: the
+// vendor's bill carries no GST at all.
+const RCM_LEG_PATTERN = /\brcm\b|reverse\s*charge/i;
+// Never the vendor, whatever their order in the key: a credited Round Off
+// leg listed before the vendor used to BE the vendor (invoice to "Round
+// Off", total 0.48; pre-launch review, 2026-09-22).
+const ROUND_OFF_OR_DISCOUNT = /round(?:ing)?[\s-]*off|discount/i;
 const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigures {
-  const taxLegs = legs.filter((leg) => GST_LEG_PATTERN.test(leg.correct_account));
+  const taxLegs = legs.filter((leg) => GST_LEG_PATTERN.test(leg.correct_account) && !RCM_LEG_PATTERN.test(leg.correct_account));
   // A TDS purchase credits TWO ledgers: the vendor (net) and TDS Payable
   // (the deduction). The vendor's invoice knows nothing about our TDS — it
   // shows the gross fee — so TDS legs are neither party nor base, and the
@@ -56,9 +63,13 @@ export function deriveInvoiceFigures(legs: AnswerKeyEntry[]): VendorInvoiceFigur
   const tdsLegs = legs.filter((leg) => TDS_LEG_PATTERN.test(leg.correct_account));
   const nonTax = legs.filter((leg) => !GST_LEG_PATTERN.test(leg.correct_account) && !TDS_LEG_PATTERN.test(leg.correct_account));
   // On a purchase the vendor is the credited leg; base legs are the debits.
-  const partyLeg = nonTax.find((leg) => leg.dr_cr === 'Cr') ?? nonTax[0];
-  const baseLegs = nonTax.filter((leg) => leg !== partyLeg);
-  const tdsWithheld = tdsLegs.filter((leg) => leg.dr_cr === 'Cr').reduce((sum, leg) => sum + leg.amount, 0);
+  const partyLeg = nonTax.find((leg) => leg.dr_cr === 'Cr' && !ROUND_OFF_OR_DISCOUNT.test(leg.correct_account)) ?? nonTax.find((leg) => leg.dr_cr === 'Cr') ?? nonTax[0];
+  // A settlement discount the company books ("Cr Discount Received") is not
+  // on the vendor's bill either: like TDS, it is added back to the total.
+  const discountLegs = nonTax.filter((leg) => leg !== partyLeg && leg.dr_cr === 'Cr' && /discount/i.test(leg.correct_account));
+  const baseLegs = nonTax.filter((leg) => leg !== partyLeg && !discountLegs.includes(leg));
+  const tdsWithheld =
+    tdsLegs.filter((leg) => leg.dr_cr === 'Cr').reduce((sum, leg) => sum + leg.amount, 0) + discountLegs.reduce((sum, leg) => sum + leg.amount, 0);
 
   if (legs.length === 1) {
     // Single-leg key: party total inclusive of tax; split by the stated rate.
