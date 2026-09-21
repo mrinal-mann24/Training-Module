@@ -60,6 +60,21 @@ export function emptyLedgerState(): LedgerState {
   };
 }
 
+// A deep copy, so a builder can apply a batch's own vouchers and read the
+// open items between them without touching the replayed books.
+export function cloneLedgerState(state: LedgerState): LedgerState {
+  return {
+    balances: new Map(state.balances),
+    bills: new Map([...state.bills].map(([id, bill]) => [id, { ...bill }])),
+    advanceCredits: new Map(state.advanceCredits),
+    advanceInfo: new Map([...state.advanceInfo].map(([id, info]) => [id, { ...info }])),
+    credits: new Map(state.credits),
+    openingRemaining: new Map(state.openingRemaining),
+    openingsSeeded: state.openingsSeeded,
+    ledgerNames: new Set(state.ledgerNames),
+  };
+}
+
 export function referenceKey(ref: string): string {
   return canonicalRef(ref) ?? normalizeBillReference(ref);
 }
