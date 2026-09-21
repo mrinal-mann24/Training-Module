@@ -173,7 +173,7 @@ type PreparedSourceDocument = {
 // delivered. The LLM calls only produce validated structured content;
 // rendering to PDF and upload are fully deterministic from there, per this
 // unit's "code renders, LLM never touches the PDF" boundary.
-async function prepareSourceDocuments(
+export async function prepareSourceDocuments(
   supabase: SupabaseClient,
   learnerId: string,
   generatedExercise: GeneratedExercise,
@@ -255,7 +255,7 @@ async function prepareSourceDocuments(
 // insertExercise (the FK requires the exercise row), keeping the visible
 // exercise-without-documents window to milliseconds instead of the full
 // document-generation time.
-async function attachSourceDocuments(
+export async function attachSourceDocuments(
   supabase: SupabaseClient,
   exerciseId: string,
   documents: PreparedSourceDocument[],

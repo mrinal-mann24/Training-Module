@@ -13,6 +13,8 @@ import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import { insertConceptAttempts, getConceptAttempts, getConceptMasteryMap, applyStatePatch } from '@/lib/db/queries/mastery';
 import { recomputeMastery, selectWeakConcept } from '@/lib/tutor/mastery';
 import { generateAdaptiveExercise } from '@/lib/tutor/generate-exercise';
+import { generatePlannedExercise } from '@/lib/tutor/generate-planned-exercise';
+import { getLearnerProfile } from '@/lib/db/queries/learner-profile';
 import { generateReviewExercise } from '@/lib/tutor/generate-review-exercise';
 import { selectNextExerciseKind } from '@/lib/tutor/select-exercise-kind';
 import { isDocumentsModeUnlocked } from '@/lib/tutor/documents-mode';
@@ -271,6 +273,26 @@ export async function generateNextExercise(
   // exercise, anchored on the diagnostic pack's April 2026 —
   // priorExerciseCount includes the diagnostic, so the first adaptive batch
   // lands in May, the next in June, and so on.
+  //
+  // Rebuild Stage 4 (2026-09-22): a learner flipped to the planned engine
+  // gets a batch whose key is built by code from the books; concepts the
+  // builder does not yet cover fall back to the legacy generator.
+  const profile = await getLearnerProfile(supabase, params.learnerId);
+  if (profile?.generation_engine === 'planned') {
+    const planned = await generatePlannedExercise(
+      supabase,
+      params.learnerId,
+      target,
+      baseDifficultyLevel,
+      nextKind === 'explain' ? 'explain' : 'adaptive',
+      recentStrengthDescriptions,
+      batchPlan,
+      params.licenseMode ?? 'licensed',
+      priorExerciseCount + 1,
+      isDocumentsModeUnlocked(currentMastery.values()),
+    );
+    if (planned !== 'unsupported') return 'generated';
+  }
   await generateAdaptiveExercise(
     supabase,
     params.learnerId,

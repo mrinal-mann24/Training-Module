@@ -15,6 +15,10 @@ export type LearnerProfile = {
   // Accountant setup flow. Null until then; the flow is shown once the
   // learner has mastered enough concepts (isAiaOnboardingDue).
   aia_onboarding_completed_at: string | null;
+  // Which generator writes this learner's next batch (2026-09-22, rebuild
+  // Stage 4): the legacy LLM-authored key, or the planned path where code
+  // builds the key. Absent before the migration; treated as 'legacy'.
+  generation_engine?: 'legacy' | 'planned';
   created_at: string;
 };
 
@@ -25,7 +29,7 @@ export async function getLearnerProfile(
   const { data, error } = await supabase
     .from('learner_profile')
     .select(
-      'id, license_mode, books_begin_date, full_name, onboarded_at, walkthrough_completed_at, aia_onboarding_completed_at, created_at',
+      'id, license_mode, books_begin_date, full_name, onboarded_at, walkthrough_completed_at, aia_onboarding_completed_at, generation_engine, created_at',
     )
     .eq('id', userId)
     .maybeSingle();

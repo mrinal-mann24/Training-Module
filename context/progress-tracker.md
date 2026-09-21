@@ -21,6 +21,19 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-22: ANSWER-KEY GENERATION REBUILD, STAGES 0-4 + AUDIT HARNESS
+
+**Why (user):** "Why the issue occurs, we have cross checked everything still the issue is there the answer key generated wrong why?" Three investigations found the structural cause: the LLM authored the whole ledger, code only rejected some output, meaning lived in free text parsed three ways, and the checks ran before four post-validation mutations. A live audit found 43 key errors across the interns. Decisions: full rebuild now; correct old keys (owner-run SQL); switch each intern at their next batch (hand-reviewed first batch); key fixtures local only.
+
+- **Audit harness (b07b85a):** `scripts/audit-answer-keys.ts` + `scripts/lib/replay-answer-keys.ts`, read-only. Re-runs `runGenerationChecks` per stored key with the context rebuilt from prior keys, plus printed-document vs key (number, gross total, GSTIN state vs head), one-sided ledgers driven past their balance (Garima's Suspense 39,900), stamped-vs-replayed openings, created_at ties. Confirmed from data: negative cash (Praveen/Garima May-24), KE/2026/018, MA/2026/09, BR/S/098, INV-024 reuse, DT-114 arithmetic, Praveen Apr-25 TDS trio, Deccan IGST vs Karnataka, the "Output CGST 9%" phantom ledgers, and 11 CGST/SGST keys against out-of-state printed GSTINs.
+- **Stage 0 (8952179, 222826f):** `lib/tutor/bill-reference.ts` owns parse/normalize/`looksLikeDate` and the only formatter, `formatBillReference` (round-trip tested). Corpus parity test: the three normalizers agree on every reference in the interns' keys.
+- **Stage 1 (fcc590a):** `lib/tutor/ledger-state.ts`, one incremental replay (`applyVoucher`), bills keyed by canonical reference, advances typed. Prefix parity over all three interns' keys against the five company.ts replays: exact. Stage 1b (tax ledgers in openings) deferred: v1 stamps openings as today.
+- **Stages 2-3 (f70bf2c):** `party-master.ts` (in memory from the registry); `lib/schemas/batch-plan.ts` + `lib/llm/prompts/batch-plan*.ts` (events only, `additionalProperties:false`); `lib/tutor/build-key/` (event menu, GST from party state, TDS from the dated rules with FY exposure, allocations from open items, advance minting ADV-Cnn/ADV-Snn, depreciation from the ledger balance, concept tags from the built shape, text from the key). Built keys pass every legacy check in `build-key.test.ts`.
+- **Stage 4 (this commit):** `key-invariants.ts` (legacy checks with the master as the state/payee authority + replay: no overpaid bill, openings equal the books, reference round-trip) runs on the final object; `generate-planned-exercise.ts` (plan -> build -> composition -> finalizeBatch -> stamp -> documents mode -> bank statement -> assertKeyValid, ≤3 story retries, same persist path; `'unsupported'` falls back to legacy for rcm_and_late_fee / tds_on_receipt / notes until Stage 6); migration `20260922120000_generation_engine.sql` (`learner_profile.generation_engine`, default legacy); branch at `advance-learner.ts`. NOT YET APPLIED to any database; nothing changes for the interns until the owner runs the migration and flips a learner.
+- **Next:** Part B correction manifest + SQL generator + verify script; Stage 5 deterministic vendor invoice; Stage 6 remaining events; hand-review each intern's first planned batch.
+
+Gates: tsc clean, eslint clean, 1117/1117 tests.
+
 ## Session log — 2026-09-21: CARRIED ADVANCES IN KEYS + JOURNAL EXPENSE LEGS ARE NOT PARTIES (f960fd6)
 
 **Why (user):** Praveen's June feedback had two findings that were our fault; advance *names* stay strict (user decision).
