@@ -47,6 +47,8 @@ import type {
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
 import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
 import { adjustOpenAdvances, advancesToAdjust } from "@/lib/tutor/advance-adjustment";
+import { appendCarriedRectifications } from "@/lib/tutor/carried-rectifications";
+import { getPendingRectifications, markRectificationsCarried } from "@/lib/db/queries/carried-rectifications";
 import {
   billTokensIn,
   checkBillNumberUniqueness,
@@ -1050,7 +1052,10 @@ export function checkSettlementReferences(
     if (type === "journal") {
       // A journal allocated against a bill (the 9B advance-GST reversal, a
       // write-off) moves it; a bill it names must exist for one of its legs.
-      for (const parsed of parsedRefs.filter((item) => item.kind === "against" || item.kind === "bill")) {
+      // A journal that says "New Ref" in so many words raises or reopens the
+      // bill instead (a carried rectification reversing an over-cleared
+      // settlement, 2026-09-22), so no open bill is required for it.
+      for (const parsed of parsedRefs.filter((item) => item.kind === "against" || (item.kind === "bill" && !item.newRef))) {
         const owner = legs.find((leg) => balances.has(billId(leg.correct_account, parsed.ref)));
         if (!owner) {
           violations.push(`transaction ${sequence} allocates a journal against "${parsed.ref}", but no party on it has that bill open.`);
@@ -1372,6 +1377,9 @@ export async function generateAdaptiveExercise(
   // pack), the keys 0-based, so this financial year's keys start at index
   // floor((ordinal - 1) / 12) * 12.
   const priorKeys = await loadAnswerKeys(supabase, learnerId);
+  // Carried rectifications (2026-09-22): the owner's correcting journals for
+  // an earlier month, appended to this batch inside the loop below.
+  const rectifications = await getPendingRectifications(supabase, learnerId);
   const yearStartIndex = Math.floor((exerciseOrdinal - 1) / 12) * 12;
   const priorRefs = priorBillReferences(priorKeys);
   const tdsHistory = tdsHistoryFromKeys(priorKeys.slice(yearStartIndex));
@@ -1467,12 +1475,16 @@ export async function generateAdaptiveExercise(
       const { hard, soft } = runGenerationChecks(parsed.data, checkContext);
       let finalized: GeneratedExercise | null = null;
       if (hard.length === 0) {
+        // The rectification journals ride after the model's lines passed
+        // the checks and before the month-end journals, so the bank walk
+        // and the final dating include them.
+        const withRectifications = appendCarriedRectifications(parsed.data, rectifications, exerciseMonth);
         const bankAfterBatch =
           cashPosition.bank +
-          parsed.data.answer_key.entries
+          withRectifications.answer_key.entries
             .filter((entry) => isBankLedger(entry.correct_account))
             .reduce((sum, entry) => sum + (entry.dr_cr === "Dr" ? entry.amount : -entry.amount), 0);
-        const outcome = finalizeBatch(parsed.data, {
+        const outcome = finalizeBatch(withRectifications, {
           licenseMode,
           month: exerciseMonth,
           cashPosition,
@@ -1600,6 +1612,7 @@ export async function generateAdaptiveExercise(
   );
 
   const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
+  await markRectificationsCarried(supabase, rectifications.map((rectification) => rectification.id), id);
 
   await attachSourceDocuments(supabase, id, documents);
 

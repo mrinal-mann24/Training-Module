@@ -129,3 +129,22 @@ describe.skipIf(fixtureFiles.length === 0)('prefix parity with the company.ts re
     }
   });
 });
+
+describe('a journal reopening a bill as an explicit New Ref (carried rectifications, 2026-09-22)', () => {
+  it('raises the settled bill again on the party the books know, on the leg\'s side', () => {
+    const state = replayKeys([]);
+    applyVoucher(state, [leg(1, 'Sales', 'Kolkata Emporium', 'Dr', 64900, { bill_reference: 'KE-305' }), leg(1, 'Sales', 'Sales', 'Cr', 64900, { bill_reference: 'KE-305' })]);
+    applyVoucher(state, [leg(2, 'Receipt', 'HDFC Bank — 1234', 'Dr', 64900), leg(2, 'Receipt', 'Kolkata Emporium', 'Cr', 64900, { bill_reference: 'KE-305 (Against Ref)' })]);
+    expect(openBillsOf(state)).toEqual([]);
+
+    applyVoucher(state, [leg(3, 'Journal', 'Kolkata Emporium', 'Dr', 34900, { bill_reference: 'KE-305 (New Ref)' }), leg(3, 'Journal', 'Suspense', 'Cr', 34900)]);
+    expect(openBillsOf(state)).toEqual([{ party: 'Kolkata Emporium', ref: 'KE-305', open: 34900, side: 'receivable' }]);
+
+    // A brand-new number on a known party is raised the same way; an
+    // unknown party is left alone, as before.
+    applyVoucher(state, [leg(4, 'Journal', 'Kolkata Emporium', 'Dr', 100, { bill_reference: 'KE-999 (New Ref)' }), leg(4, 'Journal', 'Suspense', 'Cr', 100)]);
+    expect(openBillsOf(state).map((bill) => bill.ref)).toEqual(['KE-305', 'KE-999']);
+    applyVoucher(state, [leg(5, 'Journal', 'Nobody Known', 'Dr', 100, { bill_reference: 'NB-1 (New Ref)' }), leg(5, 'Journal', 'Suspense', 'Cr', 100)]);
+    expect(openBillsOf(state).map((bill) => bill.ref)).toEqual(['KE-305', 'KE-999']);
+  });
+});

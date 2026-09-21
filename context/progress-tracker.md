@@ -21,6 +21,29 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-22 (later): HISTORICAL KEYS RE-JUDGED, CARRIED RECTIFICATIONS
+
+**Owner status:** migration `20260922120000_generation_engine.sql` run and deployed. Owner told to flip all three interns to `generation_engine = 'planned'` now (takes effect at each one's next generated batch; I review each first planned batch by hand before they post it).
+
+**Part B re-judged against the data, not the audit's word.** The plan's "correct the old keys" SQL (backup table, whole-key replace, opening chain recompute) was NOT built, on purpose: every audited defect was re-read against what the intern actually posted, and rewriting a key the intern's books mirror would make every later books comparison report false differences. Findings, with the party master (`buildPartyMaster`) as the authority on states:
+
+- The 10 "GST head vs printed GSTIN" items (Sharma Legal SL/118, SL/119; Mehta MA/205, MA/206; Hero Rentals HR/101; Deccan DT/334, DT/2026-12, DT/2027-01, DT/640; Signage SA-105): the master says every one of these vendors is Karnataka, so the KEYS were right (CGST/SGST) and the LLM-drafted PDFs printed a wrong GSTIN. The printed tax lines themselves were CGST/SGST, so the interns posted correctly. Cosmetic document defect, no books effect: nothing to correct. (Stage 5's code-built vendor invoice removes the cause.)
+- Negative cash in the first May 2024 batches (Praveen, Garima): the contras were posted; cash recovered by June and is positive now. Removing them would desync books and key. Left.
+- Settlements of bills that never existed (Praveen KE/2026/018, MA/2026/09; Yeshas CS/612): the replay already treats them as on-account credits absorbed by the party's later bills; party balances match the interns' books. Left.
+- Praveen Apr-25 TDS below the FY26 thresholds, Garima DT-114 at 10%+10% and CS-089 at 12%, Yeshas INV-024 reuse and Deccan IGST in June 2024, Praveen Feb-25 set-off to rate-suffixed GST ledgers (`gstPositionFromKeys` reads them by head): posted as instructed, scored, no wrong balance carried forward. Left.
+- **One real carried error:** Garima May 2025 month-end note 1 cleared 39,900 from Suspense (held 5,000) against KE-305 → Suspense Dr 34,900 and KE-305 closed though 34,900 is still due. Treated by a carried rectification (below).
+
+**Built (Part B step 5, the only correction instrument):**
+- `supabase/migrations/20260922130000_carried_rectifications.sql`: table `carried_rectifications` (learner_id, source_exercise_id snapshot, reason, learner_text, legs jsonb, carried_in_exercise_id/carried_at), RLS on with no policies, revokes from anon/authenticated. **Owner must run it.**
+- `lib/tutor/carried-rectifications.ts` (pure): `validateRectification` (balanced, paise, no date in the sentence, every Rs figure a leg amount, every bill token a leg reference), `describeRectification` (dated line + journal spelled leg by leg), `appendCarriedRectifications` (Journal transactions appended after the batch's own, tags `journal_voucher_basics`, GST head from the ledger name; throws on a row it refuses).
+- `lib/db/queries/carried-rectifications.ts`: `getPendingRectifications`, `markRectificationsCarried` (service role).
+- Both generators: legacy appends after the model's batch passed the checks and before `finalizeBatch` (so month-end journals, bank walk and Educational dating include it); planned appends after `buildAnswerKey` + composition, before `finalizeBatch`, so `assertKeyValid` checks it too. Rows stamped carried after `insertExercise`.
+- Bill references: `parseBillReferences` now records an explicit "New Ref" (`newRef`), `formatBillReference`/`allocationsFromReference` carry it, so a journal that reopens a settled bill round-trips. `checkSettlementReferences` requires no open bill for a New Ref journal; `applyVoucher` raises the bill on the party the books know, on the leg's side.
+- `scripts/corrections/2026-09-22-garima-suspense.sql`: the one row to insert (Dr Kolkata Emporium 34,900 "KE-305 (New Ref)" / Cr Suspense 34,900). Fixture-backed test proves the replay ends with Suspense nil and KE-305 open 34,900 receivable.
+- Gates: tsc clean, eslint clean, vitest 1132/1132 (79 files).
+
+**Not built / still open:** Stage 5 (code-built vendor invoice, `applyBankReferences` before `assertKeyValid`), Stage 6 (credit/debit notes, RCM, tds_on_receipt in the builder, then delete legacy), Stage 1b (tax ledgers in openings), the 43 negative tests as a suite, the stored-keys-score-identically contract test. The plan's `answer_key_corrections` backup table and apply/rollback SQL generator are dropped as unnecessary; if a future defect ever needs a key rewrite, that is a fresh owner decision.
+
 ## Session log — 2026-09-22: ANSWER-KEY GENERATION REBUILD, STAGES 0-4 + AUDIT HARNESS
 
 **Why (user):** "Why the issue occurs, we have cross checked everything still the issue is there the answer key generated wrong why?" Three investigations found the structural cause: the LLM authored the whole ledger, code only rejected some output, meaning lived in free text parsed three ways, and the checks ran before four post-validation mutations. A live audit found 43 key errors across the interns. Decisions: full rebuild now; correct old keys (owner-run SQL); switch each intern at their next batch (hand-reviewed first batch); key fixtures local only.

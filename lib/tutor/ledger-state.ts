@@ -132,11 +132,24 @@ export function applyVoucher(state: LedgerState, legs: readonly AnswerKeyEntry[]
     // reversal of rulebook 9B credits the customer against the invoice, a
     // bad-debt write-off credits it in full. Several bills are cleared in
     // order, the last taking what is left. A journal has no party side, so
-    // the party is the leg that owns the named bills.
-    const owner = legs.find((leg) => parsedRefs.some((parsed) => bills.has(billId(leg.correct_account, parsed.ref))));
+    // the party is the leg that owns the named bills. A reference that says
+    // "New Ref" raises the bill on a party the books already know (a
+    // carried rectification reopening a settled bill, 2026-09-22): its
+    // side follows the leg, a debit being receivable.
+    const knownParties = new Set([...bills.values()].map((bill) => bill.party));
+    const owner =
+      legs.find((leg) => parsedRefs.some((parsed) => bills.has(billId(leg.correct_account, parsed.ref)))) ??
+      (parsedRefs.some((parsed) => parsed.newRef) ? legs.find((leg) => knownParties.has(leg.correct_account)) : undefined);
     if (!owner) return;
     const named = parsedRefs
-      .map((parsed) => bills.get(billId(owner.correct_account, parsed.ref)))
+      .map((parsed) => {
+        const id = billId(owner.correct_account, parsed.ref);
+        const existing = bills.get(id);
+        if (existing || !parsed.newRef) return existing;
+        const raised: OpenBill = { party: owner.correct_account, ref: parsed.ref, open: 0, side: owner.dr_cr === 'Dr' ? 'receivable' : 'payable' };
+        bills.set(id, raised);
+        return raised;
+      })
       .filter((bill): bill is OpenBill => bill !== undefined);
     let left = legs.filter((leg) => leg.correct_account === owner.correct_account).reduce((sum, leg) => sum + leg.amount, 0);
     named.forEach((bill, index) => {

@@ -1048,3 +1048,25 @@ describe('generateDiagnosticExercise runs the hard checks with retry (2026-09-17
     expect(persist).not.toHaveBeenCalled();
   });
 });
+
+describe('checkSettlementReferences on a journal that reopens a bill (carried rectifications, 2026-09-22)', () => {
+  it('needs no open bill for an explicit New Ref, and still rejects a plain allocation', () => {
+    const reopen = auditBatch(
+      ['On 03-Jun-2025, post a rectification journal reopening KE-305 for Rs 34,900.'],
+      [
+        auditLeg(1, 'Journal', 'Kolkata Emporium', 'Dr', 34900, { bill_reference: 'KE-305 (New Ref)' }),
+        auditLeg(1, 'Journal', 'Suspense', 'Cr', 34900),
+      ],
+    );
+    expect(checkSettlementReferences(reopen, [])).toBeNull();
+
+    const plain = auditBatch(
+      ['On 03-Jun-2025, post a journal against KE-305 for Rs 34,900.'],
+      [
+        auditLeg(1, 'Journal', 'Kolkata Emporium', 'Dr', 34900, { bill_reference: 'KE-305' }),
+        auditLeg(1, 'Journal', 'Suspense', 'Cr', 34900),
+      ],
+    );
+    expect(checkSettlementReferences(plain, [])).toContain('transaction 1 allocates a journal against "KE-305"');
+  });
+});

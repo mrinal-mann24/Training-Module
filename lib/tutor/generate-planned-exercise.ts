@@ -7,6 +7,7 @@ import {
   loadAnswerKeys,
   registerCompanyLedgers,
 } from '@/lib/db/queries/company';
+import { getPendingRectifications, markRectificationsCarried } from '@/lib/db/queries/carried-rectifications';
 import { insertExercise } from '@/lib/db/queries/exercises';
 import { buildBatchPlanPrompt, buildBatchPlanRetryPrompt, type BatchPlanParams } from '@/lib/llm/prompts/batch-plan';
 import { getTracedStructuredCompletion } from '@/lib/llm/tracing';
@@ -16,6 +17,7 @@ import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { normalizeAccountName, partyAccountsOf } from '@/lib/tutor/account-names';
 import { buildAnswerKey } from '@/lib/tutor/build-key';
 import { eventMenuFor, supportsConcepts } from '@/lib/tutor/build-key/event-menu';
+import { appendCarriedRectifications } from '@/lib/tutor/carried-rectifications';
 import { applyDocumentsMode } from '@/lib/tutor/documents-mode';
 import { educationalDaysFor } from '@/lib/tutor/educational-dates';
 import {
@@ -65,7 +67,11 @@ export async function generatePlannedExercise(
   ];
   if (!supportsConcepts(concepts)) return 'unsupported';
 
-  const [company, priorKeys] = await Promise.all([getCompanyState(supabase, learnerId), loadAnswerKeys(supabase, learnerId)]);
+  const [company, priorKeys, rectifications] = await Promise.all([
+    getCompanyState(supabase, learnerId),
+    loadAnswerKeys(supabase, learnerId),
+    getPendingRectifications(supabase, learnerId),
+  ]);
   const companyName = company.companyName ?? DEFAULT_COMPANY;
   const state = replayKeys(priorKeys);
   const month = exerciseMonthForModule(exerciseOrdinal);
@@ -151,11 +157,17 @@ export async function generatePlannedExercise(
       continue;
     }
 
+    // Carried rectifications (2026-09-22): the owner's correcting journals
+    // for an earlier month ride in this batch, after the built vouchers and
+    // before the month-end journals, so the bank walk, the dating and the
+    // final invariant all see them.
+    const withRectifications = appendCarriedRectifications(built.generated, rectifications, { monthIndex: month.monthIndex, year: month.year });
+
     // Month-end journals with figures from the ledger, then the dates Tally
     // will save, then the cash walk again (the legacy finalizeBatch).
     const after = cloneLedgerState(state);
-    applyKey(after, built.generated.answer_key);
-    const finalized = finalizeBatch(built.generated, {
+    applyKey(after, withRectifications.answer_key);
+    const finalized = finalizeBatch(withRectifications, {
       licenseMode,
       month: { monthIndex: month.monthIndex, year: month.year },
       cashPosition: position,
@@ -218,6 +230,7 @@ export async function generatePlannedExercise(
   const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, companyName, statement?.content ?? null, codeBuiltDocuments);
 
   const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
+  await markRectificationsCarried(supabase, rectifications.map((rectification) => rectification.id), id);
   await attachSourceDocuments(supabase, id, documents);
 
   const newLedgers = finalExercise.answer_key.entries.map((entry) => ({ ledgerName: entry.correct_account, ledgerType: entry.voucher_type }));

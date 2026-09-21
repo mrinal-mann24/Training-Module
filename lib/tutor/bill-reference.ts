@@ -15,16 +15,20 @@
 export type BillReferenceKind = 'bill' | 'against' | 'advance' | 'on_account';
 // partPayment is set when the annotation says so ("(Against Ref, part
 // payment)"), so a recovered allocation formats back to the same string.
-export type ParsedBillReference = { ref: string; kind: BillReferenceKind; partPayment?: boolean };
+// newRef is set when the reference says "New Ref" in so many words: a
+// document's own number is a new reference anyway, but on a JOURNAL the
+// explicit word is what tells a rectification that reopens a settled bill
+// (2026-09-22) apart from an allocation against an open one.
+export type ParsedBillReference = { ref: string; kind: BillReferenceKind; partPayment?: boolean; newRef?: boolean };
 
 // A typed allocation, the shape the key builder works in. `amount` is what
 // the allocation carries; it is 0 when recovered from a string.
 export type AllocationKind = 'new' | 'against' | 'advance' | 'on_account';
-export type Allocation = { ref: string; kind: AllocationKind; amount: number; partPayment?: boolean };
+export type Allocation = { ref: string; kind: AllocationKind; amount: number; partPayment?: boolean; newRef?: boolean };
 
 // "Against INV-003", "Against Ref INV-005", "Agst Ref X", "New Ref INV-062",
 // "Advance ADV-01": allocation words written in front of the number.
-const REFERENCE_PREFIX = /^(?:(against|agst)(?:\s+ref(?:erence)?)?|new\s+ref(?:erence)?|(advance)(?:\s+ref(?:erence)?)?)\s*[:-]?\s+/i;
+const REFERENCE_PREFIX = /^(?:(against|agst)(?:\s+ref(?:erence)?)?|(new\s+ref(?:erence)?)|(advance)(?:\s+ref(?:erence)?)?)\s*[:-]?\s+/i;
 
 // Commas inside an annotation ("(Against Ref, part payment)") do not
 // separate references.
@@ -53,11 +57,13 @@ export function parseBillReferences(reference: string | null | undefined): Parse
     const annotation = [...part.matchAll(/\(([^)]*)\)/g)].map((match) => match[1]).join(' ');
     let bare = part.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
     let kind: BillReferenceKind = 'bill';
+    let newRef = /\bnew\s+ref/i.test(annotation);
     const prefix = REFERENCE_PREFIX.exec(bare);
     if (prefix) {
       bare = bare.slice(prefix[0].length).trim();
       if (prefix[1]) kind = 'against';
-      else if (prefix[2]) kind = 'advance';
+      else if (prefix[2]) newRef = true;
+      else if (prefix[3]) kind = 'advance';
     }
     if (bare.length === 0) continue;
     if (/^on\s+account$/i.test(bare)) kind = 'on_account';
@@ -68,7 +74,12 @@ export function parseBillReferences(reference: string | null | undefined): Parse
     // advance even when the "(Advance)" tag is left off, so "ADV-C01,
     // INV-3001 (New Ref)" is still numbered INV-3001 (review, 2026-09-15).
     if (kind === 'bill' && /^ADV[-/]/i.test(bare)) kind = 'advance';
-    parsed.push(/\bpart\b/i.test(annotation) ? { ref: bare, kind, partPayment: true } : { ref: bare, kind });
+    parsed.push({
+      ref: bare,
+      kind,
+      ...(/\bpart\b/i.test(annotation) ? { partPayment: true } : {}),
+      ...(kind === 'bill' && newRef ? { newRef: true } : {}),
+    });
   }
   return parsed;
 }
@@ -174,7 +185,7 @@ export function formatBillReference(allocations: readonly Allocation[]): string 
   const parts = ordered.map((allocation) => {
     switch (allocation.kind) {
       case 'new':
-        return allocation.ref;
+        return allocation.newRef ? `${allocation.ref} (New Ref)` : allocation.ref;
       case 'advance':
         return `${allocation.ref} (Advance)`;
       case 'against':
@@ -197,5 +208,6 @@ export function allocationsFromReference(reference: string | null | undefined): 
     kind: parsed.kind === 'bill' ? 'new' : parsed.kind,
     amount: 0,
     ...(parsed.partPayment ? { partPayment: true } : {}),
+    ...(parsed.newRef ? { newRef: true } : {}),
   }));
 }

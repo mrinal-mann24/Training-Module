@@ -96,8 +96,21 @@ describe('formatBillReference round-trips through parseBillReferences', () => {
     ]);
     expect(parseBillReferences('Against Ref ADV-S01, New Ref MS/990')).toEqual([
       { ref: 'ADV-S01', kind: 'against' },
-      { ref: 'MS/990', kind: 'bill' },
+      { ref: 'MS/990', kind: 'bill', newRef: true },
     ]);
+  });
+
+  // A journal reopening a settled bill says "New Ref" in so many words
+  // (carried rectifications, 2026-09-22); the word survives the round trip
+  // so the settlement check and the replay both see it.
+  it('keeps an explicit New Ref through format and parse', () => {
+    expect(formatBillReference([{ ref: 'KE-305', kind: 'new', amount: 34900, newRef: true }])).toBe('KE-305 (New Ref)');
+    expect(parseBillReferences('KE-305 (New Ref)')).toEqual([{ ref: 'KE-305', kind: 'bill', newRef: true }]);
+    expect(allocationsFromReference('KE-305 (New Ref)')).toEqual([{ ref: 'KE-305', kind: 'new', amount: 0, newRef: true }]);
+    expect(formatBillReference(allocationsFromReference('KE-305 (New Ref)'))).toBe('KE-305 (New Ref)');
+    expect(documentNumberOf('KE-305 (New Ref)')).toBe('KE-305');
+    // A bare number stays bare: older keys never carried the word.
+    expect(formatBillReference(allocationsFromReference('INV-062'))).toBe('INV-062');
   });
 });
 
