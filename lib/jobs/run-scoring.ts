@@ -11,6 +11,7 @@ import {
   describeRectifications,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
+  loadOpenAdvanceReferences,
   loadExerciseOrdinal,
   isFirstMonthOfFinancialYear,
 } from '@/lib/jobs/advance-learner';
@@ -165,6 +166,7 @@ export const runScoring = inngest.createFunction(
       const result = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, {
         previousTrialBalance,
         firstMonthOfFinancialYear: isFirstMonthOfFinancialYear(ordinal),
+        openAdvanceReferences: await loadOpenAdvanceReferences(supabase, submission.learner_id, exercise.id),
       });
       // Books reconciliation (2026-09-10): closing balances against the
       // correct books, feedback only.

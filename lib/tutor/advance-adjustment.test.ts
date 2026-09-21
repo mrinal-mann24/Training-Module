@@ -5,6 +5,7 @@ import { adjustOpenAdvances, advancesToAdjust } from './advance-adjustment';
 import { normalizeAccountName, partyAccountsOf } from './account-names';
 import { evaluateBooksReconciliation, expectedClosingBalances } from './books-reconciliation';
 import { advanceReferencesOf, billReferencesCorrect, canonicalBillReference } from './score-submission';
+import { openAdvancesOf, replayKeys } from './ledger-state';
 
 // Regression (2026-09-21, Praveen's June 2025 feedback). The April pack paid
 // Bharat Machinery Rs 50,000 as ADV-02; June raised the bill BM/2025-06 for
@@ -223,5 +224,33 @@ describe('a journal\'s expense leg is not a party (Bad Debts Written Off)', () =
     expect(badDebts.kind).toBe('profit_and_loss');
     expect(badDebts.monthMovement).toBe(0);
     expect(evaluateBooksReconciliation({ ledgers: [] }, [badDebts]).differences).toEqual([]);
+  });
+});
+
+// Praveen's June 2025 (2026-09-22): the STORED key names only "BM/2025-06",
+// written before the generator adjusted open advances. A learner who adjusts
+// the April advance by its proper name must not be marked wrong for the
+// extra allocation; the scoring job passes the advances open before the
+// batch. The name stays strict: his own label "17" is still wrong.
+describe('an advance open from an earlier month on a key that does not name it', () => {
+  const storedKey: AnswerKey = { entries: bharatBill('BM/2025-06') };
+  const posted = (...names: string[]) => ({ tokens: new Set(names.map((name) => canonicalBillReference(name)!)), advanceTokens: new Set<string>() });
+  const april: AnswerKey = {
+    entries: [
+      { ...bharatBill('ADV-02 (Advance)')[0], sequence: 1, voucher_type: 'Payment', correct_account: 'Bharat Machinery', dr_cr: 'Dr', amount: 50000 },
+      { ...bharatBill('ADV-02 (Advance)')[0], sequence: 1, voucher_type: 'Payment', correct_account: 'HDFC Bank — 1234', dr_cr: 'Cr', amount: 50000 },
+    ],
+  };
+  const openBefore = new Set(openAdvancesOf(replayKeys([april])).map((item) => item.key));
+
+  it('reads the open advance from the earlier keys in the canonical form the scorer uses', () => {
+    expect([...openBefore]).toEqual([canonicalBillReference('ADV-02')]);
+  });
+
+  it('accepts the adjustment by name once the open advances are passed, and only then', () => {
+    expect(billReferencesCorrect(storedKey.entries, posted('ADV-02', 'BM/2025-06'), advanceReferencesOf(storedKey))).toBe(false);
+    expect(billReferencesCorrect(storedKey.entries, posted('ADV-02', 'BM/2025-06'), openBefore)).toBe(true);
+    expect(billReferencesCorrect(storedKey.entries, posted('BM/2025-06'), openBefore)).toBe(true);
+    expect(billReferencesCorrect(storedKey.entries, posted('17', 'BM/2025-06'), openBefore)).toBe(false);
   });
 });

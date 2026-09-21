@@ -2126,9 +2126,17 @@ function matchAndDiff(
   transactionGroups: AnswerKeyEntry[][],
   answerKey: AnswerKey,
   trialBalance: ParsedTrialBalance | null = null,
+  // Advances still open in the books from EARLIER months (2026-09-22): a
+  // learner who adjusts one on this month's bill ("ADV-02" from April on
+  // Bharat Machinery's June bill, Praveen) has posted correctly even when
+  // the stored key names only the bill, so the extra allocation is accepted
+  // exactly as an advance raised in this batch always was.
+  openAdvanceReferences: ReadonlySet<string> = new Set(),
 ): CompositeState {
+  const base = answerKeyMatchOptions(answerKey);
   const options: ScoringOptions = {
-    ...answerKeyMatchOptions(answerKey),
+    ...base,
+    advanceReferences: new Set([...(base.advanceReferences ?? []), ...openAdvanceReferences]),
     gstBooks: learnerGstBooks({ vouchers }, trialBalance, answerKey),
   };
   const matching = matchVouchersToTransactionsDetailed(vouchers, transactionGroups, options);
@@ -2165,10 +2173,15 @@ export function scoreSubmission(
   // The learner's previous scored Trial Balance export, when one exists:
   // switches the tie-out to the movement comparison (see
   // evaluateTrialBalanceTieOut). Omitted/null on the first scored posting.
-  options: { previousTrialBalance?: ParsedTrialBalance | null; firstMonthOfFinancialYear?: boolean } = {},
+  options: {
+    previousTrialBalance?: ParsedTrialBalance | null;
+    firstMonthOfFinancialYear?: boolean;
+    // Canonical references of advances open before this batch (see matchAndDiff).
+    openAdvanceReferences?: ReadonlySet<string>;
+  } = {},
 ): ScoringResult {
   const transactionGroups = groupAnswerKeyEntriesBySequence(answerKey.entries);
-  const state = matchAndDiff(dayBook.vouchers, transactionGroups, answerKey, trialBalance);
+  const state = matchAndDiff(dayBook.vouchers, transactionGroups, answerKey, trialBalance, options.openAdvanceReferences);
   const perVoucherDiffs = state.diffs.flat();
 
   const unmatchedVouchers = describeUnmatchedVouchers(dayBook.vouchers, state.used);

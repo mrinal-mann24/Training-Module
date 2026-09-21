@@ -30,6 +30,7 @@ import { getPreviousScoredTrialBalancePath } from '@/lib/db/queries/submissions'
 import { parseTrialBalanceXml } from '@/lib/parsing/trialbalance';
 import { expectedClosingBalances, type ExpectedClosing } from '@/lib/tutor/books-reconciliation';
 import type { AnswerKey } from '@/lib/schemas/exercise';
+import { openAdvancesOf, replayKeys } from '@/lib/tutor/ledger-state';
 import type { RectificationNote } from '@/lib/llm/prompts/coaching';
 
 // The previous scored Trial Balance for the movement-based tie-out
@@ -111,6 +112,29 @@ export async function loadExpectedClosingBalances(
   }
   const keys = rows.slice(0, ordinal + 1).map((row) => row.answer_key ?? { entries: [] });
   return expectedClosingBalances(keys, ordinal);
+}
+
+// Advances still open in the books before the batch being scored, as the
+// canonical references the scorer compares (2026-09-22). A learner who
+// adjusts an April advance on a June bill is right even when the stored key
+// names only the bill. Empty when the exercise is not found, so scoring
+// never fails on it.
+export async function loadOpenAdvanceReferences(supabase: SupabaseClient, learnerId: string, exerciseId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, answer_key')
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    throw error;
+  }
+  const rows = (data ?? []) as { id: string; answer_key: AnswerKey | null }[];
+  const ordinal = rows.findIndex((row) => row.id === exerciseId);
+  if (ordinal <= 0) {
+    return new Set();
+  }
+  const prior = rows.slice(0, ordinal).map((row) => row.answer_key ?? { entries: [] });
+  return new Set(openAdvancesOf(replayKeys(prior)).map((item) => item.key));
 }
 
 // The post-scoring pipeline every scored submission goes through, shared by

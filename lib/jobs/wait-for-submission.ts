@@ -24,6 +24,7 @@ import {
   describeRectifications,
   loadPreviousTrialBalance,
   loadExpectedClosingBalances,
+  loadOpenAdvanceReferences,
   loadExerciseOrdinal,
   isFirstMonthOfFinancialYear,
 } from '@/lib/jobs/advance-learner';
@@ -194,6 +195,7 @@ export const waitForSubmission = inngest.createFunction(
             const scored = scoreSubmission(parsed.dayBook, parsed.trialBalance, answerKey, {
               previousTrialBalance,
               firstMonthOfFinancialYear: isFirstMonthOfFinancialYear(ordinal),
+              openAdvanceReferences: await loadOpenAdvanceReferences(supabase, submission.learner_id, exercise.id),
             });
             const expected = await loadExpectedClosingBalances(supabase, submission.learner_id, exercise.id);
             const engineResult = { ...scored, books_reconciliation: evaluateBooksReconciliation(parsed.trialBalance, expected).differences };

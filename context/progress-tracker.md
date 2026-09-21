@@ -21,6 +21,15 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-22 (evening): PRAVEEN JUNE FEEDBACK RE-CHECKED, SCORER ACCEPTS EARLIER OPEN ADVANCES
+
+Praveen's June result (submission 7d2b4937, scored 2026-09-21, pass 0.946, correction round open, no re-upload yet) re-checked line by line against his posted allocations and the June documents, read-only:
+- **Ours, already fixed:** the "Bad Debts Written Off has no ledger" books line. A local re-score under current code returns no books differences; it disappears on his next upload.
+- **Ours, fixed now:** the stored June key names Bharat Machinery's bill as plain "BM/2025-06" (generated before advances were adjusted in code), so a learner who adjusts the April advance ADV-02 by its proper name was marked BILL_REFERENCE_WRONG for the extra allocation and could never clear the line. `scoreSubmission` now takes `openAdvanceReferences` (canonical refs of advances open BEFORE the batch, `loadOpenAdvanceReferences` in advance-learner.ts via LedgerState) and both scoring jobs pass it; an extra allocation is accepted only under the advance's real name. Names stay strict (owner decision): Praveen's own label "17" is still wrong.
+- **His:** advances named "4", "3" and the NEFT number instead of ADV-C01, ADV-C02, ADV-S01 (each printed on the bank statement narration), the Karnataka Emporium invoice never raised as INV-3002, the Mumbai Suppliers bill booked whole without adjusting ADV-S01, and the bank reference missing from two narrations.
+- Noted: the June documents' structured data still carry the 2026-09-15 numbering defect (sales invoices numbered ADV-C01/ADV-C02, the Mumbai bill ADV-S01); he posted INV-3001 and MS/990 correctly regardless.
+- Gates: tsc clean, eslint clean, vitest 1126/1126. Owner must deploy before Praveen re-uploads.
+
 ## Session log — 2026-09-22 (later): HISTORICAL KEYS RE-JUDGED, CARRIED RECTIFICATIONS
 
 **Owner status:** migration `20260922120000_generation_engine.sql` run and deployed. Owner told to flip all three interns to `generation_engine = 'planned'` now (takes effect at each one's next generated batch; I review each first planned batch by hand before they post it).
