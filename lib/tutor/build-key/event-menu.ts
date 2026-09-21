@@ -65,7 +65,7 @@ export function describeMenu(menu: EventMenu): string {
   const lines = [
     `- Event types allowed: ${menu.allowedTypes.join(', ')}.`,
     `- ${menu.minEvents} to ${menu.maxEvents} events, at most ${menu.maxLinesPerDocument} line items per invoice or bill.`,
-    menu.allowAdvances ? '- Advances allowed: a receipt/payment with settlement_mode "advance", and a later sale/purchase of the same party with settlement "adjust_advance" naming that advance.' : '- No advances at this level.',
+    menu.allowAdvances ? '- Advances allowed: a receipt/payment with settlement_mode "advance", and a later sale/purchase of the same party with settlement "adjust_advance" naming that advance. The adjusting invoice or bill must total MORE (GST included) than what is still open on the advance (see OPEN ITEMS), so that part of it stays as a new bill.' : '- No advances at this level.',
     menu.allowTds ? '- Service and expense purchases may attract TDS; the system computes it.' : '- Keep purchases to goods at this level (no TDS).',
     menu.allowOnAccount ? '- settlement_mode "on_account" is allowed when no bill can be identified.' : '- No on-account settlements at this level.',
     menu.allowMultiBill ? '- settlement_mode "full" may list several bills of one party in "bills".' : '- Settle one bill per receipt or payment at this level.',

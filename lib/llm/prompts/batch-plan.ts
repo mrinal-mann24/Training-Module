@@ -102,7 +102,7 @@ ${describeMenu(params.menu)}
   - purchase: party (the vendor), nature ("goods" | "service" | "expense" | "asset"), ledger (null for goods), lines, gst_rate (null only for an exempt bill), doc_number (the vendor's bill number), settlement ("credit" | "adjust_advance"), adjust_advance_ref.
   - receipt: party (the customer), instrument ("bank" | "cash"), settlement_mode, bills, amount, why, tds_withheld.
   - payment to a party: party (the payee), instrument, settlement_mode, bills, amount, why. Direct expense payment: party null, ledger (the expense ledger), amount, instrument.
-  - contra: direction, amount. depreciation: ledger (the asset ledger), months, annual_rate_percent.
+  - contra: direction ("cash_to_bank" | "bank_to_cash"), amount. depreciation: ledger (the asset ledger), months, annual_rate_percent.
   - credit_note: party (the customer), bills (exactly the one invoice it is against), lines, gst_rate, doc_number (the new note number). debit_note: the same with the vendor and their bill.
 - settlement_mode "full": "bills" lists every bill settled and "amount" is null (the books know the balance). "part": "bills" holds the one bill and "amount" the payment. "advance" and "on_account": "bills" is [] and "amount" is the money; "on_account" also needs "why".
 - A sale's "doc_number" is our invoice number (INV-...); a purchase's is the vendor's bill number. Every number must be new (see USED NUMBERS) and must not contain a date.
@@ -114,6 +114,7 @@ ${describeMenu(params.menu)}
 - LEDGERS: an expense or asset ledger is a plain ledger name, never a party, a cash or bank ledger, or a GST/TDS ledger. Name the expense ledger after what was bought, so a fee for legal, audit, consultancy, rent, repairs, advertising, freight or commission work is visibly that ("Legal & Professional Charges", "Audit Fees", "Rent", "Repairs & Maintenance", "Advertisement & Marketing", "Freight & Delivery Charges", "Commission"). Goods lines must describe goods, not services.
 - DOCUMENT NUMBERS: one plain number in capitals with a serial, like INV-3012, MS/1001 or CN-07. No spaces, brackets, commas or dates, and never starting with ADV (the system numbers advances).
 - LINES: describe the item in plain words. No amounts, percentages, dates or product codes in a description. Choose quantities and rates so every figure, GST included, is a whole rupee (for example a taxable value that is a multiple of 100).
+- OPEN ADVANCES: a sale or purchase for a party that holds an open advance (see OPEN ITEMS) always adjusts that advance, whatever "settlement" says, and must total MORE, GST included, than what is open on it, so part of the document stays as a new bill. If that does not suit the story, trade with a different party.
 - A credit_note or debit_note uses the same GST slab as the bill it is against.
 - Depreciation is one month at a time: "months" is 1, on a fixed asset ledger with a balance, at an annual rate of 40 or below.
 - "tds_withheld" is allowed only on a receipt that settles invoices raised with nature "service".

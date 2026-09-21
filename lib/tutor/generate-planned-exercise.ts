@@ -173,7 +173,16 @@ export async function buildPlannedBatch(
     }
     documentLines = built.documentLines;
 
-    const composition = checkBatchComposition(built.generated, target.escalationActive || !batchPlan ? null : batchPlan, target.escalationActive);
+    // The composition rules bound the MODEL's events; a journal code derived
+    // from one of them (reverse charge on a legal bill) is not the model's to
+    // count, and used to push a full plan over the limit (dry run, Yeshas).
+    const derived = new Set(built.derivedSequences);
+    const planned: GeneratedExercise = {
+      ...built.generated,
+      transactions: built.generated.transactions.filter((transaction) => !derived.has(transaction.sequence)),
+      answer_key: { ...built.generated.answer_key, entries: built.generated.answer_key.entries.filter((entry) => !derived.has(entry.sequence)) },
+    };
+    const composition = checkBatchComposition(planned, target.escalationActive || !batchPlan ? null : batchPlan, target.escalationActive);
     if (composition) {
       violations = [composition];
       continue;
@@ -239,7 +248,8 @@ export async function buildPlannedBatch(
   }
 
   if (finalExercise === null) {
-    throw new Error(`Planned exercise generation failed after ${MAX_ATTEMPTS} attempts: ${violations.join(' | ')}`);
+    const history = [...rejectedAttempts, violations].map((reasons, index) => `attempt ${index + 1}: ${reasons.join(' | ')}`).join(' || ');
+    throw new Error(`Planned exercise generation failed after ${MAX_ATTEMPTS} attempts. ${history}`);
   }
 
   const codeBuiltDocuments = documentsPlan

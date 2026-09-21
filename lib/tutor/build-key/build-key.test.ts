@@ -285,6 +285,8 @@ describe('buildAnswerKey, Stage 6 events', () => {
     expect(journal[0].concept_tags).toEqual(expect.arrayContaining(['journal_voucher_basics', 'rcm_and_late_fee']));
     expect(generated.transactions[2].description).toContain('pass the reverse-charge journal for the bill of Sharma Legal booked above');
     expect(generated.transactions[2].description).toContain('Rs 10,800');
+    // The derived journal is reported, so the composition rules count only the plan's own events.
+    expect(result.derivedSequences).toEqual([3]);
     // Sequences stay contiguous with the derived voucher in the middle.
     expect(generated.transactions.map((transaction) => transaction.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
@@ -384,5 +386,25 @@ describe('buildAnswerKey refuses what the model may not decide by free text (pre
     expect(
       only([purchase({ vendor: { name: 'Nimbus Overseas Inc', new_party: true }, nature: 'service', ledger: 'Import of Services Software', lines: [{ description: 'Cloud hosting', quantity: 1, rate: 50000 }] })]).violations[0],
     ).toContain('import of services is not supported');
+  });
+});
+
+describe('a party holding an open advance (dry run, 2026-09-22)', () => {
+  const only = (events: BatchPlan['events']) => buildAnswerKey({ ...input, plan: { ...plan, events }, menu: { ...input.menu, minEvents: 1 } });
+  const bharatBill = (rate: number) =>
+    ({ type: 'purchase', seq: 1, day: 5, vendor: { name: 'Bharat Machinery', new_party: false }, nature: 'asset', ledger: 'Office Equipment', lines: [{ description: 'Label printer', quantity: 1, rate }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'BM/77' }) as BatchPlan['events'][number];
+
+  it('has the advance adjusted on its next bill even when the plan says plain credit', () => {
+    const result = only([bharatBill(85000)]);
+    if (result.generated === null) throw new Error(result.violations.join('\n'));
+    const vendor = result.generated.answer_key.entries.find((entry) => entry.correct_account === 'Bharat Machinery');
+    expect(vendor?.bill_reference).toBe('ADV-S01 (Advance), BM/77');
+    expect(vendor?.concept_tags).toContain('supplier_advance');
+  });
+
+  it('cannot be billed for less than the advance still open, since no bill number would be left to allocate', () => {
+    const result = only([bharatBill(40000)]);
+    expect(result.generated).toBeNull();
+    expect(result.violations[0]).toContain('must exceed advance ADV-S01');
   });
 });

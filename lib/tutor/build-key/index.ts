@@ -52,7 +52,7 @@ export type BuildKeyInput = {
 // documentLines: the plan's own line items per sale/purchase sequence, for
 // the printed invoice (rebuild Stage 5); the key itself carries only totals.
 export type BuildKeyResult =
-  | { generated: GeneratedExercise; documentLines: Map<number, LineItem[]>; violations: string[] }
+  | { generated: GeneratedExercise; documentLines: Map<number, LineItem[]>; derivedSequences: number[]; violations: string[] }
   | { generated: null; violations: string[] };
 
 const CASH = 'Cash';
@@ -191,6 +191,9 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
   // New parties this plan has already introduced, so a later event may name
   // them again without new_party.
   const batchParties = new Set<string>();
+  // Vouchers code derived from an event (the RCM journal of a legal bill):
+  // part of the batch, but not one of the model's events.
+  const derivedSequences: number[] = [];
 
   let sequence = 0;
   for (const { event, date } of dated) {
@@ -205,6 +208,7 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
     // follows its event under the next sequence.
     if (result.derived) {
       sequence += 1;
+      derivedSequences.push(sequence);
       vouchers.push({
         legs: result.derived.legs.map((item) => ({ ...item, sequence })),
         voucher: result.derived.voucher,
@@ -243,6 +247,7 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
 
   return {
     documentLines,
+    derivedSequences,
     generated: {
       scenario: plan.scenario.trim(),
       transactions,
@@ -279,6 +284,17 @@ function resolveParty(context: EventContext, ref: { name: string; new_party: boo
   const party = context.input.master.resolve(ref.name);
   if (!party.known) context.batchParties.add(loosePartyKey(ref.name));
   return party;
+}
+
+// A bill or invoice for a party that holds an open advance ALWAYS adjusts
+// it, whatever the plan said: that is what a bookkeeper does, the legacy
+// engine did it in code (adjustOpenAdvances), and a learner who adjusts it
+// would otherwise be scored against a key that booked the whole document as
+// new (dry run, Praveen's Bharat Machinery, 2026-09-22).
+function advanceToAdjust(context: EventContext, party: PartyRecord, side: OpenItem['side'], planned: string | null): string | null {
+  if (planned) return planned;
+  const open = openItemsOf(context.working).find((item) => item.kind === 'advance' && item.party === party.ledgerName && item.side === side);
+  return open?.ref ?? null;
 }
 
 function linesOk(context: EventContext, lines: readonly LineItem[]): boolean {
@@ -357,9 +373,10 @@ function buildEvent(context: EventContext): EventResult | null {
       let allocations: Allocation[] = [];
       let consumed: { ref: string; amount: number } | null = null;
       if (customer) {
-        if (event.settlement === 'adjust_advance') {
-          if (!input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
-          const adjusted = adjustAdvance({ context, party: customer, side: 'receivable', ref: event.adjust_advance_ref, total, documentNumber: event.doc_number });
+        const advanceRef = advanceToAdjust(context, customer, 'receivable', event.settlement === 'adjust_advance' ? event.adjust_advance_ref : null);
+        if (event.settlement === 'adjust_advance' || advanceRef) {
+          if (event.settlement === 'adjust_advance' && !input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
+          const adjusted = adjustAdvance({ context, party: customer, side: 'receivable', ref: advanceRef, total, documentNumber: event.doc_number });
           if (!adjusted) return null;
           allocations = adjusted.allocations;
           consumed = adjusted.consumed;
@@ -452,9 +469,10 @@ function buildEvent(context: EventContext): EventResult | null {
       const partyAmount = round2(total - (tds.applies ? tds.amount : 0));
       let allocations: Allocation[];
       let consumed: { ref: string; amount: number } | null = null;
-      if (event.settlement === 'adjust_advance') {
-        if (!input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
-        const adjusted = adjustAdvance({ context, party: vendor, side: 'payable', ref: event.adjust_advance_ref, total: partyAmount, documentNumber: event.doc_number });
+      const advanceRef = advanceToAdjust(context, vendor, 'payable', event.settlement === 'adjust_advance' ? event.adjust_advance_ref : null);
+      if (event.settlement === 'adjust_advance' || advanceRef) {
+        if (event.settlement === 'adjust_advance' && !input.menu.allowAdvances) violations.push(`transaction ${sequence}: advances are not allowed at this level`);
+        const adjusted = adjustAdvance({ context, party: vendor, side: 'payable', ref: advanceRef, total: partyAmount, documentNumber: event.doc_number });
         if (!adjusted) return null;
         allocations = adjusted.allocations;
         consumed = adjusted.consumed;
