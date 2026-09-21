@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local-only test fixtures: interns' stored answer keys (owner decision 2026-09-22)
+/lib/tutor/__fixtures__/keys/
