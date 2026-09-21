@@ -1,18 +1,65 @@
-import { Langfuse } from 'langfuse';
+import { LangfuseClient } from '@langfuse/client';
+import { LangfuseSpanProcessor } from '@langfuse/otel';
+import { LangfuseOtelSpanAttributes, setLangfuseTracerProvider, startObservation, type LangfuseObservation } from '@langfuse/tracing';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { getStructuredCompletion, type StructuredCompletionParams } from './client';
 
-const langfuse = new Langfuse({
-  secretKey: process.env.LANGFUSE_SECRET_KEY,
-  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
-  baseUrl: process.env.LANGFUSE_BASE_URL,
-  // Observability must never slow the learner down: a short timeout and no
-  // retries, because an unreachable Langfuse host (observed live 2026-08-21:
-  // every LLM call waited out a ~10s network timeout, adding more than a
-  // minute to a scoring run) should cost milliseconds, not seconds.
-  requestTimeout: 3000,
-  fetchRetryCount: 0,
-  enabled: Boolean(process.env.LANGFUSE_SECRET_KEY && process.env.LANGFUSE_PUBLIC_KEY),
-});
+// Langfuse tracing on the current SDK (2026-09-22). The `langfuse` v3
+// package posted trace-create / generation-create events to
+// /api/public/ingestion, which the Langfuse server now rejects ("Event type
+// not accepted ... events_only"): every LLM call went untraced. The
+// supported path is OpenTelemetry (@langfuse/tracing + @langfuse/otel) for
+// traces and @langfuse/client for scores.
+//
+// Observability must never slow the learner down or fail a job: an ISOLATED
+// tracer provider (nothing else in the app is instrumented), immediate
+// export so a serverless function does not hold spans in a batch it never
+// flushes, a short timeout, and every flush fire-and-forget. With no keys
+// configured nothing is set up and every function below is a plain call.
+
+const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+const secretKey = process.env.LANGFUSE_SECRET_KEY;
+const baseUrl = process.env.LANGFUSE_BASE_URL;
+const enabled = Boolean(publicKey && secretKey);
+
+const spanProcessor = enabled
+  ? new LangfuseSpanProcessor({
+      publicKey,
+      secretKey,
+      baseUrl,
+      exportMode: 'immediate',
+      // Seconds. An unreachable Langfuse host (observed live 2026-08-21:
+      // every LLM call waited out a ~10s network timeout) should cost
+      // little, and it is never awaited anyway.
+      timeout: 3,
+    })
+  : null;
+
+if (spanProcessor) {
+  // Not the global provider: only Langfuse observations go through it.
+  setLangfuseTracerProvider(new NodeTracerProvider({ spanProcessors: [spanProcessor] }));
+}
+
+const scoreClient = enabled ? new LangfuseClient({ publicKey, secretKey, baseUrl }) : null;
+
+function flushInBackground(): void {
+  void spanProcessor?.forceFlush().catch(() => {});
+  void scoreClient?.flush().catch(() => {});
+}
+
+// The learner, the trace name and the trace metadata, written straight onto
+// the observation's span. The SDK's propagateAttributes carries them through
+// the OpenTelemetry context, which needs a GLOBAL context manager; this
+// module deliberately registers nothing global, and without one the
+// attributes were silently dropped (checked against an in-memory exporter).
+function tagTrace(observation: LangfuseObservation, trace: { userId: string; name: string; metadata: Record<string, unknown> }): void {
+  observation.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_USER_ID, trace.userId);
+  observation.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_NAME, trace.name);
+  for (const [key, value] of Object.entries(trace.metadata)) {
+    if (value === undefined || value === null) continue;
+    observation.otelSpan.setAttribute(`${LangfuseOtelSpanAttributes.TRACE_METADATA}.${key}`, typeof value === 'string' ? value : JSON.stringify(value));
+  }
+}
 
 export type CallType =
   | 'diagnostic-generation'
@@ -36,71 +83,58 @@ export type TracedCompletionParams = StructuredCompletionParams & {
 };
 
 // Wraps an OpenRouter structured completion in a Langfuse trace, tagged with
-// the learner and call type so every LLM call from this unit onward is traced.
-export async function getTracedStructuredCompletion(
-  params: TracedCompletionParams,
-): Promise<unknown> {
-  const metadata = { callType: params.callType, ...params.extraMetadata };
-
-  const trace = langfuse.trace({
-    name: params.traceName,
-    userId: params.learnerId,
-    metadata,
-  });
-
-  const generation = trace.generation({
-    name: params.traceName,
-    input: params.messages,
-    // The requested model; overwritten on end with the id OpenRouter actually
-    // served, so Langfuse cost/latency dashboards group by real model.
-    model: params.model ?? process.env.OPENROUTER_MODEL,
-    metadata,
-  });
-
-  try {
-    const result = await getStructuredCompletion({
+// the learner and call type so every LLM call is traced.
+export async function getTracedStructuredCompletion(params: TracedCompletionParams): Promise<unknown> {
+  const complete = () =>
+    getStructuredCompletion({
       messages: params.messages,
       jsonSchema: params.jsonSchema,
       model: params.model,
       temperature: params.temperature,
     });
-    generation.end({
+  if (!enabled) return (await complete()).output;
+
+  const metadata = { callType: params.callType, ...params.extraMetadata };
+  const generation = startObservation(
+    params.traceName,
+    {
+      input: params.messages,
+      // The requested model; overwritten on end with the id OpenRouter
+      // actually served, so cost/latency dashboards group by real model.
+      model: params.model ?? process.env.OPENROUTER_MODEL,
+      metadata,
+    },
+    { asType: 'generation' },
+  );
+  tagTrace(generation, { userId: params.learnerId, name: params.traceName, metadata });
+  try {
+    const result = await complete();
+    const usageDetails: Record<string, number> = {};
+    if (result.usage.promptTokens !== null && result.usage.promptTokens !== undefined) usageDetails.input = result.usage.promptTokens;
+    if (result.usage.completionTokens !== null && result.usage.completionTokens !== undefined) usageDetails.output = result.usage.completionTokens;
+    if (result.usage.totalTokens !== null && result.usage.totalTokens !== undefined) usageDetails.total = result.usage.totalTokens;
+    generation.update({
       output: result.output,
       model: result.model,
-      // Token usage + the USD cost OpenRouter actually charged — this is
-      // what lights up Langfuse's cost/token dashboards (2026-09-01).
-      usage: {
-        input: result.usage.promptTokens ?? undefined,
-        output: result.usage.completionTokens ?? undefined,
-        total: result.usage.totalTokens ?? undefined,
-        unit: 'TOKENS',
-      },
-      ...(result.usage.costUsd !== null
-        ? { costDetails: { total: result.usage.costUsd } }
-        : {}),
+      // Token usage + the USD cost OpenRouter actually charged.
+      usageDetails,
+      ...(result.usage.costUsd !== null && result.usage.costUsd !== undefined ? { costDetails: { total: result.usage.costUsd } } : {}),
     });
     return result.output;
   } catch (error) {
-    generation.end({
-      output: null,
-      statusMessage: error instanceof Error ? error.message : String(error),
-      level: 'ERROR',
-    });
+    generation.update({ level: 'ERROR', statusMessage: error instanceof Error ? error.message : String(error) });
     throw error;
   } finally {
-    // Fire-and-forget: the SDK batches internally, and awaiting the flush
-    // made every LLM call pay for Langfuse's network round-trip (or its
-    // full timeout when the host is down). Tracing is observability — it
-    // must never sit on the learner's critical path.
-    void langfuse.flushAsync().catch(() => {});
+    generation.end();
+    // Fire-and-forget: tracing never sits on the learner's critical path.
+    flushInBackground();
   }
 }
 
 // Pushes a scored submission's outcome into Langfuse as SCORES on a
 // per-submission trace (2026-09-01), so model/prompt changes can be
 // correlated with learner results over time (Langfuse → Scores):
-// weighted_score (0-1), passed (1/0), tb_tie_out (1/0). Fire-and-forget,
-// same never-on-the-critical-path rule as the generation tracing above.
+// weighted_score (0-1), passed (1/0), tb_tie_out (1/0). Fire-and-forget.
 export function recordSubmissionScore(params: {
   learnerId: string;
   submissionId: string;
@@ -108,16 +142,17 @@ export function recordSubmissionScore(params: {
   overallResult: 'pass' | 'partial' | 'fail';
   tbTieOut: boolean;
 }): void {
+  if (!enabled || !scoreClient) return;
   try {
-    const trace = langfuse.trace({
-      name: 'submission-scored',
-      userId: params.learnerId,
-      metadata: { submissionId: params.submissionId, overallResult: params.overallResult },
-    });
-    trace.score({ name: 'weighted_score', value: params.weightedScore });
-    trace.score({ name: 'passed', value: params.overallResult === 'pass' ? 1 : 0 });
-    trace.score({ name: 'tb_tie_out', value: params.tbTieOut ? 1 : 0 });
-    void langfuse.flushAsync().catch(() => {});
+    const metadata = { submissionId: params.submissionId, overallResult: params.overallResult };
+    const span = startObservation('submission-scored', { metadata });
+    tagTrace(span, { userId: params.learnerId, name: 'submission-scored', metadata });
+    span.end();
+    const traceId = span.traceId;
+    scoreClient.score.create({ traceId, name: 'weighted_score', value: params.weightedScore });
+    scoreClient.score.create({ traceId, name: 'passed', value: params.overallResult === 'pass' ? 1 : 0 });
+    scoreClient.score.create({ traceId, name: 'tb_tie_out', value: params.tbTieOut ? 1 : 0 });
+    flushInBackground();
   } catch {
     // Observability failures never affect scoring.
   }
@@ -134,19 +169,16 @@ export function recordCoachingGroundingViolations(params: {
   violations: string[];
   usedFallback: boolean;
 }): void {
+  if (!enabled || !scoreClient) return;
   try {
-    const trace = langfuse.trace({
-      name: 'coaching-grounding',
-      userId: params.learnerId,
-      metadata: { callType: 'coaching', attempt: params.attempt, usedFallback: params.usedFallback },
-    });
-    trace.event({
-      name: params.usedFallback ? 'grounding-fallback' : 'grounding-retry',
-      level: 'WARNING',
-      output: { violations: params.violations },
-    });
-    trace.score({ name: 'coaching_grounding_violations', value: params.violations.length });
-    void langfuse.flushAsync().catch(() => {});
+    const metadata = { callType: 'coaching', attempt: params.attempt, usedFallback: params.usedFallback };
+    const span = startObservation('coaching-grounding', { metadata });
+    tagTrace(span, { userId: params.learnerId, name: 'coaching-grounding', metadata });
+    span.startObservation(params.usedFallback ? 'grounding-fallback' : 'grounding-retry', { level: 'WARNING', output: { violations: params.violations } }, { asType: 'event' });
+    span.end();
+    const traceId = span.traceId;
+    scoreClient.score.create({ traceId, name: 'coaching_grounding_violations', value: params.violations.length });
+    flushInBackground();
   } catch {
     // Observability failures never affect coaching.
   }
