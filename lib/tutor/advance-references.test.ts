@@ -97,7 +97,7 @@ describe('parseBillReferences / documentNumberOf: the reference a document is nu
       { ref: 'ADV-C01', kind: 'advance' },
       { ref: 'INV-3001', kind: 'bill' },
     ]);
-    expect(parseBillReferences('INV-2231 (Against Ref, part payment)')).toEqual([{ ref: 'INV-2231', kind: 'against' }]);
+    expect(parseBillReferences('INV-2231 (Against Ref, part payment)')).toEqual([{ ref: 'INV-2231', kind: 'against', partPayment: true }]);
     expect(parseBillReferences('Against Ref INV-005')).toEqual([{ ref: 'INV-005', kind: 'against' }]);
     expect(parseBillReferences('New Ref INV-062')).toEqual([{ ref: 'INV-062', kind: 'bill' }]);
     expect(parseBillReferences('On Account')).toEqual([{ ref: 'On Account', kind: 'on_account' }]);
