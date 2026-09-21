@@ -1,6 +1,6 @@
 import { parseBillReferences, partyLegOf, type OpenBill } from '@/lib/db/queries/company';
 import { looksLikeDate, normalizeDocumentNumber } from '@/lib/tutor/bill-reference';
-import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 import type { AnswerKey, AnswerKeyEntry, ConceptTag, GeneratedExercise } from '@/lib/schemas/exercise';
 import { BOOKS_BEGIN_MONTH_INDEX, BOOKS_BEGIN_YEAR } from '@/lib/tutor/timeline';
 import {

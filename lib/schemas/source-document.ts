@@ -27,7 +27,7 @@ export const SOURCE_DOCUMENT_FILE_FORMAT: Record<SourceDocumentType, { extension
 // They never state the accounting classification the learner is meant to
 // derive (e.g. an invoice carries the GST amount charged, never a label like
 // "post this as IGST Payable") — that judgment is the exercise itself. This
-// boundary is enforced in the generation prompt (lib/llm/prompts/source-document.ts),
+// boundary is enforced by the code-built documents (lib/documents/build-vendor-invoice.ts),
 // not just assumed here.
 
 const VendorInvoiceLineItemSchema = z.object({

@@ -39,7 +39,11 @@ export type BuildKeyInput = {
   documentsMode: boolean;
 };
 
-export type BuildKeyResult = { generated: GeneratedExercise; violations: string[] } | { generated: null; violations: string[] };
+// documentLines: the plan's own line items per sale/purchase sequence, for
+// the printed invoice (rebuild Stage 5); the key itself carries only totals.
+export type BuildKeyResult =
+  | { generated: GeneratedExercise; documentLines: Map<number, LineItem[]>; violations: string[] }
+  | { generated: null; violations: string[] };
 
 const CASH = 'Cash';
 const SALES = 'Sales';
@@ -163,11 +167,13 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
 
   const entries: AnswerKeyEntry[] = [];
   const transactions: GeneratedExercise['transactions'] = [];
+  const documentLines = new Map<number, LineItem[]>();
 
   dated.forEach(({ event, date }, index) => {
     const sequence = index + 1;
     const result = buildEvent({ event, date, sequence, working, input, mintAdvance, claimDocumentNumber, tracker, violations });
     if (!result) return;
+    if (event.type === 'sale' || event.type === 'purchase') documentLines.set(sequence, event.lines.map((line) => ({ ...line })));
     const docType = documentTypeFor(event, input.documentsMode);
     const tags = conceptTagsFor(result.legs, { assetPurchase: event.type === 'purchase' && event.nature === 'asset' });
     const fullLegs: AnswerKeyEntry[] = result.legs.map((item) => ({
@@ -191,6 +197,7 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
   if (violations.length > 0) return { generated: null, violations };
 
   return {
+    documentLines,
     generated: {
       scenario: plan.scenario.trim(),
       transactions,

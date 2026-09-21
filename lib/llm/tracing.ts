@@ -21,7 +21,6 @@ export type CallType =
   | 'adaptive-generation'
   // Rebuild Stage 3 (2026-09-22): the model plans the month's events only.
   | 'batch-plan'
-  | 'source-document-generation'
   | 'qualitative-scoring'
   | 'review-exercise-generation'
   | 'qa-response'

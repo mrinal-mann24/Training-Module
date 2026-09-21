@@ -7,7 +7,7 @@ import {
   parseBillReferences,
   partyLegOf,
 } from '@/lib/db/queries/company';
-import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate, formatInvoiceDate } from '@/lib/documents/invoice-figures';
 import { COMPANY_DETAILS } from '@/lib/documents/company-details';
 import { buildSalesRegisterContent } from '@/lib/documents/build-sales-register';
 import { partyIdentityFor } from '@/lib/documents/party-directory';

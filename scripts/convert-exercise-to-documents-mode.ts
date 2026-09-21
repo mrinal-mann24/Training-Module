@@ -19,7 +19,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GeneratedExerciseSchema } from '@/lib/schemas/exercise';
 import { renderSourceDocument } from '@/lib/documents/render-source-document';
 import { applyDocumentsMode } from '@/lib/tutor/documents-mode';
-import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DEFAULT_COMPANY = 'Blossom Retail Pvt Ltd';

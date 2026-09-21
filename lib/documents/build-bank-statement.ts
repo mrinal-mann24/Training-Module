@@ -1,7 +1,7 @@
 import type { GeneratedExercise } from '@/lib/schemas/exercise';
 import type { BankStatementContent } from '@/lib/schemas/source-document';
 import { isBankLedger, partyLegOf, splitBillReferences } from '@/lib/db/queries/company';
-import { extractTransactionDate, formatInvoiceDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate, formatInvoiceDate } from '@/lib/documents/invoice-figures';
 
 // The bank statement is built by CODE from the answer key, not by the model
 // (2026-09-03). The model-written statement carried a running balance it

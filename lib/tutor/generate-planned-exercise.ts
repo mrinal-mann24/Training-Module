@@ -116,6 +116,8 @@ export async function generatePlannedExercise(
   let finalExercise: GeneratedExercise | null = null;
   let documentsPlan: ReturnType<typeof applyDocumentsMode> | null = null;
   let statement: ReturnType<typeof buildBankStatementContent> = null;
+  // The plan's line items per sale/purchase, for the printed vendor invoice.
+  let documentLines: Map<number, { description: string; quantity: number; rate: number }[]> = new Map();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS && finalExercise === null; attempt += 1) {
     const { messages, jsonSchema } = violations.length === 0 ? buildBatchPlanPrompt(params) : buildBatchPlanRetryPrompt(params, violations);
@@ -150,6 +152,7 @@ export async function generatePlannedExercise(
       violations = built.violations;
       continue;
     }
+    documentLines = built.documentLines;
 
     const composition = checkBatchComposition(built.generated, target.escalationActive || !batchPlan ? null : batchPlan, target.escalationActive);
     if (composition) {
@@ -227,7 +230,7 @@ export async function generatePlannedExercise(
         ...(documentsPlan.salesRegister ? [{ document: { doc_type: 'sales_register' as const, content: documentsPlan.salesRegister }, seed: 'sales-register' }] : []),
       ]
     : [];
-  const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, companyName, statement?.content ?? null, codeBuiltDocuments);
+  const documents = await prepareSourceDocuments(supabase, learnerId, finalExercise, companyName, statement?.content ?? null, codeBuiltDocuments, documentLines);
 
   const { id } = await insertExercise(supabase, learnerId, kind, finalExercise);
   await markRectificationsCarried(supabase, rectifications.map((rectification) => rectification.id), id);

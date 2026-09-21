@@ -36,14 +36,9 @@ import { buildBankStatementContent, applyBankReferences } from "@/lib/documents/
 import type { BankStatementContent } from "@/lib/schemas/source-document";
 import { insertSourceDocument } from "@/lib/db/queries/source-documents";
 import { BOOKS_BEGIN_MONTH_INDEX, BOOKS_BEGIN_YEAR } from "@/lib/tutor/timeline";
-import {
-  generateVendorInvoiceDocument,
-} from "@/lib/documents/generate-source-document";
+import { buildVendorInvoiceContent, type VendorInvoiceLine } from "@/lib/documents/build-vendor-invoice";
 import { renderSourceDocument } from "@/lib/documents/render-source-document";
-import type {
-  BankStatementLineInput,
-  VendorInvoiceInput,
-} from "@/lib/llm/prompts/source-document";
+import { extractTransactionDate, type BankStatementLineInput, type VendorInvoiceInput } from "@/lib/documents/invoice-figures";
 import type { GeneratedSourceDocument, SourceDocumentType } from "@/lib/schemas/source-document";
 import { applyDocumentsMode, checkMonthEndNoteDetails, checkSalesInvoicesBuildable } from "@/lib/tutor/documents-mode";
 import { adjustOpenAdvances, advancesToAdjust } from "@/lib/tutor/advance-adjustment";
@@ -72,7 +67,6 @@ import {
 import { appendMonthEndJournals, type MonthEndParams } from "@/lib/tutor/month-end-journals";
 import { checkCanonicalDateFormat, checkDatesExist, enforceEducationalDates } from "@/lib/tutor/educational-dates";
 import { partyIdentityFor } from "@/lib/documents/party-directory";
-import { extractTransactionDate } from "@/lib/llm/prompts/source-document";
 import type { WeakConceptTarget } from "@/lib/tutor/mastery";
 import type { LicenseMode } from "@/lib/schemas/onboarding";
 
@@ -188,8 +182,11 @@ export async function prepareSourceDocuments(
   // bank lines. companyName is still used for the invoices' buyer block.
   statement: BankStatementContent | null,
   // Documents-mode extras already built by code (sales invoices, the
-  // month-end notes sheet): render + upload only, no LLM call.
+  // month-end notes sheet): render + upload only.
   codeBuiltDocuments: { document: GeneratedSourceDocument; seed: string }[] = [],
+  // The plan's own line items per purchase sequence (planned engine), so a
+  // goods bill prints "4 cotton rolls at Rs 5,000" rather than one line.
+  vendorLines?: ReadonlyMap<number, readonly VendorInvoiceLine[]>,
 ): Promise<PreparedSourceDocument[]> {
   const plan = planSourceDocuments(generatedExercise);
   // Storage folder + format-rotation seed base. Pre-generated (not the
@@ -220,18 +217,20 @@ export async function prepareSourceDocuments(
     return { docType, storagePath, content: generated.content };
   }
 
-  // All documents generate CONCURRENTLY — they are independent LLM calls, and
-  // running them one-by-one made the post-scoring tail take minutes (observed
-  // live 2026-09-01 on the production trace: 5 sequential document calls
-  // dominating the next-batch step). Promise.all keeps result order
+  // Every document is built by code from the key (the vendor invoice since
+  // 2026-09-22, rebuild Stage 5: lib/documents/build-vendor-invoice.ts) and
+  // rendered + uploaded concurrently. Promise.all keeps result order
   // deterministic (invoices by plan order, statement last).
   const invoicePromises = plan.invoices.map((invoice) =>
-    generateVendorInvoiceDocument(learnerId, invoice).then((generated) =>
-      renderAndUpload(
-        generated,
-        "vendor_invoice",
-        `${batchId}:${invoice.legs[0].sequence}`,
-      ),
+    renderAndUpload(
+      {
+        doc_type: "vendor_invoice",
+        content: buildVendorInvoiceContent(invoice.legs, invoice.transactionDescription, companyName, {
+          lines: vendorLines?.get(invoice.legs[0].sequence),
+        }),
+      },
+      "vendor_invoice",
+      `${batchId}:${invoice.legs[0].sequence}`,
     ),
   );
 

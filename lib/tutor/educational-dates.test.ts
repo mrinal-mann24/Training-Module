@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerKey, ConceptTag, GeneratedExercise } from '@/lib/schemas/exercise';
-import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 import { applyBankReferences, buildBankStatementContent } from '@/lib/documents/build-bank-statement';
 import { applyDocumentsMode } from './documents-mode';
 import { appendMonthEndJournals } from './month-end-journals';

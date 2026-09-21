@@ -1,6 +1,6 @@
 import type { ParsedDayBook, ParsedTrialBalance } from '@/lib/schemas/voucher';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
-import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 
 export type ValidityError = {
   code: string;

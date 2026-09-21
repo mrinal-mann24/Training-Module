@@ -35,7 +35,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { applyBankReferences, buildBankStatementContent } from '@/lib/documents/build-bank-statement';
-import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
+import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 import { GeneratedExerciseSchema, type AnswerKey, type GeneratedExercise } from '@/lib/schemas/exercise';
 import { applyDocumentsMode } from '@/lib/tutor/documents-mode';
 import { enforceEducationalDates, redateDescription, type CalendarMonth } from '@/lib/tutor/educational-dates';

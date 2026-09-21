@@ -9,8 +9,7 @@ import {
 } from '@/lib/db/queries/company';
 import { applyDocumentsMode, buildSalesInvoiceContent } from './documents-mode';
 import { checkBillNumberUniqueness, priorBillReferences } from './generation-checks';
-import { checkVendorInvoiceContent } from '@/lib/documents/generate-source-document';
-import { buildVendorInvoicePrompt } from '@/lib/llm/prompts/source-document';
+import { buildVendorInvoiceContent } from '@/lib/documents/build-vendor-invoice';
 
 // Regression (2026-09-15): Praveen's June 2025 batch printed the ADVANCE
 // reference as the document number: sales invoices "ADV-C01" / "ADV-C02"
@@ -160,21 +159,12 @@ describe('printed documents carry the document number (Praveen, June 2025)', () 
     expect(bengaluru.lineItems[0].description).toBe('Trading goods as per order');
   });
 
-  it('the vendor invoice is generated and checked against MS/990', () => {
-    const input = { legs: legsOf(7), transactionDescription: descriptionOf(7) };
-    const system = buildVendorInvoicePrompt(input).messages[0].content;
-    expect(system).toContain('invoiceNumber: "MS/990" exactly');
-    const content = {
-      vendorName: 'Mumbai Suppliers',
-      vendorGSTIN: '27AABCM1234F1ZX',
-      invoiceNumber: 'MS/990',
-      invoiceDate: '15-Jun-2025',
-      lineItems: [{ description: 'Trading goods', quantity: 1, rate: 22000, amount: 22000 }],
-      taxBreakup: { cgst_amount: null, sgst_amount: null, igst_amount: 3960 },
-      totalAmount: 25960,
-    };
-    expect(checkVendorInvoiceContent(content, input)).toBeNull();
-    expect(checkVendorInvoiceContent({ ...content, invoiceNumber: 'ADV-S01' }, input)).toContain('must be exactly "MS/990"');
+  it('the vendor invoice is built from the key and numbered MS/990, never ADV-S01', () => {
+    const content = buildVendorInvoiceContent(legsOf(7), descriptionOf(7), 'Blossom Retail Pvt Ltd');
+    expect(content.invoiceNumber).toBe('MS/990');
+    expect(content.vendorName).toBe('Mumbai Suppliers');
+    expect(content.totalAmount).toBe(25960);
+    expect(content.taxBreakup).toEqual({ cgst_amount: null, sgst_amount: null, igst_amount: 3960 });
   });
 });
 

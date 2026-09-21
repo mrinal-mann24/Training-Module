@@ -100,7 +100,8 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     run-scoring.ts            → Triggered once validity gate passes
     advance-learner.ts        → Runs after scoring: logs concept attempts, recomputes mastery/module progress, triggers next-exercise generation (mastery recompute logic lives here, not in a separate recompute-mastery.ts)
   /documents
-    generate-source-document.ts → LLM call producing validated structured document content (never a PDF/layout)
+    build-vendor-invoice.ts, invoice-figures.ts → the vendor invoice built by code from the key and the party master (2026-09-22, rebuild Stage 5; no LLM call remains in document generation)
+    generate-source-document.ts → the credit-voucher numbering rule (missingBillNumbers) only
     render-source-document.ts   → Deterministic content → PDF buffer, no LLM involvement
     pick-template.ts, build-bank-statement.ts, build-sales-register.ts
                                  → Deterministic document assembly, no LLM involvement
