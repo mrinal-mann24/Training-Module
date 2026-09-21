@@ -29,6 +29,22 @@ tokens, type, materials and card pattern, not the scroll theatre.
 toggle, no theme init script. The previous Wandor theme (Geist/Special
 Elite, terracotta) and the original blue `#314DD0` remain retired.
 
+**"Powered by AI Accountant" attribution (2026-09-21, user direction).**
+`app/components/site/PoweredByAiAccountant.tsx` exports two variants,
+both linking to https://www.aiaccountant.com/: `PoweredByAiAccountant`
+(dark-surface inline text, used in `SiteFooter.tsx` beside the copyright
+line) and `PoweredByAiAccountantPill` (a bordered pill with an arrow
+icon, used as the hero eyebrow in `Hero.tsx`, directly above the `<h1>`
+— a nav-inline placement was tried first and removed in favour of this
+after user feedback referencing a reference site's hero badge). Both use
+the same fetched AI Accountant mark (`public/ai-accountant-mark.png`,
+which carries its own white chip) and stay tonal — footer text uses
+`white/60`–`white/80`, the hero pill uses `day-muted`/`day-ink` on a
+`day-line`-bordered white pill. This is deliberate: do not recolour
+either toward AI Accountant's own indigo (`#314DD0`) — that colour is
+retired in this codebase (see above) and the single-accent rule stays
+`#1c76ff` only.
+
 ## Day surface, 2026-09-15 (product routes since 2026-09-16)
 
 `.day` sits on the root wrapper of every route: `app/page.tsx`, `app/(auth)/layout.tsx`, `app/dashboard/page.tsx`, `app/(progress)/progress/page.tsx` and `ChatShell.tsx`, plus each route's `loading.tsx` and `error.tsx`. Landing components live in `app/components/site/`; every word and figure is in `site-content.ts`.

@@ -21,6 +21,38 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-21: CARRIED ADVANCES IN KEYS + JOURNAL EXPENSE LEGS ARE NOT PARTIES (f960fd6)
+
+**Why (user):** Praveen's June feedback had two findings that were our fault; advance *names* stay strict (user decision).
+
+1. **Advance from an earlier month now named on the next bill (`lib/tutor/advance-adjustment.ts`, new).** April's pack paid Bharat Machinery Rs 50,000 as ADV-02; June's key raised BM/2025-06 as a plain new bill, so his correct "Agst Ref advance + New Ref balance" posting was BILL_REFERENCE_WRONG. `openAdvancesFromKeys` (company.ts, same replay as `openBillsFromKeys`) lists unadjusted advances; `advancesToAdjust` caps them by the party's opening balance on the advance side (a turned balance, like Bharat after June, offers nothing); `adjustOpenAdvances` rewrites the next same-party purchase/sale reference to "ADV-02 (Advance), BM/2025-06" in `generate-exercise.ts` after validation. Names stay strict: "17" for ADV-02 is still wrong.
+2. **Bad Debts Written Off no longer a party (`partyAccountsOf`).** A journal has no party side, so its expense leg carrying the invoice reference became a balance-sheet ledger and a month-only export was told "no ledger in your export". Journal legs that classify as profit-and-loss are no longer parties.
+
+Real data (read-only): only Praveen's Bad Debts ledger changes class; his June Trial Balance now reconciles clean. Garima and Yeshas still hold ADV-02 (Bharat Dr 50,000), so their next Bharat bill will expect the adjustment. Praveen's stored June result is unchanged (not re-scored). Gates: tsc clean, eslint clean, 1079/1079 tests.
+
+## Session log — 2026-09-21: "POWERED BY AI ACCOUNTANT" LANDING ATTRIBUTION
+
+**Why (user):** the landing page reads as a standalone product with no visible link to the
+parent brand; user wants visitors to be able to tell AIA Academy is a product of AI Accountant,
+without a redesign.
+
+- New `POWERED_BY` copy in `site-content.ts`, new shared `PoweredByAiAccountant.tsx` component
+  (logo + text, links to https://www.aiaccountant.com/, `target="_blank"`).
+- First placed in `SiteNav.tsx` next to the wordmark; that version caused the compact
+  (scrolled-down) pill to overflow — it faded to `opacity-0` but still reserved flex space,
+  squeezing "How it works"/"Log in" into wrapping. Fixed by unmounting it entirely when
+  `compact` (no reserved space), but then removed from the nav altogether per user follow-up.
+- Final placement, after the user pointed at a reference site's hero badge: a second export,
+  `PoweredByAiAccountantPill` (bordered pill, arrow icon), as the hero eyebrow in `Hero.tsx`
+  directly above the `<h1>`, fading/lifting in with the headline block. `SiteFooter.tsx` keeps
+  the original inline-text variant beside the copyright line.
+- Logo asset: AI Accountant's real mark fetched from their live site's header SVG, decoded from
+  its embedded base64 PNG and re-exported at 64x64 via a one-off `sharp` script (deleted after
+  use) to `public/ai-accountant-mark.png` (1KB vs the source SVG's 526KB).
+- Kept monochrome on purpose — see the new note in `ui-context.md` under "Dark mode is still
+  removed on purpose": do not recolour toward AI Accountant's own `#314DD0`, which is already a
+  retired colour in this codebase.
+
 ## Session log — 2026-09-17: SCORER AUDIT ROUND 2 (TDS, GST AMOUNTS, SET-OFF FROM OWN BOOKS, PAYABLES, TIE-OUT, PACK TAGS)
 
 **Why (user):** remaining confirmed audit findings. No commit, no DB writes, no LLM calls. (A first attempt was cut off mid-edit and committed broken as 860a1ad; restored in 4d6c2cd and redone item by item, compiling after each.)

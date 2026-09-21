@@ -518,3 +518,9 @@ export const FOOTER = {
   ] satisfies readonly SiteLink[],
   copyright: "© 2026 AIA Academy. All rights reserved.",
 } as const;
+
+export const POWERED_BY = {
+  label: "Powered by",
+  brand: "AI Accountant",
+  href: "https://www.aiaccountant.com/",
+} as const;

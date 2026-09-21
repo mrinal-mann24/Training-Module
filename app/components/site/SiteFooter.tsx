@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Wordmark } from "@/app/components/Wordmark";
+import { PoweredByAiAccountant } from "@/app/components/site/PoweredByAiAccountant";
 import { FOOTER } from "@/app/components/site/site-content";
 
 /**
@@ -32,7 +33,10 @@ export function SiteFooter() {
           </ul>
         </nav>
 
-        <p className="self-end font-nunito text-lg text-white/80 md:text-right">{FOOTER.copyright}</p>
+        <div className="flex flex-col items-end gap-3 self-end">
+          <p className="font-nunito text-lg text-white/80 md:text-right">{FOOTER.copyright}</p>
+          <PoweredByAiAccountant className="text-sm" />
+        </div>
       </div>
     </footer>
   );

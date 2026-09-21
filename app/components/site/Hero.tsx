@@ -6,6 +6,7 @@ import { motion, useReducedMotion, useTransform } from "framer-motion";
 import { HERO } from "@/app/components/site/site-content";
 import { SITE_DURATION, SITE_EASE, useSectionProgress } from "@/app/components/site/site-motion";
 import { HeroScene } from "@/app/components/site/HeroScene";
+import { PoweredByAiAccountantPill } from "@/app/components/site/PoweredByAiAccountant";
 
 /**
  * Four viewports of scroll pinned to one frame (progress 0.2 to 0.8). The
@@ -52,6 +53,15 @@ export function Hero() {
           style={{ y: headY, opacity: headOpacity }}
           className="relative z-10 flex h-full flex-col items-center justify-center px-6 pb-40 text-center"
         >
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: SITE_DURATION.reveal, ease: SITE_EASE, delay: 0.05 }}
+            className="mb-6"
+          >
+            <PoweredByAiAccountantPill />
+          </motion.div>
+
           <h1 id="hero-title" className="day-display font-nunito text-day-ink">
             {HERO.lines.map((line, index) => (
               <span key={line} className="block overflow-hidden pb-1">
