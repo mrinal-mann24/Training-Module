@@ -12,6 +12,7 @@ import type {
   CompositeMatch,
 } from '@/lib/schemas/scoring';
 import { isBankLedger, parseBillReferences, partyLegOf } from '@/lib/db/queries/company';
+import { billReferenceTokens, canonicalBillReference } from './bill-reference';
 import { findLedgerFindings } from './ledger-findings';
 import {
   accountNamesMatch,
@@ -1034,37 +1035,12 @@ function tdsError(voucher: Voucher, expected: AnswerKeyEntry, expectedLegs: Answ
 // read but never required: an expected reference is satisfied by its number
 // whatever type the learner chose (so an advance may be New Ref or Advance),
 // and an "On Account" allocation is not a reference.
-const PLACEHOLDER_REFERENCE = /^(NEWREF|NEWREFERENCE|AGSTREF|AGAINSTREF|ADVANCE|ONACCOUNT|REF|NA|NIL)$/;
+// canonicalBillReference and billReferenceTokens live in bill-reference.ts
+// since the Stage 0 refactor (2026-09-22), shared with generation and replay.
+export { billReferenceTokens, canonicalBillReference };
 
 // A bank ledger or Cash carrying a reference is never the party.
 const CASH_LEDGER = /^cash\b|cash-in-hand/i;
-
-export function canonicalBillReference(reference: string): string | null {
-  const bare = reference
-    .replace(/\([^)]*\)/g, ' ')
-    .trim()
-    // "Ref INV-012", "Ref: 45", "Reference No. 7" (never "REF-001" itself)
-    .replace(/^ref(?:erence)?(?:[.:]|\s)+/i, '')
-    // "INV-025 dt 04-May", "INV-7 dated 4/5": a date after the number
-    .replace(/(?<=\S)\s+(?:dt\.?|dated)\s*[:-]?\s*\d.*$/i, '')
-    .replace(/(?<![a-z])(?:no|number|num)\b\.?/gi, ' ')
-    .replace(/#/g, ' ');
-  const groups = bare.toUpperCase().match(/[A-Z]+|\d+/g);
-  if (!groups) return null;
-  const canonical = groups.map((group) => (/^\d+$/.test(group) ? group.replace(/^0+(?=\d)/, '') : group)).join('-');
-  return PLACEHOLDER_REFERENCE.test(canonical.replace(/-/g, '')) ? null : canonical;
-}
-
-// The tokens a key's bill_reference (or a learner's allocation name) names.
-export function billReferenceTokens(reference: string | null | undefined): Set<string> {
-  const tokens = new Set<string>();
-  for (const parsed of parseBillReferences(reference)) {
-    if (parsed.kind === 'on_account') continue;
-    const canonical = canonicalBillReference(parsed.ref);
-    if (canonical) tokens.add(canonical);
-  }
-  return tokens;
-}
 
 type AllocationTokens = { tokens: Set<string>; advanceTokens: Set<string>; allocations: number };
 

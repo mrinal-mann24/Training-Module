@@ -1,4 +1,5 @@
-import { normalizeBillReference, parseBillReferences, partyLegOf, type OpenBill } from '@/lib/db/queries/company';
+import { parseBillReferences, partyLegOf, type OpenBill } from '@/lib/db/queries/company';
+import { looksLikeDate, normalizeDocumentNumber } from '@/lib/tutor/bill-reference';
 import { extractTransactionDate } from '@/lib/llm/prompts/source-document';
 import type { AnswerKey, AnswerKeyEntry, ConceptTag, GeneratedExercise } from '@/lib/schemas/exercise';
 import { BOOKS_BEGIN_MONTH_INDEX, BOOKS_BEGIN_YEAR } from '@/lib/tutor/timeline';
@@ -77,25 +78,9 @@ const CASH_OR_BANK = /\bcash\b|cash-in-hand|\bbank\b|hdfc/i;
 
 // ---------------------------------------------------------------- document numbers
 
-// "INV-18" and "INV-018" are the same number to a reader and to Tally's
-// bill-wise report (2026-09-17 audit): separators, case and leading zeros
-// are ignored.
-export function normalizeDocumentNumber(ref: string): string {
-  return normalizeBillReference(ref).replace(/(^|[^0-9])0+(?=[0-9])/g, '$1');
-}
-
-// A reference shaped like a date ("INV-12-06-2024", "MS/12/06/24",
-// "KE/15-Jun-2024"). Educational redating and the documents read dates out
-// of text, so a date-shaped number would be rewritten in one place and not
-// the other; such numbers are rejected at generation.
-const MONTH_WORD = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*';
-const DATE_SHAPE = new RegExp(
-  `\\d{1,2}[-/.\\s](?:\\d{1,2}|${MONTH_WORD})[-/.\\s]\\d{2,4}|\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}|${MONTH_WORD}[-/.\\s]\\d{1,2}[-/.,\\s]+\\d{4}`,
-  'i',
-);
-export function looksLikeDate(ref: string): boolean {
-  return DATE_SHAPE.test(ref);
-}
+// normalizeDocumentNumber and looksLikeDate live in bill-reference.ts since
+// the Stage 0 refactor (2026-09-22); re-exported for their existing callers.
+export { looksLikeDate, normalizeDocumentNumber };
 
 function referenceOf(legs: Entry[]): string | null {
   return legs.find((leg) => leg.bill_reference)?.bill_reference ?? null;
