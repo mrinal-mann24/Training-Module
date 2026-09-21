@@ -41,6 +41,10 @@ export type LedgerState = {
   openingRemaining: OpeningRemaining;
   openingsSeeded: boolean;
   ledgerNames: Set<string>;
+  // Bill id -> taxable value / party total when the bill was raised, so a
+  // receipt net of TDS can put the deduction on the taxable value of what
+  // it settles (Stage 6). Bills the keys never raised have no ratio.
+  billTaxableRatio: Map<string, number>;
 };
 
 const CASH_LEDGER = /^cash\b|cash-in-hand/i;
@@ -57,6 +61,7 @@ export function emptyLedgerState(): LedgerState {
     openingRemaining: new Map(),
     openingsSeeded: false,
     ledgerNames: new Set(),
+    billTaxableRatio: new Map(),
   };
 }
 
@@ -72,7 +77,14 @@ export function cloneLedgerState(state: LedgerState): LedgerState {
     openingRemaining: new Map(state.openingRemaining),
     openingsSeeded: state.openingsSeeded,
     ledgerNames: new Set(state.ledgerNames),
+    billTaxableRatio: new Map(state.billTaxableRatio),
   };
+}
+
+// Taxable value per rupee of a bill's total as raised, or null when the
+// keys never raised it (an opening-balance bill).
+export function billTaxableRatioOf(state: LedgerState, party: string, ref: string): number | null {
+  return state.billTaxableRatio.get(billId(party, ref)) ?? null;
 }
 
 export function referenceKey(ref: string): string {
@@ -168,12 +180,18 @@ export function applyVoucher(state: LedgerState, legs: readonly AnswerKeyEntry[]
     const ownRefs = parsedRefs.filter((parsed) => parsed.kind === 'bill').map((parsed) => parsed.ref);
     const raisedRefs = ownRefs.length > 0 ? ownRefs : refs;
     const raisedBills: OpenBill[] = [];
+    // The taxable value: the base-side legs that are neither the party nor
+    // a tax ledger (Sales on a sale, the expense or Purchases on a bill).
+    const taxable = legs
+      .filter((leg) => leg.correct_account !== party.correct_account && leg.dr_cr !== party.dr_cr && !TAX_LEDGER_PATTERN.test(leg.correct_account))
+      .reduce((sum, leg) => sum + leg.amount, 0);
     for (const ref of raisedRefs) {
       const id = billId(party.correct_account, ref);
       const current = bills.get(id) ?? { party: party.correct_account, ref, open: 0, side };
       current.open += partyAmount / raisedRefs.length;
       bills.set(id, current);
       raisedBills.push(current);
+      if (partyAmount > 0 && taxable > 0) state.billTaxableRatio.set(id, Math.min(1, taxable / partyAmount));
     }
     if (ownRefs.length > 0) {
       for (const parsed of parsedRefs) {

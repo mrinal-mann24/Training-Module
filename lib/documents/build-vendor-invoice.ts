@@ -3,6 +3,7 @@ import { COMPANY_DETAILS } from '@/lib/documents/company-details';
 import { amountInWords, formatHsnSac, hsnSacFor, reverseChargeFromLegs, taxRatePercentOf } from '@/lib/documents/gst-invoice-fields';
 import { deriveInvoiceFigures, extractTransactionDate, formatInvoiceDate } from '@/lib/documents/invoice-figures';
 import { partyIdentityFor } from '@/lib/documents/party-directory';
+import { reverseChargeCategoryFor } from '@/lib/tutor/tax-rules';
 import type { AnswerKeyEntry } from '@/lib/schemas/exercise';
 import type { VendorInvoiceContent } from '@/lib/schemas/source-document';
 
@@ -109,7 +110,10 @@ export function buildVendorInvoiceContent(
     // Goods and services received at our Karnataka premises.
     placeOfSupply: COMPANY_DETAILS.state,
     placeOfSupplyCode: COMPANY_DETAILS.stateCode,
-    reverseCharge: reverseChargeFromLegs(legs),
+    // Rule 46: tax payable on reverse charge. The purchase voucher itself
+    // carries no RCM ledger (the company's RCM journal follows it), so the
+    // rulebook category decides as well as the legs.
+    reverseCharge: reverseChargeFromLegs(legs) || reverseChargeCategoryFor({ party: figures.vendorAccount, expenseLedgers: legLines.map((line) => line.account) })?.mandatory === true,
     taxRatePercent: taxRatePercentOf(taxable, { cgst, sgst, igst }),
     amountInWords: amountInWords(total),
   };

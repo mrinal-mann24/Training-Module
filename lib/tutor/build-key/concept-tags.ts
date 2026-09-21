@@ -34,11 +34,23 @@ export function conceptTagsFor(legs: readonly BuiltLeg[], options: { assetPurcha
     case 'journal':
       tags.add('journal_voucher_basics');
       break;
+    // A credit note is the sales-side return, a debit note the purchase-side
+    // one (CONCEPT_EVIDENCE reads them the same way).
+    case 'credit note':
+      tags.add('sales_voucher_basics');
+      break;
+    case 'debit note':
+      tags.add('purchase_voucher_basics');
+      break;
     default:
       break;
   }
   if (hasGst) tags.add('gst_classification');
   if (hasTds) tags.add('tds_classification');
+  if (type === 'receipt' && legs.some((leg) => /\btds\b/i.test(leg.correct_account) && /receivable/i.test(leg.correct_account))) tags.add('tds_on_receipt');
+  if (legs.some((leg) => /\brcm\b|reverse\s*charge/i.test(leg.correct_account) || /late fee|interest on (?:delayed )?gst|gst interest/i.test(leg.correct_account))) {
+    tags.add('rcm_and_late_fee');
+  }
   if (reference !== null) tags.add('bill_by_bill_referencing');
   if (parsed.some((item) => item.kind === 'advance')) {
     tags.add(type === 'sales' || type === 'receipt' ? 'customer_advance' : 'supplier_advance');

@@ -16,8 +16,10 @@ export const rupees = (value: number): string => `Rs ${Math.round(value).toLocal
 
 export type DescribedVoucher =
   | { kind: 'sale'; customer: string | null; documentNumber: string; lines: string; taxable: number; gst: number; gstLabel: string; total: number; advance: { ref: string; amount: number } | null }
-  | { kind: 'purchase'; vendor: string; documentNumber: string; ledger: string; lines: string; taxable: number; gst: number; gstLabel: string; tds: { section: string; amount: number } | null; total: number; advance: { ref: string; amount: number } | null }
-  | { kind: 'receipt'; customer: string; instrument: 'bank' | 'cash'; amount: number; allocation: string }
+  | { kind: 'purchase'; vendor: string; documentNumber: string; ledger: string; lines: string; taxable: number; gst: number; gstLabel: string; tds: { section: string; amount: number } | null; total: number; advance: { ref: string; amount: number } | null; reverseCharge: boolean }
+  | { kind: 'rcm_journal'; vendor: string; documentNumber: string; taxable: number; gst: number; gstLabel: string; ratePercent: number }
+  | { kind: 'receipt'; customer: string; instrument: 'bank' | 'cash'; amount: number; allocation: string; tds: { section: string; amount: number } | null }
+  | { kind: 'credit_note' | 'debit_note'; party: string; noteNumber: string; againstBill: string; lines: string; taxable: number; gst: number; gstLabel: string; total: number }
   | { kind: 'payment'; payee: string | null; expenseLedger: string | null; instrument: 'bank' | 'cash'; amount: number; allocation: string; tds: { section: string; amount: number } | null }
   | { kind: 'contra'; direction: 'cash_to_bank' | 'bank_to_cash'; amount: number }
   | { kind: 'depreciation'; assetLedger: string; months: number; ratePercent: number; amount: number };
@@ -41,15 +43,27 @@ export function describeVoucher(voucher: DescribedVoucher, date: CalendarDate, d
       if (documentBacked) {
         return `${on} an invoice arrived from ${voucher.vendor} (Ref ${voucher.documentNumber})${advance}: post it from the attached invoice.`;
       }
-      const gst = voucher.gst > 0 ? ` plus ${voucher.gstLabel} ${rupees(voucher.gst)}` : ' with no GST';
+      const gst = voucher.reverseCharge ? ' with no GST charged by the vendor (reverse charge applies)' : voucher.gst > 0 ? ` plus ${voucher.gstLabel} ${rupees(voucher.gst)}` : ' with no GST';
       const tds = voucher.tds ? `, TDS under ${voucher.tds.section} ${rupees(voucher.tds.amount)} deducted at booking` : '';
       return `${on} bill ${voucher.documentNumber} arrived from ${voucher.vendor} for ${voucher.lines} (${voucher.ledger}), taxable value ${rupees(voucher.taxable)}${gst}, total ${rupees(voucher.total)}${tds}${advance}.`;
     }
+    case 'rcm_journal':
+      // The bill's number and taxable value belong to the purchase line
+      // before this one; the journal's line states only its own figures.
+      return `${on} pass the reverse-charge journal for the bill of ${voucher.vendor} booked above: GST at ${voucher.ratePercent}% on its taxable value is payable by the company itself, ${voucher.gstLabel} ${rupees(voucher.gst)} in all, debited to the Input GST RCM ledgers and credited to the Output GST RCM ledgers (paid in cash with the month's GST, never set off).`;
     case 'receipt': {
       const where = voucher.instrument === 'bank' ? 'landed in the bank' : 'was received in cash';
+      const tds = voucher.tds ? `, net of TDS under ${voucher.tds.section} ${rupees(voucher.tds.amount)} withheld by the customer (book it to TDS Receivable)` : '';
       return documentBacked
-        ? `${on} a receipt from ${voucher.customer}${voucher.allocation} ${where}: post it from the bank statement.`
-        : `${on} ${rupees(voucher.amount)} from ${voucher.customer}${voucher.allocation} ${where}.`;
+        ? `${on} a receipt from ${voucher.customer}${voucher.allocation}${tds} ${where}: post it from the bank statement.`
+        : `${on} ${rupees(voucher.amount)} from ${voucher.customer}${voucher.allocation}${tds} ${where}.`;
+    }
+    case 'credit_note':
+    case 'debit_note': {
+      const gst = voucher.gst > 0 ? ` plus ${voucher.gstLabel} ${rupees(voucher.gst)} reversed` : '';
+      return voucher.kind === 'credit_note'
+        ? `${on} ${voucher.party} returned goods against Sales Invoice ${voucher.againstBill}: raise Credit Note ${voucher.noteNumber} for ${voucher.lines}, taxable value ${rupees(voucher.taxable)}${gst}, total ${rupees(voucher.total)}, allocated against that invoice.`
+        : `${on} goods were returned to ${voucher.party} against bill ${voucher.againstBill}: raise Debit Note ${voucher.noteNumber} for ${voucher.lines}, taxable value ${rupees(voucher.taxable)}${gst}, total ${rupees(voucher.total)}, allocated against that bill.`;
     }
     case 'payment': {
       const tds = voucher.tds ? `, TDS under ${voucher.tds.section} ${rupees(voucher.tds.amount)} deducted` : '';

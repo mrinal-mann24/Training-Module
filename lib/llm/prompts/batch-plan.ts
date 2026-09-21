@@ -57,6 +57,8 @@ export const CONCEPT_STORIES: Partial<Record<ConceptTag, string>> = {
   gst_set_off: 'enough GST sales and purchases in the month for a set-off to matter; the system appends the set-off itself',
   gst_payment: "nothing to plan: the system appends the payment of last month's GST when one is due",
   fixed_assets_depreciation: 'buying equipment, furniture or computers (purchase nature "asset") and a depreciation event on an asset ledger with a balance',
+  tds_on_receipt: 'a corporate customer paying an invoice for services or contract work net of TDS (receipt with "tds_withheld" set), plus an ordinary receipt paid in full',
+  rcm_and_late_fee: 'a legal bill from an advocate or law firm, or a goods transport agency bill (the system books the reverse charge itself), and a payment with no payee for the expense ledger "GST Late Fee and Interest" on a delayed GST payment',
 };
 
 function rupees(value: number): string {

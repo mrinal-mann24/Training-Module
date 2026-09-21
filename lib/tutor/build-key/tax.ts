@@ -47,6 +47,39 @@ export function gstLegsFor(
   return { legs, violation: null };
 }
 
+// Reverse charge (rulebook 13, Stage 6): the vendor's bill carries no GST;
+// the company books the tax on itself, Dr Input GST RCM / Cr Output GST RCM,
+// at the slab split by the vendor's state. The output side is paid in cash
+// at month end (month-end-journals.ts never sets it off).
+export function rcmLegsFor(
+  taxable: number,
+  combinedRate: number,
+  party: Pick<PartyRecord, 'stateCode'>,
+  date: CalendarDate,
+): { input: GstLeg[]; output: GstLeg[]; violation: string | null } {
+  const input = gstLegsFor(taxable, combinedRate, party, 'input', date);
+  if (input.violation) return { input: [], output: [], violation: input.violation };
+  if (input.legs.length === 0) return { input: [], output: [], violation: 'reverse charge needs a GST slab above 0' };
+  const output = gstLegsFor(taxable, combinedRate, party, 'output', date).legs;
+  const suffix = (leg: GstLeg): GstLeg => ({ ...leg, account: `${leg.account} RCM` });
+  return { input: input.legs.map(suffix), output: output.map(suffix), violation: null };
+}
+
+export type TdsWithheld = { section: '194J' | '194C'; rate: number; base: number; amount: number; account: string };
+
+// TDS a customer withheld on a receipt (rulebook 7.2). The rate is read the
+// way checkTdsArithmetic reads it, from the counterparty on the voucher (the
+// customer), so the built key and the check agree.
+export function tdsWithheldFor(params: { section: '194J' | '194C'; base: number; date: CalendarDate; customer: PartyRecord }): TdsWithheld {
+  const rates = tdsRatesFor(params.section, params.date, {
+    payeeType: payeeTypeFor(params.customer),
+    nature: params.section === '194J' ? 'professional' : 'unknown',
+  });
+  const rate = rates[rates.length - 1];
+  const base = round2(params.base);
+  return { section: params.section, rate, base, amount: roundTdsAmount((base * rate) / 100), account: `TDS Receivable — u/s ${params.section}` };
+}
+
 export type TdsExposureTracker = {
   // `${payee lower}|${section}|${nature for 194J}` -> taxable base this FY,
   // seeded from the prior keys (tdsHistoryFromKeys) and advanced per bill.

@@ -9,10 +9,13 @@ import { EXERCISE_DIFFICULTY_LEVELS } from '@/lib/schemas/exercise';
 // concept tags, dates in prose. A key error of any of those classes cannot
 // be authored any more; it can only be a builder bug, which a test catches.
 //
-// v1 covers the core six events (sale, purchase, receipt, payment, contra,
-// depreciation). Concepts that need more (reverse charge, TDS withheld by a
-// customer, credit and debit notes) fall back to the legacy generator
-// through supportsConcepts until Stage 6 adds them.
+// v1 covered the core six events (sale, purchase, receipt, payment, contra,
+// depreciation). Stage 6 (2026-09-22, same day) added what the remaining
+// concepts need: a receipt where the customer withheld TDS, credit and
+// debit notes against an open bill, and reverse charge, which is not an
+// event at all: the builder applies it to a purchase whenever the rulebook
+// category is mandatory for that vendor and ledger (an advocate's fee, a
+// goods transport agency), and books the RCM journal itself.
 
 export const PartyRefSchema = z.object({
   // The ledger name; matched to the company's party master by canonical key.
@@ -86,6 +89,36 @@ export const ReceiptEventSchema = z.object({
   customer: PartyRefSchema,
   instrument: z.enum(['bank', 'cash']),
   settlement: SettlementSchema,
+  // The customer paid net of TDS under this section (rulebook 7.2): the
+  // system computes the deduction on the settled invoices' taxable value
+  // and books TDS Receivable. Only on a settlement of bills.
+  tds_withheld: z.enum(['194J', '194C']).nullable(),
+});
+
+// A sales return: our credit note against one open invoice of the customer,
+// at the invoice's slab. The system reverses the output GST and settles
+// the invoice by the note's total.
+export const CreditNoteEventSchema = z.object({
+  type: z.literal('credit_note'),
+  seq: Seq,
+  day: Day,
+  customer: PartyRefSchema,
+  against_bill: z.string().min(1),
+  lines: z.array(LineItemSchema).min(1),
+  gst_rate: z.number(),
+  note_number: z.string().min(1),
+});
+
+// A purchase return: our debit note against one open bill of the vendor.
+export const DebitNoteEventSchema = z.object({
+  type: z.literal('debit_note'),
+  seq: Seq,
+  day: Day,
+  vendor: PartyRefSchema,
+  against_bill: z.string().min(1),
+  lines: z.array(LineItemSchema).min(1),
+  gst_rate: z.number().nullable(),
+  note_number: z.string().min(1),
 });
 
 export const PaymentEventSchema = z.object({
@@ -127,6 +160,8 @@ export const BatchEventSchema = z.discriminatedUnion('type', [
   PaymentEventSchema,
   ContraEventSchema,
   DepreciationEventSchema,
+  CreditNoteEventSchema,
+  DebitNoteEventSchema,
 ]);
 export type BatchEvent = z.infer<typeof BatchEventSchema>;
 

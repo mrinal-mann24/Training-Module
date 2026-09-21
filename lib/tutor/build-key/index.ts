@@ -4,14 +4,14 @@ import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { SourceDocumentType } from '@/lib/schemas/source-document';
 import { canonicalRef, formatBillReference, looksLikeDate, type Allocation } from '@/lib/tutor/bill-reference';
 import { daysInMonth, educationalDayFor } from '@/lib/tutor/educational-dates';
-import { applyVoucher, cashPositionOf, cloneLedgerState, openItemsOf, type LedgerState, type OpenItem } from '@/lib/tutor/ledger-state';
+import { applyVoucher, billTaxableRatioOf, cashPositionOf, cloneLedgerState, openItemsOf, referenceKey, type LedgerState, type OpenItem } from '@/lib/tutor/ledger-state';
 import type { PartyMaster, PartyRecord } from '@/lib/tutor/party-master';
-import type { CalendarDate } from '@/lib/tutor/tax-rules';
+import { reverseChargeCategoryFor, type CalendarDate } from '@/lib/tutor/tax-rules';
 import { findOpenAdvance, resolveSettlement } from './allocate';
 import { conceptTagsFor } from './concept-tags';
 import { allocationPhrase, describeVoucher, type DescribedVoucher } from './describe';
 import type { EventMenu } from './event-menu';
-import { gstEntry, gstLegsFor, newTdsTracker, round2, tdsDecisionFor, type BuiltLeg, type TdsDecision } from './tax';
+import { gstEntry, gstLegsFor, newTdsTracker, rcmLegsFor, round2, tdsDecisionFor, tdsWithheldFor, type BuiltLeg, type TdsDecision } from './tax';
 
 // The deterministic key builder (2026-09-22, rebuild Stage 3): a batch
 // plan (commercial facts and intents) plus the books (LedgerState) and the
@@ -98,6 +98,8 @@ function documentTypeFor(event: BatchEvent, documentsMode: boolean): SourceDocum
     case 'contra':
       return 'bank_statement';
     case 'depreciation':
+    case 'credit_note':
+    case 'debit_note':
       return documentsMode ? 'month_end_note' : null;
     default: {
       const never: never = event;
@@ -169,30 +171,46 @@ export function buildAnswerKey(input: BuildKeyInput): BuildKeyResult {
   const transactions: GeneratedExercise['transactions'] = [];
   const documentLines = new Map<number, LineItem[]>();
 
-  dated.forEach(({ event, date }, index) => {
-    const sequence = index + 1;
+  let sequence = 0;
+  for (const { event, date } of dated) {
+    sequence += 1;
     const result = buildEvent({ event, date, sequence, working, input, mintAdvance, claimDocumentNumber, tracker, violations });
-    if (!result) return;
+    if (!result) continue;
     if (event.type === 'sale' || event.type === 'purchase') documentLines.set(sequence, event.lines.map((line) => ({ ...line })));
-    const docType = documentTypeFor(event, input.documentsMode);
-    const tags = conceptTagsFor(result.legs, { assetPurchase: event.type === 'purchase' && event.nature === 'asset' });
-    const fullLegs: AnswerKeyEntry[] = result.legs.map((item) => ({
-      ...item,
-      concept_tags: tags,
-      requires_source_document: docType !== null,
-      source_document_type: docType,
-    }));
-    applyVoucher(working, fullLegs);
-    const position = cashPositionOf(working);
-    if (position.cash < -0.5) {
-      violations.push(`transaction ${sequence} drives cash to Rs ${Math.round(position.cash).toLocaleString('en-IN')}; cash can never go negative`);
+    const vouchers: { legs: BuiltLeg[]; voucher: DescribedVoucher; docType: SourceDocumentType | null }[] = [
+      { legs: result.legs, voucher: result.voucher, docType: documentTypeFor(event, input.documentsMode) },
+    ];
+    // A derived voucher (the RCM journal of a reverse-charge bill, Stage 6)
+    // follows its event under the next sequence.
+    if (result.derived) {
+      sequence += 1;
+      vouchers.push({
+        legs: result.derived.legs.map((item) => ({ ...item, sequence })),
+        voucher: result.derived.voucher,
+        docType: input.documentsMode ? 'month_end_note' : null,
+      });
     }
-    if (position.bank < -0.5) {
-      violations.push(`transaction ${sequence} overdraws the bank to Rs ${Math.round(position.bank).toLocaleString('en-IN')}`);
+    for (const { legs: built, voucher, docType } of vouchers) {
+      const seq = built[0]?.sequence ?? sequence;
+      const tags = conceptTagsFor(built, { assetPurchase: event.type === 'purchase' && event.nature === 'asset' });
+      const fullLegs: AnswerKeyEntry[] = built.map((item) => ({
+        ...item,
+        concept_tags: tags,
+        requires_source_document: docType !== null,
+        source_document_type: docType,
+      }));
+      applyVoucher(working, fullLegs);
+      const position = cashPositionOf(working);
+      if (position.cash < -0.5) {
+        violations.push(`transaction ${seq} drives cash to Rs ${Math.round(position.cash).toLocaleString('en-IN')}; cash can never go negative`);
+      }
+      if (position.bank < -0.5) {
+        violations.push(`transaction ${seq} overdraws the bank to Rs ${Math.round(position.bank).toLocaleString('en-IN')}`);
+      }
+      entries.push(...fullLegs);
+      transactions.push({ sequence: seq, description: describeVoucher(voucher, date, docType !== null) });
     }
-    entries.push(...fullLegs);
-    transactions.push({ sequence, description: describeVoucher(result.voucher, date, docType !== null) });
-  });
+  }
 
   if (violations.length > 0) return { generated: null, violations };
 
@@ -221,7 +239,7 @@ type EventContext = {
   violations: string[];
 };
 
-type EventResult = { legs: BuiltLeg[]; voucher: DescribedVoucher };
+type EventResult = { legs: BuiltLeg[]; voucher: DescribedVoucher; derived?: { legs: BuiltLeg[]; voucher: DescribedVoucher } };
 
 function stampReference(legs: BuiltLeg[], reference: string | null): BuiltLeg[] {
   return legs.map((item) => ({ ...item, bill_reference: reference }));
@@ -329,9 +347,23 @@ function buildEvent(context: EventContext): EventResult | null {
       }
       if (event.nature === 'asset' && !input.menu.allowAssets) violations.push(`transaction ${sequence}: asset purchases are not allowed at this level`);
       const taxable = lineTotal(event.lines);
-      const gst = event.gst_rate === null ? { legs: [], violation: null } : gstLegsFor(taxable, event.gst_rate, vendor, 'input', date);
+      // Reverse charge is the rulebook's decision, not the plan's (Stage 6):
+      // an advocate's fee or a goods transport agency bill carries no vendor
+      // GST; the company books the tax on itself in a journal that follows.
+      const category = event.nature === 'service' || event.nature === 'expense' ? reverseChargeCategoryFor({ party: vendor.ledgerName, expenseLedgers: [ledger] }) : null;
+      const reverseCharge = category?.mandatory === true;
+      if (reverseCharge && event.gst_rate === null) {
+        violations.push(`transaction ${sequence}: ${category?.description ?? 'this supply'} is under reverse charge; give the purchase its GST slab in gst_rate (18 for legal services)`);
+        return null;
+      }
+      const gst = event.gst_rate === null || reverseCharge ? { legs: [], violation: null } : gstLegsFor(taxable, event.gst_rate, vendor, 'input', date);
       if (gst.violation) {
         violations.push(`transaction ${sequence}: ${gst.violation}`);
+        return null;
+      }
+      const rcm = reverseCharge && event.gst_rate !== null ? rcmLegsFor(taxable, event.gst_rate, vendor, date) : null;
+      if (rcm?.violation) {
+        violations.push(`transaction ${sequence}: ${rcm.violation}`);
         return null;
       }
       const gstTotal = round2(gst.legs.reduce((sum, item) => sum + item.amount, 0));
@@ -364,6 +396,7 @@ function buildEvent(context: EventContext): EventResult | null {
         ],
         reference,
       );
+      const rcmTotal = rcm ? round2(rcm.input.reduce((sum, item) => sum + item.amount, 0)) : 0;
       return {
         legs,
         voucher: {
@@ -378,7 +411,19 @@ function buildEvent(context: EventContext): EventResult | null {
           tds: tdsSummary(tds),
           total,
           advance: consumed,
+          reverseCharge,
         },
+        ...(rcm
+          ? {
+              derived: {
+                legs: [
+                  ...rcm.input.map((item) => gstEntry(sequence + 1, 'Journal', item, 'Dr')),
+                  ...rcm.output.map((item) => gstEntry(sequence + 1, 'Journal', item, 'Cr')),
+                ],
+                voucher: { kind: 'rcm_journal', vendor: vendor.ledgerName, documentNumber: event.doc_number, taxable, gst: rcmTotal, gstLabel: gstLabel(rcm.input), ratePercent: event.gst_rate ?? 0 },
+              },
+            }
+          : {}),
       };
     }
 
@@ -400,13 +445,100 @@ function buildEvent(context: EventContext): EventResult | null {
       }
       const reference = formatBillReference(resolved.allocations);
       const instrument = event.instrument === 'bank' ? bank : CASH;
+      // TDS withheld by the customer (Stage 6): on the taxable value of the
+      // invoices settled, in the proportion this receipt settles them.
+      let withheld: ReturnType<typeof tdsWithheldFor> | null = null;
+      if (event.tds_withheld) {
+        if (!input.menu.allowTdsOnReceipt) violations.push(`transaction ${sequence}: TDS withheld on a receipt is not allowed at this level`);
+        if (resolved.kind !== 'bills') {
+          violations.push(`transaction ${sequence}: TDS can be withheld only on a receipt that settles invoices, not an advance or an on-account receipt`);
+          return null;
+        }
+        let base = 0;
+        for (const allocation of resolved.allocations) {
+          const ratio = billTaxableRatioOf(context.working, customer.ledgerName, allocation.ref);
+          if (ratio === null) {
+            violations.push(`transaction ${sequence}: the books hold no taxable value for ${allocation.ref}; TDS cannot be withheld on an opening-balance bill`);
+            return null;
+          }
+          base += allocation.amount * ratio;
+        }
+        withheld = tdsWithheldFor({ section: event.tds_withheld, base, date, customer });
+      }
+      const net = round2(resolved.amount - (withheld?.amount ?? 0));
       const legs = stampReference(
-        [leg(sequence, 'Receipt', instrument, 'Dr', resolved.amount), leg(sequence, 'Receipt', customer.ledgerName, 'Cr', resolved.amount)],
+        [
+          leg(sequence, 'Receipt', instrument, 'Dr', net),
+          ...(withheld ? [leg(sequence, 'Receipt', withheld.account, 'Dr', withheld.amount, { tds_section: withheld.section, tds_rate: withheld.rate, tds_base: withheld.base })] : []),
+          leg(sequence, 'Receipt', customer.ledgerName, 'Cr', resolved.amount),
+        ],
         reference,
       );
       return {
         legs,
-        voucher: { kind: 'receipt', customer: customer.ledgerName, instrument: event.instrument, amount: resolved.amount, allocation: allocationPhrase(resolved.allocations) },
+        voucher: {
+          kind: 'receipt',
+          customer: customer.ledgerName,
+          instrument: event.instrument,
+          amount: resolved.amount,
+          allocation: allocationPhrase(resolved.allocations),
+          tds: withheld ? { section: withheld.section, amount: withheld.amount } : null,
+        },
+      };
+    }
+
+    case 'credit_note':
+    case 'debit_note': {
+      if (!input.menu.allowNotes) violations.push(`transaction ${sequence}: credit and debit notes are not allowed at this level`);
+      if (event.lines.length > input.menu.maxLinesPerDocument) violations.push(`transaction ${sequence}: at most ${input.menu.maxLinesPerDocument} line items`);
+      if (!context.claimDocumentNumber(sequence, event.note_number)) return null;
+      const isCredit = event.type === 'credit_note';
+      const party = input.master.resolve(isCredit ? event.customer.name : event.vendor.name);
+      const side: OpenItem['side'] = isCredit ? 'receivable' : 'payable';
+      const open = openItemsOf(context.working).filter((item) => item.kind === 'bill' && item.party === party.ledgerName && item.side === side);
+      const bill = open.find((item) => item.key === referenceKey(event.against_bill));
+      if (!bill) {
+        violations.push(
+          `transaction ${sequence}: ${party.ledgerName} has no open bill ${event.against_bill} for a ${isCredit ? 'credit' : 'debit'} note; open: ${open.map((item) => `${item.ref} (Rs ${Math.round(item.open).toLocaleString('en-IN')})`).join(', ') || 'none'}`,
+        );
+        return null;
+      }
+      const taxable = lineTotal(event.lines);
+      const gst = event.gst_rate === null ? { legs: [], violation: null } : gstLegsFor(taxable, event.gst_rate, party, isCredit ? 'output' : 'input', date);
+      if (gst.violation) {
+        violations.push(`transaction ${sequence}: ${gst.violation}`);
+        return null;
+      }
+      const gstTotal = round2(gst.legs.reduce((sum, item) => sum + item.amount, 0));
+      const total = round2(taxable + gstTotal);
+      if (total > bill.open + 0.005) {
+        violations.push(`transaction ${sequence}: the note's total Rs ${Math.round(total).toLocaleString('en-IN')} exceeds the open balance of ${bill.ref} (Rs ${Math.round(bill.open).toLocaleString('en-IN')})`);
+        return null;
+      }
+      const reference = formatBillReference([
+        { ref: bill.ref, kind: 'against', amount: total },
+        { ref: event.note_number, kind: 'new', amount: total },
+      ]);
+      const voucherType = isCredit ? 'Credit Note' : 'Debit Note';
+      const legs = stampReference(
+        isCredit
+          ? [leg(sequence, voucherType, 'Sales Returns', 'Dr', taxable), ...gst.legs.map((item) => gstEntry(sequence, voucherType, item, 'Dr')), leg(sequence, voucherType, party.ledgerName, 'Cr', total)]
+          : [leg(sequence, voucherType, party.ledgerName, 'Dr', total), leg(sequence, voucherType, 'Purchase Returns', 'Cr', taxable), ...gst.legs.map((item) => gstEntry(sequence, voucherType, item, 'Cr'))],
+        reference,
+      );
+      return {
+        legs,
+        voucher: {
+          kind: isCredit ? 'credit_note' : 'debit_note',
+          party: party.ledgerName,
+          noteNumber: event.note_number,
+          againstBill: bill.ref,
+          lines: linesText(event.lines),
+          taxable,
+          gst: gstTotal,
+          gstLabel: gstLabel(gst.legs),
+          total,
+        },
       };
     }
 

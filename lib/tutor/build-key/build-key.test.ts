@@ -74,10 +74,10 @@ const plan: BatchPlan = {
     { type: 'sale', seq: 2, day: 4, customer: { name: 'Ahmedabad Elite', new_party: false }, lines: [{ description: 'Curtains', quantity: 20, rate: 2500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3002' },
     { type: 'sale', seq: 3, day: 6, customer: { name: 'Cash', new_party: false }, lines: [{ description: 'Cushion covers', quantity: 10, rate: 1200 }], gst_rate: 18, settlement: 'cash', adjust_advance_ref: null, doc_number: 'CM-06' },
     { type: 'purchase', seq: 4, day: 7, vendor: { name: 'Deccan Traders', new_party: false }, nature: 'goods', ledger: null, lines: [{ description: 'Cotton fabric', quantity: 200, rate: 150 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'DT/2027-06' },
-    { type: 'purchase', seq: 5, day: 9, vendor: { name: 'Sharma Legal', new_party: false }, nature: 'service', ledger: 'Legal & Professional Charges', lines: [{ description: 'Retainer for June', quantity: 1, rate: 60000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'SL/2027-06' },
+    { type: 'purchase', seq: 5, day: 9, vendor: { name: 'Mehta & Associates', new_party: false }, nature: 'service', ledger: 'Legal & Professional Charges', lines: [{ description: 'Retainer for June', quantity: 1, rate: 60000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'SL/2027-06' },
     { type: 'purchase', seq: 6, day: 11, vendor: { name: 'Bharat Machinery', new_party: false }, nature: 'asset', ledger: 'Office Equipment', lines: [{ description: 'Label printer', quantity: 1, rate: 85000 }], gst_rate: 18, settlement: 'adjust_advance', adjust_advance_ref: 'ADV-S01', doc_number: 'BM/2025-06' },
-    { type: 'receipt', seq: 7, day: 13, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3000', 'INV-3001'] } },
-    { type: 'receipt', seq: 8, day: 15, customer: { name: 'Bengaluru Boutique', new_party: true }, instrument: 'bank', settlement: { mode: 'advance', amount: 45000 } },
+    { type: 'receipt', seq: 7, day: 13, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3000', 'INV-3001'] }, tds_withheld: null },
+    { type: 'receipt', seq: 8, day: 15, customer: { name: 'Bengaluru Boutique', new_party: true }, instrument: 'bank', settlement: { mode: 'advance', amount: 45000 }, tds_withheld: null },
     { type: 'payment', seq: 9, day: 18, payee: { name: 'Mumbai Suppliers', new_party: false }, settlement: { mode: 'part', bill: 'MS/980', amount: 20000 }, expense_ledger: null, amount: null, instrument: 'bank' },
     { type: 'payment', seq: 10, day: 20, payee: null, settlement: null, expense_ledger: 'Electricity Charges', amount: 6500, instrument: 'bank' },
     { type: 'contra', seq: 11, day: 24, direction: 'cash_to_bank', amount: 15000 },
@@ -88,7 +88,7 @@ const plan: BatchPlan = {
 const input: BuildKeyInput = {
   plan,
   state: prior,
-  master: buildPartyMaster(['Karnataka Emporium', 'Mumbai Suppliers', 'Bharat Machinery', 'Ahmedabad Elite', 'Deccan Traders', 'Sharma Legal']),
+  master: buildPartyMaster(['Karnataka Emporium', 'Mumbai Suppliers', 'Bharat Machinery', 'Ahmedabad Elite', 'Deccan Traders', 'Mehta & Associates']),
   menu: eventMenuFor('L3', ['supplier_advance', 'customer_advance', 'multi_bill_settlement', 'tds_classification', 'fixed_assets_depreciation'], false),
   month: { monthIndex: 5, year: 2025 },
   difficultyLevel: 'L3',
@@ -147,7 +147,7 @@ describe('buildAnswerKey', () => {
     const legal = legsOf(entries, 5);
     const tds = legal.find((item) => /tds/i.test(item.correct_account));
     expect(tds).toMatchObject({ correct_account: 'TDS Payable — u/s 194J', dr_cr: 'Cr', amount: 6000, tds_section: '194J', tds_rate: 10, tds_base: 60000 });
-    expect(legal.find((item) => item.correct_account === 'Sharma Legal')?.amount).toBe(64800);
+    expect(legal.find((item) => item.correct_account === 'Mehta & Associates')?.amount).toBe(64800);
   });
 
   it('adjusts the supplier advance on the asset bill and keeps the balance as a new bill', () => {
@@ -197,7 +197,7 @@ describe('buildAnswerKey rejects what the books cannot support', () => {
   const rejected = (events: BatchPlan['events']) => buildAnswerKey({ ...input, plan: { ...plan, events }, menu: { ...input.menu, minEvents: 1 } });
 
   it('a settlement of a bill that is not open', () => {
-    const result = rejected([{ type: 'receipt', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['KE/2026/018'] } }]);
+    const result = rejected([{ type: 'receipt', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['KE/2026/018'] }, tds_withheld: null }]);
     expect(result.generated).toBeNull();
     expect(result.violations[0]).toContain('no open bill KE/2026/018');
   });
@@ -217,5 +217,118 @@ describe('buildAnswerKey rejects what the books cannot support', () => {
     expect(noAdvance.violations[0]).toContain('holds no open advance ADV-S09');
     const badRate = rejected([{ type: 'sale', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'x', quantity: 1, rate: 100 }], gst_rate: 10, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3009' }]);
     expect(badRate.violations[0]).toContain('not a slab in force');
+  });
+});
+
+// Stage 6 (2026-09-22): reverse charge decided by the rulebook, a receipt
+// net of TDS, credit and debit notes, and the GST late fee, all built by
+// code and run through the same legacy checks.
+import { checkBillNumberUniqueness, checkReverseCharge } from '@/lib/tutor/generation-checks';
+
+describe('buildAnswerKey, Stage 6 events', () => {
+  const stage6: BatchPlan = {
+    scenario: "The same company, a month of returns, an advocate's bill and a customer that deducts TDS.",
+    difficulty_level: 'L3',
+    events: [
+      { type: 'sale', seq: 1, day: 2, customer: { name: 'Karnataka Emporium', new_party: false }, lines: [{ description: 'Cotton bed sheets', quantity: 100, rate: 500 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'INV-3001' },
+      { type: 'purchase', seq: 2, day: 4, vendor: { name: 'Sharma Legal', new_party: false }, nature: 'service', ledger: 'Legal & Professional Charges', lines: [{ description: 'Retainer for June', quantity: 1, rate: 60000 }], gst_rate: 18, settlement: 'credit', adjust_advance_ref: null, doc_number: 'SL/2027-06' },
+      { type: 'receipt', seq: 3, day: 8, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'full', bills: ['INV-3000'] }, tds_withheld: '194J' },
+      { type: 'credit_note', seq: 4, day: 10, customer: { name: 'Karnataka Emporium', new_party: false }, against_bill: 'INV-3001', lines: [{ description: 'Cotton bed sheets returned', quantity: 10, rate: 500 }], gst_rate: 18, note_number: 'CN-01' },
+      { type: 'debit_note', seq: 5, day: 12, vendor: { name: 'Mumbai Suppliers', new_party: false }, against_bill: 'MS/980', lines: [{ description: 'Damaged rolls returned', quantity: 1, rate: 5000 }], gst_rate: 18, note_number: 'DN-01' },
+      { type: 'payment', seq: 6, day: 14, payee: null, settlement: null, expense_ledger: 'GST Late Fee and Interest', amount: 500, instrument: 'bank' },
+      { type: 'receipt', seq: 7, day: 16, customer: { name: 'Ahmedabad Elite', new_party: false }, instrument: 'bank', settlement: { mode: 'advance', amount: 10000 }, tds_withheld: null },
+      { type: 'contra', seq: 8, day: 18, direction: 'cash_to_bank', amount: 5000 },
+    ],
+  };
+  const stage6Input: BuildKeyInput = {
+    ...input,
+    plan: stage6,
+    master: buildPartyMaster(['Karnataka Emporium', 'Mumbai Suppliers', 'Sharma Legal', 'Ahmedabad Elite']),
+    menu: { ...eventMenuFor('L3', ['rcm_and_late_fee', 'tds_on_receipt'], false), minEvents: 1 },
+  };
+  const result = buildAnswerKey(stage6Input);
+  if (result.generated === null) throw new Error(result.violations.join('\n'));
+  const generated = result.generated;
+  const entries = generated.answer_key.entries;
+
+  it('passes every legacy check, reverse charge and bill numbering included', () => {
+    expect(result.violations).toEqual([]);
+    expect(checkDoubleEntry(generated)).toBeNull();
+    expect(checkSettlementReferences(generated, openBillsOf(prior))).toBeNull();
+    expect(checkReverseCharge(generated)).toBeNull();
+    expect(checkBillNumberUniqueness(generated, new Set(['INV-3000', 'MS/980', 'ADV-S01']))).toBeNull();
+    const dateOf = transactionDateOf(generated);
+    expect(checkGstArithmetic(generated, { dateOf })).toBeNull();
+    expect(checkGstHeadMetadata(generated)).toBeNull();
+    expect(checkTdsThresholds(generated, new Map(), { dateOf })).toBeNull();
+    expect(checkTdsArithmetic(generated, { dateOf })).toBeNull();
+    expect(checkTextMatchesKey(generated, openBillsOf(prior))).toBeNull();
+    expect(checkConceptTagsMatchContent(generated)).toBeNull();
+  });
+
+  it("books the advocate's bill without vendor GST and follows it with the RCM journal", () => {
+    const bill = legsOf(entries, 2);
+    expect(bill.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
+      ['Legal & Professional Charges', 'Dr', 60000],
+      ['TDS Payable — u/s 194J', 'Cr', 6000],
+      ['Sharma Legal', 'Cr', 54000],
+    ]);
+    const journal = legsOf(entries, 3);
+    expect(journal.map((item) => [item.correct_account, item.dr_cr, item.amount, item.gst_head])).toEqual([
+      ['Input CGST RCM', 'Dr', 5400, 'CGST'],
+      ['Input SGST RCM', 'Dr', 5400, 'SGST'],
+      ['Output CGST RCM', 'Cr', 5400, 'CGST'],
+      ['Output SGST RCM', 'Cr', 5400, 'SGST'],
+    ]);
+    expect(journal[0].voucher_type).toBe('Journal');
+    expect(journal[0].concept_tags).toEqual(expect.arrayContaining(['journal_voucher_basics', 'rcm_and_late_fee']));
+    expect(generated.transactions[2].description).toContain('pass the reverse-charge journal for the bill of Sharma Legal booked above');
+    expect(generated.transactions[2].description).toContain('Rs 10,800');
+    // Sequences stay contiguous with the derived voucher in the middle.
+    expect(generated.transactions.map((transaction) => transaction.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it("puts the customer's TDS on the taxable value of the invoice settled and books TDS Receivable", () => {
+    const receipt = legsOf(entries, 4);
+    // INV-3000: 40,000 taxable of 47,200; 194J at 10% on 40,000.
+    expect(receipt.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
+      ['HDFC Bank — 1234', 'Dr', 43200],
+      ['TDS Receivable — u/s 194J', 'Dr', 4000],
+      ['Karnataka Emporium', 'Cr', 47200],
+    ]);
+    expect(receipt[1]).toMatchObject({ tds_section: '194J', tds_rate: 10, tds_base: 40000 });
+    expect(receipt[1].concept_tags).toContain('tds_on_receipt');
+  });
+
+  it('raises the credit note against the open invoice, reversing output GST, and the debit note against the vendor bill', () => {
+    const credit = legsOf(entries, 5);
+    expect(credit.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
+      ['Sales Returns', 'Dr', 5000],
+      ['Output CGST', 'Dr', 450],
+      ['Output SGST', 'Dr', 450],
+      ['Karnataka Emporium', 'Cr', 5900],
+    ]);
+    expect(credit[3].bill_reference).toBe('INV-3001 (Against Ref), CN-01');
+    expect(credit[0].concept_tags).toContain('sales_voucher_basics');
+    const debit = legsOf(entries, 6);
+    expect(debit.map((item) => [item.correct_account, item.dr_cr, item.amount])).toEqual([
+      ['Mumbai Suppliers', 'Dr', 5900],
+      ['Purchase Returns', 'Cr', 5000],
+      ['Input IGST', 'Cr', 900],
+    ]);
+    expect(debit[0].bill_reference).toBe('MS/980 (Against Ref), DN-01');
+  });
+
+  it('tags the late fee payment and leaves an ordinary advance receipt without TDS', () => {
+    expect(legsOf(entries, 7)[0].concept_tags).toContain('rcm_and_late_fee');
+    expect(legsOf(entries, 8).some((item) => /tds/i.test(item.correct_account))).toBe(false);
+  });
+
+  it("rejects TDS withheld on an advance and a note above the bill's balance", () => {
+    const rejected = (events: BatchPlan['events']) => buildAnswerKey({ ...stage6Input, plan: { ...stage6, events } });
+    const onAdvance = rejected([{ type: 'receipt', seq: 1, day: 3, customer: { name: 'Karnataka Emporium', new_party: false }, instrument: 'bank', settlement: { mode: 'advance', amount: 10000 }, tds_withheld: '194J' }]);
+    expect(onAdvance.violations[0]).toContain('only on a receipt that settles invoices');
+    const tooBig = rejected([{ type: 'debit_note', seq: 1, day: 3, vendor: { name: 'Mumbai Suppliers', new_party: false }, against_bill: 'MS/980', lines: [{ description: 'x', quantity: 1, rate: 40000 }], gst_rate: 18, note_number: 'DN-09' }]);
+    expect(tooBig.violations[0]).toContain('exceeds the open balance of MS/980');
   });
 });
