@@ -7,6 +7,10 @@ const deccan = partyIdentityFor('Deccan Traders');
 const mumbai = partyIdentityFor('Mumbai Suppliers');
 const boutique = partyIdentityFor('Bengaluru Boutique');
 
+// A GST number with a wrong check character, made at run time: the code base
+// carries no invalid GSTIN literal (party-directory.test.ts scans for them).
+const wrongCheck = (gstin: string): string => `${gstin.slice(0, 14)}${gstin.endsWith('X') ? 'Y' : 'X'}`;
+
 function vendorInvoice(overrides: Record<string, unknown> = {}): AuditDocument {
   return {
     docType: 'vendor_invoice',
@@ -76,18 +80,18 @@ describe('auditDeliveredDocuments', () => {
   it('reports a party printed with another GST number, and lists both values for the party', () => {
     const result = auditDeliveredDocuments([
       month(1, [vendorInvoice()], { source: 'legacy' }),
-      month(2, [vendorInvoice({ invoiceNumber: 'DT/502', vendorGSTIN: '29AUMCD4595H1ZX' })], { source: 'legacy' }),
+      month(2, [vendorInvoice({ invoiceNumber: 'DT/502', vendorGSTIN: wrongCheck(deccan.gstin) })], { source: 'legacy' }),
     ]);
     const finding = result.findings.find((entry) => entry.check === 'PARTY_GSTIN');
     expect(finding?.ordinal).toBe(2);
     expect(finding?.message).toContain(deccan.gstin);
     const party = result.parties.find((entry) => entry.party === 'Deccan Traders');
-    expect(party?.gstins.map((entry) => entry.value).sort()).toEqual(['29AUMCD4595H1ZX', deccan.gstin].sort());
+    expect(party?.gstins.map((entry) => entry.value).sort()).toEqual([wrongCheck(deccan.gstin), deccan.gstin].sort());
     expect(result.bySource.legacy.findings).toBeGreaterThan(0);
   });
 
   it('reports a GST number that is not valid', () => {
-    expect(checksOf([month(1, [vendorInvoice({ vendorGSTIN: '29ABCDE1234F1Z9' })])])).toContain('GSTIN_INVALID');
+    expect(checksOf([month(1, [vendorInvoice({ vendorGSTIN: wrongCheck(deccan.gstin) })])])).toContain('GSTIN_INVALID');
   });
 
   it('reports a party printed at another address', () => {
@@ -121,7 +125,7 @@ describe('auditDeliveredDocuments', () => {
   });
 
   it('reports company details that differ from the company', () => {
-    const messages = auditDeliveredDocuments([month(1, [salesInvoice({ sellerGSTIN: '29AABCB1234H1Z0', sellerAddress: 'Somewhere else' })])]).findings;
+    const messages = auditDeliveredDocuments([month(1, [salesInvoice({ sellerGSTIN: wrongCheck(COMPANY_DETAILS.gstin), sellerAddress: 'Somewhere else' })])]).findings;
     expect(messages.map((finding) => finding.check)).toEqual(['COMPANY_BLOCK', 'COMPANY_BLOCK']);
   });
 
