@@ -4,9 +4,6 @@ import { useActionState, useState } from 'react';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import { submitOnboarding } from './actions';
 import { initialOnboardingFormState } from './onboarding-form-state';
-import { BOOKS_BEGIN_DATE } from '@/lib/tutor/timeline';
-
-const DEFAULT_BOOKS_BEGIN_DATE = BOOKS_BEGIN_DATE;
 
 const INPUT_CLASSES = 'day-input h-12 w-full rounded-2xl px-5 font-nunito text-base';
 
@@ -24,9 +21,8 @@ export function OnboardingForm() {
     initialOnboardingFormState,
   );
   const [licenseMode, setLicenseMode] = useState<LicenseMode | null>(null);
-  const [booksBeginDate, setBooksBeginDate] = useState(DEFAULT_BOOKS_BEGIN_DATE);
 
-  const canContinue = licenseMode !== null && booksBeginDate !== '';
+  const canContinue = licenseMode !== null;
 
   return (
     <form action={formAction} className="flex flex-col gap-6 font-nunito">
@@ -75,23 +71,6 @@ export function OnboardingForm() {
         )}
 
         <input type="hidden" name="license_mode" value={licenseMode ?? ''} />
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-2">
-        <legend className={LEGEND_CLASSES}>Books Begin Date</legend>
-
-        <label htmlFor="books_begin_date" className="sr-only">
-          Books Begin Date
-        </label>
-        <input
-          id="books_begin_date"
-          name="books_begin_date"
-          type="date"
-          required
-          value={booksBeginDate}
-          onChange={(event) => setBooksBeginDate(event.target.value)}
-          className={INPUT_CLASSES}
-        />
       </fieldset>
 
       {state.error && <p className="day-error text-sm">{state.error}</p>}

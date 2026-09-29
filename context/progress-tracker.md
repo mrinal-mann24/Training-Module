@@ -21,6 +21,15 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-29: BOOKS BEGIN DATE NO LONGER ASKED AT SIGN-UP
+
+Owner instruction: the company always begins on 1 April 2024, so a new learner must not be asked for it.
+
+- `app/(auth)/onboarding/OnboardingForm.tsx`: the Books Begin Date box is removed; the form asks for the name and the Tally license mode only.
+- `app/(auth)/onboarding/actions.ts`: `submitOnboarding` always saves `BOOKS_BEGIN_DATE` from `lib/tutor/timeline.ts` and never reads a date from the browser. The date the learner typed was used only by the validity gate (`checkVoucherDatesInPeriod`), so a wrong choice could only reject correct vouchers.
+- Unchanged on purpose: `OnboardingInputSchema`, `completeOnboarding`, the `learner_profile.books_begin_date` column, and the walkthrough step that tells the learner to set the date in Tally.
+- Gates: tsc clean, eslint clean, vitest 1125/1125. Not checked in a browser: the onboarding screen needs a fresh account and the local app points at the production database.
+
 ## Session log — 2026-09-22 (late night): LANGFUSE ON THE CURRENT SDK, LEGACY GENERATOR DELETED
 
 Owner instruction after migration `20260922140000` and the deploy: fix the Langfuse logging and delete the old generator now rather than after the first live batches.
