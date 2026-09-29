@@ -1,3 +1,5 @@
+import { EXPORT_NOTE } from './export-instructions';
+
 // The exercise message a learner reads in the chat: the scenario story, the
 // numbered items, then fixed practical notes. Shared by the server-side
 // timeline and the client-side live append so the two can never drift.
@@ -9,6 +11,11 @@
 // items?" — so every exercise now says it.
 export const STOCK_ITEMS_NOTE =
   'Note: stock items are optional. Post invoices in accounting mode if you prefer; the evaluation checks ledgers, amounts, GST and bill references only.';
+
+// Every exercise answered with the two files says which exports to send
+// (2026-09-29). Rendered when the message is displayed, so months already
+// issued carry it too.
+export { EXPORT_NOTE };
 
 // Explain/review exercises need a typed part as well as the two XML files.
 // Until 2026-09-03 the only hint was the composer placeholder, so the first
@@ -27,6 +34,9 @@ export function formatExerciseContent(
 ): string {
   const body = itemLines ? `${scenario}\n\n${itemLines}` : scenario;
   const notes = [STOCK_ITEMS_NOTE];
+  if (requiredParts.includes('daybook_xml')) {
+    notes.push(EXPORT_NOTE);
+  }
   if (requiredParts.includes('explain_text')) {
     notes.push(EXPLAIN_PART_NOTE);
   } else if (requiredParts.includes('review_text')) {

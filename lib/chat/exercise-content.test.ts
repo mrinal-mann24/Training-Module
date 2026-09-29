@@ -12,12 +12,12 @@ describe('formatExerciseContent', () => {
   });
 });
 
-import { EXPLAIN_PART_NOTE, REVIEW_PART_NOTE } from './exercise-content';
+import { EXPLAIN_PART_NOTE, EXPORT_NOTE, REVIEW_PART_NOTE } from './exercise-content';
 
 describe('formatExerciseContent: typed-part notes', () => {
   it('tells an explain exercise learner that a written explanation is required', () => {
     const content = formatExerciseContent('Batch.', '1. Buy.', ['daybook_xml', 'trialbalance_xml', 'explain_text']);
-    expect(content.endsWith(`${STOCK_ITEMS_NOTE}\n\n${EXPLAIN_PART_NOTE}`)).toBe(true);
+    expect(content.endsWith(`${STOCK_ITEMS_NOTE}\n\n${EXPORT_NOTE}\n\n${EXPLAIN_PART_NOTE}`)).toBe(true);
   });
 
   it('tells a review exercise learner that a written review is required', () => {
@@ -27,5 +27,10 @@ describe('formatExerciseContent: typed-part notes', () => {
   it('adds no typed-part note for a plain two-file exercise', () => {
     const content = formatExerciseContent('Batch.', '1. Buy.', ['daybook_xml', 'trialbalance_xml']);
     expect(content).not.toContain('THREE parts');
+  });
+
+  it('says which two files to export on every exercise answered with files (2026-09-29)', () => {
+    expect(formatExerciseContent('Batch.', '1. Buy.', ['daybook_xml', 'trialbalance_xml']).endsWith(`${STOCK_ITEMS_NOTE}\n\n${EXPORT_NOTE}`)).toBe(true);
+    expect(formatExerciseContent('Review the books.', '', ['review_text'])).not.toContain(EXPORT_NOTE);
   });
 });

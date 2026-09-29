@@ -1,5 +1,6 @@
 'use client';
 
+import { formatRejection } from '@/lib/chat/export-instructions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSubmissionStatus } from './useSubmissionStatus';
 import { useSubmissionParts } from './useSubmissionParts';
@@ -77,12 +78,11 @@ export function PendingSubmission({
 
       if (submissionStatus === 'invalid') {
         resolvedRef.current = true;
-        const reasons = (validityErrors ?? []).map((error) => `• ${error.message}`).join('\n');
         onResult({
           id: `submission-result-${submissionId}`,
           role: 'assistant',
           kind: 'submission-result-invalid',
-          content: `A couple of things need fixing before this can be scored:\n\n${reasons}\n\nFix these in Tally, re-export, and attach the files again.`,
+          content: formatRejection(validityErrors),
         });
         return;
       }

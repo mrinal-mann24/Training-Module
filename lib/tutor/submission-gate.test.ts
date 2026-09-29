@@ -224,6 +224,27 @@ describe('voucher dates may run ahead of the wall clock when the exercise month 
   });
 });
 
+describe('a Day Book exported without its detail (2026-09-29)', () => {
+  const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
+  const exercise = { ...makeExercise(2), transactions: [
+    { sequence: 1, description: 'On 05-Apr-2026, pay office rent by bank transfer.' },
+    { sequence: 2, description: 'On 06-Apr-2026, pay office rent by bank transfer.' },
+  ] };
+
+  it('is named as a format problem, never as blank vouchers to delete', () => {
+    const dayBook = { vouchers: [
+      { voucherType: 'Payment', date: '20260405', narration: 'rent', ledgerEntries: [] },
+      { voucherType: 'Purchase', date: '20260406', narration: '', ledgerEntries: [] },
+    ] };
+    const result = runValidityGate(dayBook, trialBalance, exercise, '2026-04-01');
+    expect(result.status).toBe('invalid');
+    if (result.status === 'invalid') {
+      expect(result.errors.map((error) => error.code)).toEqual(['day_book_not_detailed']);
+      expect(result.errors[0].message).not.toMatch(/delete/i);
+    }
+  });
+});
+
 describe('blank vouchers are bounced at the gate (2026-09-10)', () => {
   const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
   const exercise = { ...makeExercise(2), transactions: [
@@ -243,7 +264,7 @@ describe('blank vouchers are bounced at the gate (2026-09-10)', () => {
     expect(result.status).toBe('invalid');
     if (result.status === 'invalid') {
       const blank = result.errors.find((error) => error.code === 'blank_vouchers');
-      expect(blank?.message).toContain('Purchase voucher no. 2 dated 20260406');
+      expect(blank?.message).toContain('Purchase voucher no. 2 dated 06-Apr-2026');
     }
   });
 });

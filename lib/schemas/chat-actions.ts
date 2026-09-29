@@ -1,3 +1,4 @@
+import { exportStepsFor } from '@/lib/chat/export-instructions';
 import { z } from 'zod';
 
 // Input boundaries for the chat Server Actions in app/(chat)/chat/actions.ts.
@@ -29,8 +30,7 @@ export const SUBMIT_FILES_NEED_BOTH_MESSAGE =
   "I need both exports to score your work: the Day Book and the Trial Balance. Attach the two files together and hit Send, and I'll take it from there.";
 export const SUBMIT_FILES_TOO_MANY_MESSAGE =
   "That's more files than I can take in one go. Attach just the Day Book and Trial Balance exports and send them again.";
-export const SUBMIT_FILES_NOT_XML_MESSAGE =
-  "One of those files isn't a Tally XML export, so I can't read it. In Tally, export the Day Book (Detailed) and the Trial Balance as XML, then send me both.";
+export const SUBMIT_FILES_NOT_XML_MESSAGE = `One of those files is not a Tally XML export, so I cannot read it.\n\n${exportStepsFor(['daybook', 'trialbalance'])}\n\nThen attach both files here again.`;
 
 // ASSUMPTION: new cap. A learner sends the Day Book and Trial Balance pair,
 // sometimes with a stray extra; every file is parsed on the server.

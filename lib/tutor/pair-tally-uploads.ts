@@ -1,4 +1,5 @@
 import { identifyTallyFile, type TallyFileKind } from '@/lib/parsing/identify-tally-file';
+import { exportStepsFor, type ExportKind } from '@/lib/chat/export-instructions';
 
 export type TallyUpload = { file: File; buffer: Buffer };
 
@@ -41,8 +42,16 @@ export async function pairTallyUploads(files: File[]): Promise<TallyUploadPairin
   const readableKinds = classified
     .map((entry) => `"${entry.file.name}" looks like ${KIND_LABEL[entry.kind]}`)
     .join('; ');
+  // Which export is missing, and the steps to make it (2026-09-29).
+  const missing: ExportKind[] = [...(daybook ? [] : ['daybook' as const]), ...(trialbalance ? [] : ['trialbalance' as const])];
+  const found =
+    missing.length === 2
+      ? 'I could not find a Day Book or a Trial Balance in what you attached'
+      : missing[0] === 'daybook'
+        ? 'I have a Trial Balance but no Day Book in what you attached'
+        : 'I have a Day Book but no Trial Balance in what you attached';
   return {
     status: 'unpaired',
-    error: `I couldn't find both files in what you attached: ${readableKinds}. I need one Detailed Day Book export and one Trial Balance export. Check the exports in Tally and send both again.`,
+    error: `${found}: ${readableKinds}.\n\n${exportStepsFor(missing)}\n\nThen attach both files here again.`,
   };
 }

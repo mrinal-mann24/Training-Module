@@ -37,7 +37,7 @@ const BOOKS_BEGIN_DATE_STEP: WalkthroughStep = {
 const WHAT_NEXT_STEP: WalkthroughStep = {
   id: 'what-next',
   content:
-    "Next, you'll get an exercise. Do it in Tally, then upload your exports here when you're ready.",
+    "Next, you'll get an exercise. Do it in Tally, then export two files and upload them here: the Day Book and the Trial Balance. Each exercise says how they must be exported, and if an upload is not accepted I will show you the exact steps.",
   buttonLabel: 'I understand',
 };
 

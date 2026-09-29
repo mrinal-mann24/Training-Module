@@ -1,3 +1,4 @@
+import { exportSteps } from '@/lib/chat/export-instructions';
 import { describe, expect, it, vi } from 'vitest';
 
 // Stands in for the XML parsers: a file's CONTENT decides its kind, exactly
@@ -52,7 +53,7 @@ describe('pairTallyUploads', () => {
     expect(result).toEqual({
       status: 'unpaired',
       error:
-        'I couldn\'t find both files in what you attached: "a.xml" looks like a Day Book; "b.xml" looks like a Day Book. I need one Detailed Day Book export and one Trial Balance export. Check the exports in Tally and send both again.',
+        `I have a Day Book but no Trial Balance in what you attached: "a.xml" looks like a Day Book; "b.xml" looks like a Day Book.\n\n${exportSteps('trialbalance')}\n\nThen attach both files here again.`,
     });
   });
 
@@ -62,7 +63,7 @@ describe('pairTallyUploads', () => {
     expect(result).toEqual({
       status: 'unpaired',
       error:
-        'I couldn\'t find both files in what you attached: "export.xml" looks like not a Tally export I recognize; "tb.xml" looks like a Trial Balance. I need one Detailed Day Book export and one Trial Balance export. Check the exports in Tally and send both again.',
+        `I have a Trial Balance but no Day Book in what you attached: "export.xml" looks like not a Tally export I recognize; "tb.xml" looks like a Trial Balance.\n\n${exportSteps('daybook')}\n\nThen attach both files here again.`,
     });
   });
 });

@@ -85,9 +85,10 @@ describe('SubmitFilesInputSchema', () => {
     expect(SUBMIT_FILES_NEED_BOTH_MESSAGE).toBe(
       "I need both exports to score your work: the Day Book and the Trial Balance. Attach the two files together and hit Send, and I'll take it from there.",
     );
-    expect(SUBMIT_FILES_NOT_XML_MESSAGE).toBe(
-      "One of those files isn't a Tally XML export, so I can't read it. In Tally, export the Day Book (Detailed) and the Trial Balance as XML, then send me both.",
-    );
+    // 2026-09-29: this one now carries the export steps for both files.
+    expect(SUBMIT_FILES_NOT_XML_MESSAGE).toContain('One of those files is not a Tally XML export');
+    expect(SUBMIT_FILES_NOT_XML_MESSAGE).toContain('How to export the Day Book:');
+    expect(SUBMIT_FILES_NOT_XML_MESSAGE).toContain('How to export the Trial Balance:');
   });
 });
 

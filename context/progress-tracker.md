@@ -21,6 +21,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-29 (evening): PART 3, EXPORT STEPS ON EVERY REJECTION
+
+Owner instruction: a wrong upload must be answered with the exact steps to export the file again (the F12 / Ledger-wise steps the interns were given by hand), and instructions must be clear everywhere. Before this the app held no export steps at all, and the upload wording was repeated in six places.
+
+- **One source:** `lib/chat/export-instructions.ts` (pure, client-safe): `DAY_BOOK_EXPORT_STEPS`, `TRIAL_BALANCE_EXPORT_STEPS`, `exportSteps`, `exportStepsFor`, `guidanceFor(code)`, `formatRejection(errors)`, `EXPORT_NOTE`. 13 tests, including no em dash and nothing about the answers.
+- **Every rejection = the problem, then the steps for the file involved, then "attach both files here again".** A wrongly exported file gets that file's steps (`trial_balance_too_sparse`, new `day_book_not_detailed`); a problem inside the vouchers gets both (`voucher_count_mismatch`, `voucher_dates_out_of_period`, `blank_vouchers`, `parse_failed`); our own failure (`processing_failed`, `no_parts_received`) gets no steps and is no longer wrapped in "Fix these in Tally". The wrapper is shared by `PendingSubmission.tsx` and `lib/chat/build-timeline.ts` (it was copied), and works from the stored code, so rejections already in a learner's history show the steps too.
+- **Gate (`lib/tutor/submission-gate.ts`):** a Day Book in which NO voucher carries a ledger line is `day_book_not_detailed`, not a list of blank vouchers to delete (inference: no such export has been seen yet, the rule only fires when every voucher is empty); blank voucher dates read 30-Apr-2024 instead of 20240430.
+- **Upload time:** `pairTallyUploads` says which export is missing and gives that file's steps; a file that is not XML gets both.
+- **Before the first upload:** every exercise answered with files carries `EXPORT_NOTE` (added in `formatExerciseContent` at display time, so months already issued and the pack's Day 1 message carry it; no SQL needed), and the walkthrough's last step says where the steps are.
+- **Checked on real files:** the pilot Day Book and Trial Balance under `xmls/pilot-submission/` (99 vouchers, 71 rows) are accepted; a group-level Trial Balance, half a month and a Day Book without detail each print the matching steps.
+- **Open, owner:** the key presses are Tally Prime's as given to the interns (Alt+F2 period, Alt+F5 Detailed, F5 Ledger-wise, F12 Show Opening Balance, Alt+E export as XML). One intern must confirm them on a live Tally; any correction is a one-file change.
+- **Deferred:** a feedback line when the Trial Balance has no opening column. The coaching text is fact-grounded and validated; the export note and the steps now ask for the opening column up front, and the tie-out already handles its absence.
+- Gates: tsc clean, eslint clean, vitest 1164/1164, `next build` compiles.
+
 ## Session log — 2026-09-29 (later still): PART 2a, AUDIT OF DELIVERED DOCUMENTS ACROSS ALL MONTHS
 
 Owner question: will every exercise stay accurate (one GST number and address per party, invoice numbers never wrong or reused, figures equal to the key)? Until now nothing looked ALONG a learner's months; every check looked at one month.

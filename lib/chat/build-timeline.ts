@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatExerciseContent } from '@/lib/chat/exercise-content';
+import { formatRejection } from '@/lib/chat/export-instructions';
 import type { ChatMessage } from '@/lib/chat/message';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
 import type { Submission } from '@/lib/db/queries/submissions';
@@ -94,7 +95,6 @@ export function assembleTimeline(rows: {
     });
 
     if (submission.status === 'invalid') {
-      const reasons = (submission.validity_errors ?? []).map((error) => `• ${error.message}`).join('\n');
       events.push({
         at: submission.created_at,
         order: 2,
@@ -102,7 +102,7 @@ export function assembleTimeline(rows: {
           id: `submission-result-${submission.id}`,
           role: 'assistant',
           kind: 'submission-result-invalid',
-          content: `A couple of things need fixing before this can be scored:\n\n${reasons}\n\nFix these in Tally, re-export, and attach the files again.`,
+          content: formatRejection(submission.validity_errors),
         },
       });
     }

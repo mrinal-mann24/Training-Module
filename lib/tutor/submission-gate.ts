@@ -41,7 +41,7 @@ export function runValidityGate(
     errors.push({
       code: 'trial_balance_too_sparse',
       message:
-        'This Trial Balance only shows a few account groups, not individual ledger accounts. In Tally, export the Trial Balance with ledger-level detail (not a summarized group view), then upload it again.',
+        'This Trial Balance shows account groups, not the individual ledgers. It has to be exported Ledger-wise, with every ledger on its own row.',
     });
   }
 
@@ -64,6 +64,14 @@ export function runValidityGate(
   }
 
   return { status: 'valid' };
+}
+
+const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Tally's 20240430 as a learner reads a date: 30-Apr-2024.
+function readableDate(value: string): string {
+  const date = parseTallyDate(value);
+  return date ? `${String(date.getUTCDate()).padStart(2, '0')}-${MONTH_ABBREVIATIONS[date.getUTCMonth()]}-${date.getUTCFullYear()}` : value;
 }
 
 function parseTallyDate(value: string): Date | null {
@@ -178,12 +186,21 @@ function checkBlankVouchers(dayBook: ParsedDayBook): ValidityError | null {
   if (blank.length === 0) {
     return null;
   }
+  // No voucher in the whole file carries a ledger line: these are not blank
+  // postings to delete, the Day Book was exported without its detail
+  // (2026-09-29). Telling the learner to delete every voucher would be wrong.
+  if (dayBook.vouchers.every((voucher) => voucher.ledgerEntries.length === 0)) {
+    return {
+      code: 'day_book_not_detailed',
+      message: 'This Day Book lists the vouchers but not their ledger lines, so it was not exported in Detailed format.',
+    };
+  }
   const named = blank
     .slice(0, 3)
-    .map(({ voucher, position }) => `${voucher.voucherType} voucher no. ${position} dated ${voucher.date}`)
+    .map(({ voucher, position }) => `${voucher.voucherType} voucher no. ${position} dated ${readableDate(voucher.date)}`)
     .join(', ');
   return {
     code: 'blank_vouchers',
-    message: `The Day Book contains ${blank.length === 1 ? 'a blank voucher' : `${blank.length} blank vouchers`} with no ledger lines (${named}). Delete ${blank.length === 1 ? 'it' : 'them'} in Tally, re-export and upload again.`,
+    message: `The Day Book contains ${blank.length === 1 ? 'a blank voucher' : `${blank.length} blank vouchers`} with no ledger lines (${named}). Delete ${blank.length === 1 ? 'it' : 'them'} in Tally, then export both files again.`,
   };
 }
