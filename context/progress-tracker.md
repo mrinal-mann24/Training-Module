@@ -21,6 +21,15 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-29 (later): REVIEW MEETING ACTIONS, PART 1: LEARNER HISTORY REPORT
+
+The owner shared the review meeting transcript. Pending from the meeting: one full flow by Prathiba (reviewed from her laptop and from the owner's logs) and the video modules. Owner decisions taken the same day: the AI Accountant stage stays as it is (a new harder month, no repeat of a month already done by hand); graduation is at 90% of topics mastered (not built yet). Approved plan, in order: (1) learner history report, (2) audit of delivered documents, (3) clear export instructions on every rejection, (4) four accuracy guards.
+
+- **Part 1 shipped.** `scripts/learner-report.ts` (read-only, service role) writes one self-contained HTML file per learner: progress over the five modules, then each month with level, documents delivered, every upload with its chance number, rejection reasons, score, result, tie-out, findings, topics passed and failed, the feedback the learner read, help steps, questions asked, issues, and the time from issue to first upload and to the last scored upload. `npx tsx scripts/learner-report.ts --learner <email or uuid> [--out file.html]`. Default output is `~/Documents/AIA-Academy-reports/`, OUTSIDE the repository: the file holds learner data and must not be committed.
+- The grouping and the HTML are pure functions in `lib/reports/learner-report.ts` (12 tests); every learner-typed string is escaped. Reuses the existing per-learner loaders in `lib/db/queries/`; the only new selects are the score columns of `scoring_results` and the snapshot columns of `learner_issues`.
+- **Limits, stated in the report itself:** times run from the moment a month was issued (the platform does not record when work started), and a refusal shown only on the upload screen is never stored.
+- Verified on Praveen's real data: 15 months, 56 KB file, figures agree with his chat. Gates: tsc clean, eslint clean, the new tests pass.
+
 ## Session log — 2026-09-29: BOOKS BEGIN DATE NO LONGER ASKED AT SIGN-UP
 
 Owner instruction: the company always begins on 1 April 2024, so a new learner must not be asked for it.
