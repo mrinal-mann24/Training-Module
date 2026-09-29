@@ -84,6 +84,7 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     build-timeline.ts         → Chat-history rebuild: reassembles the full conversation from persisted rows (2026-08-24)
     message.ts                → Chat message types (moved 2026-09-15 from app/(chat)/chat/message.ts; lib no longer imports /app)
     exercise-content.ts       → Shared exercise-message copy, used by both the server timeline and the client live append
+    export-instructions.ts    → THE Day Book and Trial Balance export steps and the rejection message built from a stored error code (2026-09-29). Pure and client-safe; every place that tells a learner how to export reads it
     issue-limits.ts           → Shared constant mirrored by the learner-issue schema and its DB check constraint
     report-issue.ts           → Learner issue reports (2026-09-15): validation, duplicate + hourly limits, batch-context snapshot, service-role insert. Never calls an LLM
     answer-learner-question.ts → Free-text Q&A (2026-09-15): answers learner questions grounded in Rulebook/docs/context, persists to qa_messages
@@ -108,6 +109,9 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
     company-details.ts, party-directory.ts, bank-account-details.ts
                                  → Fixed reference/seed data used to populate generated documents
     templates/                   → @react-pdf/renderer templates, one per doc_type (vendor-invoice variants, bank-statement variants, sales-invoice.tsx, month-end-notes.tsx)
+  /reports
+    learner-report.ts          → Owner's view of one learner: months, uploads, scores, feedback, help, time taken. Pure grouping and HTML; never shown to a learner (2026-09-29)
+    document-audit.ts          → Checks along ALL of a learner's delivered documents: one identity per party, no number reused, arithmetic, bank continuity (2026-09-29). Pure, read-only
   /supabase
     client.ts, server.ts, service-role.ts → Browser, Server Component and service-role Supabase clients
   cn.ts                         → clsx + tailwind-merge class-name helper, used across /app
@@ -116,6 +120,9 @@ Not included in v1: Sentry (explicitly deferred), Clerk (Supabase Auth only for 
   /migrations                → Schema, RLS policies — source of truth for DB structure
 
 /scripts                     → One-off/admin scripts (migrations, backfills, seeding, PDF regeneration) — not part of the app runtime, run manually or via CI
+                               Read-only owner tools: learner-report.ts (one learner's full history as an HTML file written OUTSIDE the repo),
+                               audit-delivered-documents.ts (every stored document across all months; --with-next-month also builds and audits
+                               the next month without saving), dry-run-planned-batch.ts, audit-answer-keys.ts
 
 /seed                        → Seed content: authored exercise-pack answer keys, and extracted rulebook/manager-spec reference text used at seed time
 

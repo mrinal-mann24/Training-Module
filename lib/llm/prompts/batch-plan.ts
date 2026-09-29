@@ -4,6 +4,7 @@ import type { OpenItem } from '@/lib/tutor/ledger-state';
 import { describeMenu, type EventMenu } from '@/lib/tutor/build-key/event-menu';
 import { taxRulesSummaryFor, type CalendarDate } from '@/lib/tutor/tax-rules';
 import { BATCH_PLAN_JSON_SCHEMA } from './batch-plan-json-schema';
+import { PLACEABLE_CITIES } from '@/lib/documents/party-directory';
 
 // The batch-plan prompt (2026-09-22, rebuild Stage 3). The model writes
 // the month's story as commercial events; it is never asked for a ledger
@@ -110,7 +111,7 @@ ${describeMenu(params.menu)}
 - A purchase of nature "goods" posts to Purchases; "service" or "expense" names the expense ledger in "ledger" (e.g. "Legal & Professional Charges", "Rent", "Advertisement & Marketing"); "asset" names the asset ledger (e.g. "Office Equipment").
 - A receipt or payment settles what the books hold: mode "full" names open bills of that party (the amount is their balance), "part" names one bill and an amount below its balance, "advance" is money before any bill, "on_account" only when no bill can be identified.
 - A payment with no party is a direct expense: give "ledger" and "amount".
-- PARTIES: use a name from PARTIES exactly as written. Never respell an existing party (no "M/s", "Pvt Ltd", "LLP", "& Co" variants). A genuinely new party needs new_party true and a plain trading name that does not start with "Cash" and does not contain Bank, HDFC, GST or TDS.
+- PARTIES: use a name from PARTIES exactly as written. Never respell an existing party (no "M/s", "Pvt Ltd", "LLP", "& Co" variants). A genuinely new party needs new_party true and a plain trading name that does not start with "Cash" and does not contain Bank, HDFC, GST or TDS. A new party named after a place uses one of these cities, which fixes its state: ${PLACEABLE_CITIES.join(', ')}; a new party with no place in its name is a Karnataka party. Never name a party after any other town or state.
 - LEDGERS: an expense or asset ledger is a plain ledger name, never a party, a cash or bank ledger, or a GST/TDS ledger. Name the expense ledger after what was bought, so a fee for legal, audit, consultancy, rent, repairs, advertising, freight or commission work is visibly that ("Legal & Professional Charges", "Audit Fees", "Rent", "Repairs & Maintenance", "Advertisement & Marketing", "Freight & Delivery Charges", "Commission"). Goods lines must describe goods, not services.
 - DOCUMENT NUMBERS: one plain number in capitals with a serial, like INV-3012, MS/1001 or CN-07. No spaces, brackets, commas or dates, and never starting with ADV (the system numbers advances).
 - LINES: describe the item in plain words. No amounts, percentages, dates or product codes in a description. Choose quantities and rates so every figure, GST included, is a whole rupee (for example a taxable value that is a multiple of 100).

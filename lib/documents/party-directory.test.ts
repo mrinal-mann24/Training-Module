@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  KNOWN_PARTY_KEYS,
+  PLACEABLE_CITIES,
   gstinCheckDigit,
   isValidGstin,
   normalizePartyName,
@@ -10,6 +12,7 @@ import {
   partyTaxClassFor,
   resolvePartyIdentities,
   stateCodeOf,
+  unplaceablePlaceIn,
 } from './party-directory';
 import { COMPANY_DETAILS } from './company-details';
 
@@ -186,5 +189,54 @@ describe('resolvePartyIdentities: GSTINs are unique across all parties', () => {
     const registry = names.slice(0, 300);
     const gstins = new Set(registry.map((name) => partyIdentityFor(name, registry).gstin));
     expect(gstins.size).toBe(new Set(registry.map(normalizePartyName)).size);
+  });
+});
+
+// 2026-09-29: every party in the directory has been delivered to a learner
+// (the audit of the three interns' keys found no party outside it). If this
+// snapshot changes, a delivered party's GST number, state or address moved:
+// do not update the snapshot, undo the change that moved it.
+describe('delivered identities never move (2026-09-29)', () => {
+  it('locks the GST number, state and address of every directory party', () => {
+    const table = Object.fromEntries(
+      KNOWN_PARTY_KEYS.map((key) => {
+        const identity = partyIdentityFor(key);
+        return [key, { gstin: identity.gstin, pan: identity.pan, state: identity.state, stateCode: identity.stateCode, address: identity.address }];
+      }),
+    );
+    expect(table).toMatchSnapshot();
+  });
+
+  it('prints the same GST number on a document as the books hold, whatever the order of the parties', () => {
+    const registry = [...KNOWN_PARTY_KEYS].reverse();
+    for (const key of KNOWN_PARTY_KEYS) {
+      expect(partyIdentityFor(key, registry).gstin).toBe(partyIdentityFor(key).gstin);
+    }
+  });
+});
+
+describe('unplaceablePlaceIn (2026-09-29)', () => {
+  it('accepts a name with a city the directory can place, or with no place at all', () => {
+    expect(unplaceablePlaceIn('Mumbai Fabrics')).toBeNull();
+    expect(unplaceablePlaceIn('Surat Silk House')).toBeNull();
+    expect(unplaceablePlaceIn('Rathi Fabrics')).toBeNull();
+    expect(unplaceablePlaceIn('Agrawal Traders')).toBeNull();
+    expect(unplaceablePlaceIn('Kotak Supplies')).toBeNull();
+  });
+
+  it('names the place it cannot put a party in', () => {
+    expect(unplaceablePlaceIn('Pune Textiles')?.toLowerCase()).toBe('pune');
+    expect(unplaceablePlaceIn('Lucknow Chikan House')?.toLowerCase()).toBe('lucknow');
+    expect(unplaceablePlaceIn('Mangalore Tiles')?.toLowerCase()).toBe('mangalore');
+  });
+
+  it('never rejects a party the directory already pins', () => {
+    for (const key of KNOWN_PARTY_KEYS) expect(unplaceablePlaceIn(key)).toBeNull();
+  });
+
+  it('offers each city once', () => {
+    expect(new Set(PLACEABLE_CITIES).size).toBe(PLACEABLE_CITIES.length);
+    expect(PLACEABLE_CITIES).toContain('Bengaluru');
+    expect(PLACEABLE_CITIES).toContain('Mumbai');
   });
 });

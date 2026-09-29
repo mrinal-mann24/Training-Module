@@ -3,6 +3,7 @@ import { extractTransactionDate } from '@/lib/documents/invoice-figures';
 import { parseBillReferences } from '@/lib/tutor/bill-reference';
 import { billTokensIn } from '@/lib/tutor/generation-checks';
 import type { PartyMaster } from '@/lib/tutor/party-master';
+import { PLACEABLE_CITIES, unplaceablePlaceIn } from '@/lib/documents/party-directory';
 import { inferTdsSectionFromLedger, type TdsSection } from '@/lib/tutor/tax-rules';
 
 // What the model may NOT decide by writing free text (2026-09-22, the
@@ -33,6 +34,30 @@ export function loosePartyKey(name: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+// Letters changed, added or dropped to turn one key into the other.
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+// "Bharath Machinery" beside "Bharat Machinery" (2026-09-29): one or two
+// letters apart is a second spelling of the same party, which would open a
+// second ledger and print a second GST number. Short names allow one
+// letter, longer ones two.
+export function isNearSpelling(a: string, b: string): boolean {
+  if (a === b) return false;
+  const shorter = Math.min(a.length, b.length);
+  if (shorter < 6 || Math.abs(a.length - b.length) > 2) return false;
+  return editDistance(a, b) <= (shorter >= 10 ? 2 : 1);
+}
+
 export function partyNameViolation(params: { name: string; newParty: boolean; master: PartyMaster; raisedInBatch: ReadonlySet<string> }): string | null {
   const name = params.name.trim();
   if (name.length < 3 || name.length > 60) return `party name "${name}" must be 3 to 60 characters`;
@@ -42,10 +67,17 @@ export function partyNameViolation(params: { name: string; newParty: boolean; ma
   if (params.raisedInBatch.has(key)) return null;
   const near = params.master.registry.find((existing) => {
     const other = loosePartyKey(existing);
-    return other === key || (Math.min(other.length, key.length) >= 6 && (other.includes(key) || key.includes(other)));
+    return other === key || (Math.min(other.length, key.length) >= 6 && (other.includes(key) || key.includes(other))) || isNearSpelling(other, key);
   });
   if (near) return `"${name}" looks like the existing party "${near}": use that name exactly, or a clearly different party`;
+  if ([...params.raisedInBatch].some((other) => isNearSpelling(other, key))) {
+    return `"${name}" is spelled almost like another new party in this plan: one party has one spelling`;
+  }
   if (!params.newParty) return `"${name}" is not a party in the books: use a name from PARTIES exactly, or set new_party true for a genuinely new one`;
+  const place = unplaceablePlaceIn(name);
+  if (place) {
+    return `"${name}" names ${place}, a place the books cannot put a party in: a new party named after a place uses one of ${PLACEABLE_CITIES.join(', ')}`;
+  }
   return null;
 }
 

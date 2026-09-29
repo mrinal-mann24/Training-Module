@@ -349,7 +349,10 @@ describe('buildAnswerKey refuses what the model may not decide by free text (pre
     expect(only([sale({ customer: { name: 'Cash & Carry Wholesale', new_party: true } })]).violations[0]).toContain('cannot be a party');
     expect(only([sale({ customer: { name: 'M/s Karnataka Emporium LLP', new_party: true } })]).violations[0]).toContain('looks like the existing party "Karnataka Emporium"');
     expect(only([sale({ customer: { name: 'Pune Furnishings', new_party: false } })]).violations[0]).toContain('is not a party in the books');
-    expect(only([sale({ customer: { name: 'Pune Furnishings', new_party: true } })]).generated).not.toBeNull();
+    // 2026-09-29: a new party named after a place the directory cannot place is
+    // refused (it used to be put in Karnataka); a new party with no place is fine.
+    expect(only([sale({ customer: { name: 'Pune Furnishings', new_party: true } })]).violations[0]).toContain('names Pune');
+    expect(only([sale({ customer: { name: 'Rathi Furnishings', new_party: true } })]).generated).not.toBeNull();
   });
 
   it('a document number the reference parser would read as something else', () => {

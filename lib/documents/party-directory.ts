@@ -146,6 +146,27 @@ const CITY_HINTS: [RegExp, CityKey][] = [
   [/hyderabad|telangana/, 'hyderabad'],
 ];
 
+// Every party the directory pins, for the test that locks each one's
+// identity (2026-09-29): a delivered party must never move.
+export const KNOWN_PARTY_KEYS: readonly string[] = Object.keys(KNOWN_PARTIES);
+
+// The cities a NEW party's name may carry: each fixes the party's state.
+export const PLACEABLE_CITIES: readonly string[] = [...new Set(Object.values(CITIES).map((info) => info.city))];
+
+// Places the directory has no city for (2026-09-29). Without this a new
+// party called "Pune Textiles" fell through to the home state and printed
+// a Karnataka GST number. Whole words of the name, so "Agrawal" is not Agra.
+const OTHER_PLACES =
+  /\b(pune|nashik|thane|goa|panaji|lucknow|kanpur|noida|ghaziabad|agra|varanasi|uttar pradesh|indore|bhopal|madhya pradesh|patna|bihar|ranchi|jharkhand|bhubaneswar|cuttack|odisha|orissa|guwahati|assam|chandigarh|amritsar|jalandhar|gurgaon|gurugram|faridabad|haryana|vadodara|baroda|rajkot|madurai|salem|tiruppur|tirupur|vellore|pondicherry|puducherry|mangalore|mangaluru|hubli|hubballi|belgaum|belagavi|udupi|vijayawada|guntur|tirupati|warangal|secunderabad|thiruvananthapuram|trivandrum|kozhikode|calicut|thrissur|jodhpur|udaipur|kota|shimla|himachal|dehradun|uttarakhand|jammu|srinagar|kashmir|raipur|chhattisgarh|siliguri|howrah|durgapur)\b/i;
+
+// The place in a party name that the directory cannot put in a city of its
+// own, or null when the name is placeable (or names no place at all).
+export function unplaceablePlaceIn(name: string): string | null {
+  const key = normalizePartyName(name);
+  if (KNOWN_PARTIES[key] || CITY_HINTS.some(([pattern]) => pattern.test(key))) return null;
+  return OTHER_PLACES.exec(name)?.[1] ?? null;
+}
+
 const STREETS = [
   'MG Road',
   'Station Road',

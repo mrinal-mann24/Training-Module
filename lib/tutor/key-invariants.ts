@@ -8,6 +8,8 @@ import { planSourceDocuments, runGenerationChecks, type ExerciseMonth } from '@/
 import { priorBillReferences, tdsHistoryFromKeys } from '@/lib/tutor/generation-checks';
 import { applyKey, cashPositionOf, cloneLedgerState, openBillsOf, openingBalancesOf, type LedgerState } from '@/lib/tutor/ledger-state';
 import { payeeTypeFor, type PartyMaster } from '@/lib/tutor/party-master';
+import { partyLegOf } from '@/lib/db/queries/company';
+import { partyIdentityFor } from '@/lib/documents/party-directory';
 
 // The final invariant (2026-09-22, rebuild Stage 4): run ONCE on the object
 // that is about to be persisted, after the month-end journals, the dating,
@@ -76,6 +78,27 @@ export function assertKeyValid(input: KeyInvariantInput): Violation[] {
       buildVendorInvoiceContent(invoice.legs, invoice.transactionDescription, input.companyName);
     } catch (error) {
       violations.push({ code: 'DOCUMENTS', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  // IDENTITY (2026-09-29): a document prints a party's identity from its
+  // name alone, the books resolve it against every earlier party. For a
+  // party new in this batch the two must agree, or two parties would print
+  // one GST number. A different name settles it, so it is a retry. An
+  // existing party is not checked here: no retry could change it.
+  const legsBySequence = new Map<number, AnswerKey['entries']>();
+  for (const entry of generated.answer_key.entries) {
+    legsBySequence.set(entry.sequence, [...(legsBySequence.get(entry.sequence) ?? []), entry]);
+  }
+  const checkedParties = new Set<string>();
+  for (const legs of legsBySequence.values()) {
+    const party = partyLegOf(legs, legs[0].voucher_type);
+    if (!party) continue;
+    const record = input.master.resolve(party.correct_account);
+    if (record.known || checkedParties.has(record.key)) continue;
+    checkedParties.add(record.key);
+    if (partyIdentityFor(record.ledgerName).gstin !== record.gstin) {
+      violations.push({ code: 'IDENTITY', message: `${party.correct_account}: this name would print the GST number of another party; give the new party a different name` });
     }
   }
 

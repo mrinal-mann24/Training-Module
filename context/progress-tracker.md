@@ -21,6 +21,20 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-29 (night): PART 2b, FOUR ACCURACY GUARDS
+
+The four narrow gaps found while answering "will every exercise stay accurate", each closed with tests. No stored key, document or score was touched, and no existing party's identity changed (the new snapshot proves it).
+
+1. **A near spelling is the same party.** `partyNameViolation` (`lib/tutor/build-key/validate.ts`) already refused "M/s X" and "X LLP"; it now also refuses a name one letter away (two for names of ten letters or more) from a party of the books or from another new party in the same plan (`isNearSpelling`). "Bharath Machinery" beside "Bharat Machinery" used to become a second party with its own GST number.
+2. **Delivered identities are locked.** `lib/documents/__snapshots__/party-directory.test.ts.snap` pins the GSTIN, PAN, state and address of all 37 directory parties (`KNOWN_PARTY_KEYS`). The three interns' stored keys were read: every party they have been delivered is in the directory. **If this snapshot ever changes, do not update it: undo the change that moved a party.**
+3. **The documents' identity is the books' identity.** A document prints `partyIdentityFor(name)`, the books resolve the same name against the registry; the two differ only if a new name's first GST number is already another party's. `assertKeyValid` now has an `IDENTITY` check for parties new in the batch (a retry with another name settles it). Deviation from the approved plan, on purpose: the builders were NOT given a registry parameter, because the check makes the two agree without changing what any builder prints. An existing party is not checked at generation (no retry could change it); `scripts/audit-delivered-documents.ts` reports it as `IDENTITY_SPLIT`.
+4. **A new party is named after a place the books can place.** A new party whose name carries a town or state the directory has no city for ("Pune Textiles", "Lucknow ...") is refused and the message lists the sixteen cities to use (`unplaceablePlaceIn`, `PLACEABLE_CITIES`); the prompt states the same rule. It used to be placed in Karnataka with a Karnataka GST number. Whole words only, so "Agrawal Traders" is not Agra. A new party with no place in its name is a Karnataka party, as before.
+
+- One existing test described the old behaviour of point 4 ("Pune Furnishings" accepted) and was updated.
+- **Verification:** tsc clean, eslint clean, vitest 1180/1180 (85 files), `next build` compiles. With the guards active each intern's next month was built again with the real model and audited with their history: 24 documents, 0 differences, nothing saved.
+- **Noted for the owner, not changed:** "Sharma Legal (individual)" carries a firm-type PAN letter (F) in its GST number, because the directory pins it as a firm. Changing it would move a delivered identity; it has no effect on any posting (legal fees fall under 194J at the same rate).
+- `context/architecture.md` §2 lists the new modules (`lib/reports/`, `lib/chat/export-instructions.ts`) and the owner's read-only scripts.
+
 ## Session log — 2026-09-29 (evening): PART 3, EXPORT STEPS ON EVERY REJECTION
 
 Owner instruction: a wrong upload must be answered with the exact steps to export the file again (the F12 / Ledger-wise steps the interns were given by hand), and instructions must be clear everywhere. Before this the app held no export steps at all, and the upload wording was repeated in six places.
