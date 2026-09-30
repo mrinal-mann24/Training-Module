@@ -138,7 +138,13 @@ function checkVoucherDatesInPeriod(
 // a submission that is OBVIOUSLY incomplete (outside the tolerance band).
 // Generated drills (no expectedVoucherCount) keep the exact check: at 3-8
 // transactions, any mismatch really does mean a skipped/extra posting.
-const PACK_VOUCHER_COUNT_TOLERANCE = 0.1;
+// 2026-09-30 (production audit): generated months take the same band. A
+// learner who posts one entry as two vouchers, or two entries as one, is
+// right, and the scorer already reads such composites, but the exact rule
+// bounced them before scoring with "post all of them (and only them)". A
+// missed posting is now scored as missing, by name, which is better
+// feedback than a count.
+const VOUCHER_COUNT_TOLERANCE = 0.1;
 
 function checkVoucherCount(
   dayBook: ParsedDayBook,
@@ -149,26 +155,22 @@ function checkVoucherCount(
   // assignment from the authored answer key) is the count source for those.
   const expectedCount = exercise.expectedVoucherCount ?? exercise.transactions.length;
   const actualCount = dayBook.vouchers.length;
-
-  if (exercise.expectedVoucherCount !== null) {
-    const allowedDeviation = Math.ceil(expectedCount * PACK_VOUCHER_COUNT_TOLERANCE);
-    if (Math.abs(actualCount - expectedCount) > allowedDeviation) {
-      return {
-        code: 'voucher_count_mismatch',
-        message: `This exercise works out to around ${expectedCount} vouchers, but the Day Book export contains ${actualCount}: that looks like a big chunk is missing or a different period was exported. Check the export covers the full month, then resubmit.`,
-      };
-    }
+  const allowedDeviation = Math.ceil(expectedCount * VOUCHER_COUNT_TOLERANCE);
+  if (actualCount > 0 && Math.abs(actualCount - expectedCount) <= allowedDeviation) {
     return null;
   }
 
-  if (actualCount !== expectedCount) {
+  if (exercise.expectedVoucherCount !== null) {
     return {
       code: 'voucher_count_mismatch',
-      message: `This exercise has ${expectedCount} transaction${expectedCount === 1 ? '' : 's'} to post, but the Day Book export contains ${actualCount}. Check you've posted all of them (and only them) in Tally, then re-export and resubmit.`,
+      message: `This exercise works out to around ${expectedCount} vouchers, but the Day Book export contains ${actualCount}: that looks like a big chunk is missing or a different period was exported. Check the export covers the full month, then resubmit.`,
     };
   }
 
-  return null;
+  return {
+    code: 'voucher_count_mismatch',
+    message: `This exercise has ${expectedCount} transaction${expectedCount === 1 ? '' : 's'} to post, but the Day Book export contains ${actualCount}. Check you have posted all of them in Tally, then export both files again.`,
+  };
 }
 
 // A saved voucher with no ledger line, or nothing but zero amounts, is not a

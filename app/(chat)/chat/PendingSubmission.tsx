@@ -1,6 +1,7 @@
 'use client';
 
 import { formatRejection } from '@/lib/chat/export-instructions';
+import { NEXT_MONTH_DELAYED_MESSAGE } from '@/lib/chat/next-month-status';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSubmissionStatus } from './useSubmissionStatus';
 import { useSubmissionParts } from './useSubmissionParts';
@@ -39,6 +40,9 @@ type PendingSubmissionProps = {
   // a correction round opened (2026-09-16): the learner keeps this exercise,
   // reads the help step, and sends corrected exports.
   onCorrectionRound: (hint: Hint, inviteLine: string) => void;
+  // A plain tutor line when no next month is coming or it is late
+  // (2026-09-30): the wait must never end in silence.
+  onTutorNote: (content: string) => void;
 };
 
 // One instance per in-flight submission. Owns the Realtime subscription for
@@ -51,6 +55,7 @@ export function PendingSubmission({
   onResult,
   onCorrectionRound,
   onNextExercise,
+  onTutorNote,
 }: PendingSubmissionProps) {
   const resolvedRef = useRef(false);
 
@@ -116,26 +121,46 @@ export function PendingSubmission({
           // auto-arrived (observed live 2026-09-01, a 9m+ production run).
           const NEXT_EXERCISE_POLL_LIMIT = 144;
           function pollNextExercise(attempt: number) {
-            getNextExercise(exerciseId).then((nextExerciseResult) => {
-              if (nextExerciseResult.status === 'found') {
-                onNextExercise(
-                  nextExerciseResult.exercise,
-                  nextExerciseResult.hintDepth,
-                  nextExerciseResult.moduleTitle,
-                  nextExerciseResult.sourceDocuments,
-                );
-                return;
-              }
-              // No new batch: this exercise stays open for a correction.
-              // Same terminal condition as 'found' — stop polling.
-              if (nextExerciseResult.status === 'correction') {
-                onCorrectionRound(nextExerciseResult.hint, nextExerciseResult.inviteLine);
-                return;
-              }
+            // The budget ran out with nothing to show (2026-09-30): say so
+            // instead of going quiet. The server says the same on the next
+            // upload or reload, so the two never disagree.
+            const again = () => {
               if (attempt < NEXT_EXERCISE_POLL_LIMIT) {
                 setTimeout(() => pollNextExercise(attempt + 1), NEXT_EXERCISE_POLL_MS);
+              } else {
+                onTutorNote(NEXT_MONTH_DELAYED_MESSAGE);
               }
-            });
+            };
+            getNextExercise(exerciseId).then(
+              (nextExerciseResult) => {
+                if (nextExerciseResult.status === 'found') {
+                  onNextExercise(
+                    nextExerciseResult.exercise,
+                    nextExerciseResult.hintDepth,
+                    nextExerciseResult.moduleTitle,
+                    nextExerciseResult.sourceDocuments,
+                  );
+                  return;
+                }
+                // No new batch: this exercise stays open for a correction.
+                // Same terminal condition as 'found', so stop polling.
+                if (nextExerciseResult.status === 'correction') {
+                  onCorrectionRound(nextExerciseResult.hint, nextExerciseResult.inviteLine);
+                  return;
+                }
+                // Every topic mastered, or the next month is late: one line,
+                // then stop.
+                if (nextExerciseResult.status === 'note') {
+                  onTutorNote(nextExerciseResult.message);
+                  return;
+                }
+                again();
+              },
+              // A dropped request is not the end of the wait (2026-09-30). The
+              // rejection handler is the second argument, so an error thrown by
+              // the delivery above is not mistaken for a dropped request.
+              again,
+            );
           }
           pollNextExercise(1);
         });

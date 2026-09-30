@@ -20,6 +20,7 @@ import {
   logAttemptsAndClassifyRectifications,
   recomputeMasteryAndModuleProgress,
   openCorrectionRoundOrAdvance,
+  recordNextMonthFailure,
   submissionIdFromFailureEvent,
   describeRectifications,
   loadPreviousTrialBalance,
@@ -65,7 +66,11 @@ export const waitForSubmission = inngest.createFunction(
     onFailure: async ({ event }) => {
       const submissionId = submissionIdFromFailureEvent(event);
       if (submissionId) {
-        await markSubmissionFailedIfOpen(createServiceRoleClient(), submissionId);
+        const supabase = createServiceRoleClient();
+        const moved = await markSubmissionFailedIfOpen(supabase, submissionId);
+        // Not moved: the score was already saved, so the failure was in
+        // the work after it (the next month). Say so (2026-09-30).
+        if (!moved) await recordNextMonthFailure(supabase, submissionId);
       }
     },
   },

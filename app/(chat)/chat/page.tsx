@@ -5,7 +5,11 @@ import { getLatestExercise, type ExerciseForLearner } from '@/lib/db/queries/exe
 import { getHintDepthForExercise } from '@/lib/db/queries/hint-requests';
 import { getLearnerIssues } from '@/lib/db/queries/learner-issues';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
+import { getConceptAttempts, getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
+import { isProgrammeComplete } from '@/lib/tutor/mastery';
+import { decideNextMonthStatus, nextMonthMessage } from '@/lib/chat/next-month-status';
+import { getScoredAt } from '@/lib/db/queries/scoring-results';
+import type { ChatMessage } from '@/lib/chat/message';
 import { getLatestScoredSubmissionForExercise } from '@/lib/db/queries/submissions';
 import { currentMajorModule } from '@/lib/tutor/major-modules';
 import { correctionInviteLine, isCorrectionOpen } from '@/lib/tutor/correction-round';
@@ -37,6 +41,38 @@ async function loadCorrectionInvite(
   }
 
   return correctionInviteLine(latestScored.correction_round + 1);
+}
+
+// The line under the last feedback when no next month has arrived and none
+// is coming soon (2026-09-30): every topic mastered, or the month is late.
+// Null while it is still within its normal preparation time. Derived from
+// rows on every load, like the correction invite, so a reload shows it too.
+async function loadNextMonthNote(
+  supabase: SupabaseClient,
+  learnerId: string,
+  exercise: ExerciseForLearner,
+): Promise<string | null> {
+  try {
+    const latestScored = await getLatestScoredSubmissionForExercise(supabase, learnerId, exercise.id);
+    if (!latestScored) {
+      return null;
+    }
+    const [attempts, mastery, scoredAt] = await Promise.all([
+      getConceptAttempts(supabase, learnerId),
+      getConceptMasteryMap(supabase, learnerId),
+      getScoredAt(supabase, latestScored.id),
+    ]);
+    const status = decideNextMonthStatus({
+      scoredAt: scoredAt ?? latestScored.created_at,
+      now: Date.now(),
+      programmeComplete: isProgrammeComplete(attempts, mastery),
+    });
+    return status === 'preparing' ? null : nextMonthMessage(status);
+  } catch (error) {
+    // A note that decorates the page must never take the chat down.
+    console.error('[next-month] note read failed:', error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 export default async function ChatPage() {
@@ -92,9 +128,16 @@ export default async function ChatPage() {
     ? await loadCorrectionInvite(supabase, user.id, initialExercise)
     : null;
 
-  const initialMessages = walkthroughCompleted
+  const timeline = walkthroughCompleted
     ? await buildChatTimeline(supabase, user.id, initialModuleTitle, correctionInvite)
     : [];
+  const nextMonthNote =
+    walkthroughCompleted && initialExercise && correctionInvite === null
+      ? await loadNextMonthNote(supabase, user.id, initialExercise)
+      : null;
+  const initialMessages: ChatMessage[] = nextMonthNote
+    ? [...timeline, { id: 'next-month-status', role: 'assistant', kind: 'qa-answer', content: nextMonthNote }]
+    : timeline;
 
   return (
     <ChatShell

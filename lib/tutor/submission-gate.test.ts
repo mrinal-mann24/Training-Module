@@ -224,6 +224,39 @@ describe('voucher dates may run ahead of the wall clock when the exercise month 
   });
 });
 
+describe('a split or combined posting passes the gate on a generated month (2026-09-30)', () => {
+  const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
+  const dayBookWith = (count: number) => ({
+    vouchers: Array.from({ length: count }, (_, i) => ({
+      voucherType: 'Payment',
+      date: '20260405',
+      narration: `entry ${i + 1}`,
+      ledgerEntries: [
+        { ledgerName: 'Rent', amount: 100, drOrCr: 'Dr' as const, billAllocations: [] },
+        { ledgerName: 'HDFC Bank', amount: 100, drOrCr: 'Cr' as const, billAllocations: [] },
+      ],
+    })),
+  });
+  const fiveEntries = makeExercise(5);
+
+  it('accepts one voucher more or one fewer than the month has entries', () => {
+    expect(runValidityGate(dayBookWith(6), trialBalance, fiveEntries, '2026-04-01').status).toBe('valid');
+    expect(runValidityGate(dayBookWith(4), trialBalance, fiveEntries, '2026-04-01').status).toBe('valid');
+  });
+
+  it('never accepts an empty Day Book, even when the band would allow it', () => {
+    expect(runValidityGate(dayBookWith(0), trialBalance, makeExercise(1), '2026-04-01').status).toBe('invalid');
+  });
+
+  it('still rejects a count that is clearly a missing chunk or a wrong period', () => {
+    for (const count of [3, 7]) {
+      const result = runValidityGate(dayBookWith(count), trialBalance, fiveEntries, '2026-04-01');
+      expect(result.status).toBe('invalid');
+      if (result.status === 'invalid') expect(result.errors.map((error) => error.code)).toEqual(['voucher_count_mismatch']);
+    }
+  });
+});
+
 describe('a Day Book exported without its detail (2026-09-29)', () => {
   const trialBalance = { ledgers: Array.from({ length: 16 }, (_, i) => ({ ledgerName: `Ledger ${i + 1}`, closingDebit: 1, closingCredit: 0 })) };
   const exercise = { ...makeExercise(2), transactions: [

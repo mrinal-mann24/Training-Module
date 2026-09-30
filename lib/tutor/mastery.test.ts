@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   recomputeMastery,
   checkReinforcement,
+  isProgrammeComplete,
   selectWeakConcept,
   collapseCorrectionRounds,
   CLEAN_HELP_STEP_THRESHOLD,
 } from './mastery';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
-import type { ConceptTag } from '@/lib/schemas/exercise';
+import { ACTIVE_CONCEPT_TAGS, type ConceptTag } from '@/lib/schemas/exercise';
 
 const CONCEPT: ConceptTag = 'gst_classification';
 
@@ -458,5 +459,28 @@ describe('correction rounds count as one attempt per exercise', () => {
 
     expect(again).toEqual(first);
     expect(reversed).toEqual(first);
+  });
+});
+
+describe('isProgrammeComplete (2026-09-30)', () => {
+  const mastered = (tag: ConceptTag): ConceptMastery => ({
+    learner_id: 'learner-1',
+    concept_tag: tag,
+    status: 'mastered',
+    consecutive_clean_count: 3,
+    last_attempt_result: 'pass',
+    escalation_active: false,
+    updated_at: '2026-09-01T00:00:00Z',
+  });
+
+  it('is false while any active concept is unmastered', () => {
+    expect(isProgrammeComplete([], new Map())).toBe(false);
+    const allButOne = new Map(ACTIVE_CONCEPT_TAGS.slice(1).map((tag) => [tag, mastered(tag)]));
+    expect(isProgrammeComplete([], allButOne)).toBe(false);
+  });
+
+  it('is true once every active concept is mastered', () => {
+    const all = new Map(ACTIVE_CONCEPT_TAGS.map((tag) => [tag, mastered(tag)]));
+    expect(isProgrammeComplete([], all)).toBe(true);
   });
 });

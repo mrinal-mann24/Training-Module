@@ -1,4 +1,4 @@
-import { masteryStreakTargetFor, type ConceptTag } from '@/lib/schemas/exercise';
+import { ACTIVE_CONCEPT_TAGS, masteryStreakTargetFor, type ConceptTag } from '@/lib/schemas/exercise';
 import type { StatePatch } from '@/lib/schemas/state-patch';
 import type { ConceptAttempt, ConceptMastery } from '@/lib/db/queries/mastery';
 
@@ -211,6 +211,13 @@ export type WeakConceptTarget = {
   reinforcementActive: boolean;
   escalationActive: boolean;
 };
+
+// Nothing left to train (2026-09-30): the same question the generator asks
+// before building a month, so the chat and the job agree on when the
+// programme is finished.
+export function isProgrammeComplete(attempts: ConceptAttempt[], masteryMap: Map<ConceptTag, ConceptMastery>): boolean {
+  return selectWeakConcept(ACTIVE_CONCEPT_TAGS, attempts, masteryMap) === null;
+}
 
 // Picks the concept the next adaptive exercise should target: a
 // reinforcement/escalation concept if one is active, otherwise the

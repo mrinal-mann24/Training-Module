@@ -21,6 +21,22 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-30: PRODUCTION AUDIT, AND THE THREE FIXES BEFORE PRATHIBA STARTS
+
+**Audit.** Six ECC reviewers (security, silent failures, database, scoring edge cases, screens, test coverage) plus an operations pass, all read-only. The security reviewer did not finish (session restart); the other five reported. Top items, each confirmed in the code before being reported to the owner:
+- Database: the 2026-09-15 column REVOKEs on `exercises.answer_key` and the score columns are probably no-ops (a table-level SELECT grant makes a column-level REVOKE ineffective, and the tracker records the migration was never verified live). Owner asked to run `select has_column_privilege('authenticated','public.exercises','answer_key','select')`; if true, replace the revokes with an allow-list grant. Also: the `submissions` INSERT policy pins only `learner_id` (a learner could insert a scored row); no uniqueness on open submissions or on one batch per month (the 2026-09-07 double batch can recur from two tabs); `learner_profile.license_mode` and `books_begin_date` are learner-writable.
+- Silent failures: a run that fails after the score is saved stranded the learner for good (fixed below); a coaching LLM outage discards the scoring run; concept attempts are logged before the run finishes; a storage hiccup is blamed on the learner.
+- Scoring edge cases: exact voucher count rejected legitimate splits (fixed below); one receipt against two bills marked wrong on both; ledgers differing only by a number match ("Sales 18%" for "Sales 12%"); a longer name passes for a shorter one; dates never used in matching.
+- Screens: no scroll to the newest message (fixed below); no reset-password path; the AI Accountant popup cannot scroll or be closed; the dashboard card is stale; placeholder video panel.
+- Tests: strong on pure logic, nothing on the seams (`submitFiles`, the jobs, `buildPlannedBatch`, `assertKeyValid`); three real-data tests silently skip on a fresh clone; one test expires on 2031-01-05.
+- Operations: the deploy runs no check; old images are pruned so there is no quick rollback; the health check proves only the process; five commits were unpushed.
+
+**The three fixes (owner: "Fix the 3 ... dont break any code").** Failing test first, then the fix, then an ECC code review whose one HIGH finding (the delay clock ran from upload time, not score time) was corrected before commit.
+1. **Stranded learner.** `lib/chat/next-month-status.ts` (pure) decides preparing / delayed (15 minutes after the `scoring_results` row, `getScoredAt`) / completed (`isProgrammeComplete`, the generator's own question). `getNextExercise` returns `{ status: 'note' }` only for a finished programme; the chat's own 12-minute poll budget posts the delayed line, and the poll now survives a dropped request. Both "already scored" refusals and the chat reload say the truthful line instead of "in a minute or two". Both jobs' `onFailure` call `recordNextMonthFailure` when the submission was already scored: one `learner_issues` row per submission (the learner sees it in their list, the owner in the open-issues query; regenerate with `scripts/advance-learner.ts`). Read failures degrade to "preparing", never to a crash.
+2. **Scroll.** `ChatShell.tsx` scrolls a sentinel into view on every new message, pending submission, error line or card.
+3. **Gate.** `checkVoucherCount` gives generated months the same ceil(10%) band as packs, so a split or combined voucher reaches the scorer (which already reads composites); an empty Day Book is still refused.
+- Gates: tsc clean, eslint clean, vitest 1195/1195 (86 files), `next build` compiles. Not checked on screen (needs a fresh account against the live database).
+
 ## Session log — 2026-09-29 (night): PART 2b, FOUR ACCURACY GUARDS
 
 The four narrow gaps found while answering "will every exercise stay accurate", each closed with tests. No stored key, document or score was touched, and no existing party's identity changed (the new snapshot proves it).

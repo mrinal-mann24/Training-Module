@@ -68,6 +68,17 @@ export async function insertScoringResult(
 // The two verdict columns left the learner-facing set on 2026-09-16, when
 // percentages and pass/fail were removed from the UI; that day's migration
 // revokes both from `authenticated`, so selecting them here would now fail.
+// When a submission was scored (2026-09-30): the scoring row's timestamp,
+// written at score time. submissions.created_at is the upload time, which
+// on a multi-part batch can be 45 minutes earlier. Learner-safe column.
+export async function getScoredAt(supabase: SupabaseClient, submissionId: string): Promise<string | null> {
+  const { data, error } = await supabase.from('scoring_results').select('created_at').eq('submission_id', submissionId).maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data?.created_at ?? null;
+}
+
 export async function getFeedbackForLearner(
   supabase: SupabaseClient,
   submissionId: string,

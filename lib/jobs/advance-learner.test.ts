@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { deriveBaseDifficultyLevel, describeRectification, describeRectifications, submissionIdFromFailureEvent } from './advance-learner';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  NEXT_MONTH_FAILURE_NOTICE,
+  deriveBaseDifficultyLevel,
+  describeRectification,
+  describeRectifications,
+  recordNextMonthFailure,
+  submissionIdFromFailureEvent,
+} from './advance-learner';
 
 describe('submissionIdFromFailureEvent', () => {
   // inngest/function.failed carries the ORIGINAL event one level down, at
@@ -61,5 +69,54 @@ describe('advance-learner helpers (shared by both scoring jobs)', () => {
         { conceptTag: 'contra_voucher_basics', classification: 'STILL_FAILING', prior: 'earlier-batch' },
       ]).map((note) => note.classification),
     ).toEqual(['FIXED', 'STILL_FAILING']);
+  });
+});
+
+describe('recordNextMonthFailure (2026-09-30)', () => {
+  type State = { submission: Record<string, unknown> | null; existing: Record<string, unknown>[]; inserted: Record<string, unknown>[] };
+
+  // The two query shapes the helper uses: submissions select/eq/maybeSingle,
+  // learner_issues select/eq/eq/like/limit and insert/select/single.
+  function fakeClient(state: State): SupabaseClient {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, {
+      select: () => chain,
+      eq: () => chain,
+      like: () => chain,
+      limit: async () => ({ data: state.existing, error: null }),
+      maybeSingle: async () => ({ data: state.submission, error: null }),
+      insert: (row: Record<string, unknown>) => {
+        state.inserted.push(row);
+        return { select: () => ({ single: async () => ({ data: { id: 'issue-1', ...row }, error: null }) }) };
+      },
+    });
+    return { from: () => chain } as unknown as SupabaseClient;
+  }
+
+  const scored = { id: 'sub-1', learner_id: 'learner-1', exercise_id: 'ex-1', status: 'scored' };
+
+  it('records one notice for a scored submission whose next month failed', async () => {
+    const state: State = { submission: scored, existing: [], inserted: [] };
+    expect(await recordNextMonthFailure(fakeClient(state), 'sub-1')).toBe('recorded');
+    expect(state.inserted).toEqual([
+      expect.objectContaining({ learner_id: 'learner-1', exercise_id: 'ex-1', submission_id: 'sub-1', message: NEXT_MONTH_FAILURE_NOTICE }),
+    ]);
+  });
+
+  it('does not record a second notice for the same submission', async () => {
+    const state: State = { submission: scored, existing: [{ id: 'issue-1' }], inserted: [] };
+    expect(await recordNextMonthFailure(fakeClient(state), 'sub-1')).toBe('already-recorded');
+    expect(state.inserted).toEqual([]);
+  });
+
+  it('records nothing when the submission is not scored (the failure was before the score)', async () => {
+    const state: State = { submission: { ...scored, status: 'invalid' }, existing: [], inserted: [] };
+    expect(await recordNextMonthFailure(fakeClient(state), 'sub-1')).toBe('skipped');
+    expect(state.inserted).toEqual([]);
+  });
+
+  it('never throws', async () => {
+    const broken = { from: () => { throw new Error('database down'); } } as unknown as SupabaseClient;
+    expect(await recordNextMonthFailure(broken, 'sub-1')).toBe('skipped');
   });
 });

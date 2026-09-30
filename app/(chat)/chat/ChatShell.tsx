@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useRef, useState, useTransition } from 'react';
+import { useEffect, useReducer, useRef, useState, useTransition } from 'react';
 import { formatExerciseContent } from '@/lib/chat/exercise-content';
 import type { LicenseMode } from '@/lib/schemas/onboarding';
 import type { ExerciseForLearner } from '@/lib/db/queries/exercises';
@@ -213,6 +213,17 @@ export function ChatShell({
     ]);
     setHasRequestedHint(true);
   }
+
+  // The newest message must be on screen (2026-09-30, production audit):
+  // the list never scrolled, so feedback, refusals and the next month landed
+  // below the fold and Send looked as if it did nothing. Instant on the
+  // first paint (the history is long), smooth after that.
+  const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const scrolledOnceRef = useRef(false);
+  useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView({ block: 'end', behavior: scrolledOnceRef.current ? 'smooth' : 'auto' });
+    scrolledOnceRef.current = true;
+  }, [messages.length, pendingSubmissionIds.length, errorMessage, confirmation.phase, isPending]);
 
   function appendTutorNote(content: string) {
     setSubmissionMessages((current) => [
@@ -639,10 +650,12 @@ export function ChatShell({
               onResult={handleSubmissionResult}
               onNextExercise={handleNextExercise}
               onCorrectionRound={handleCorrectionRound}
+              onTutorNote={appendTutorNote}
             />
           ))}
 
         {errorMessage && <p className="text-sm text-status-error">{errorMessage}</p>}
+        <div ref={endOfMessagesRef} aria-hidden="true" />
         </div>
       </div>
       <ReportIssue initialIssues={initialIssues} />

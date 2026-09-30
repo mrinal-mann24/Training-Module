@@ -17,7 +17,6 @@ import {
   insertSubmission,
   getLatestScoredSubmissionForExercise,
   getOpenSubmissionForExercise,
-  hasScoredSubmissionForExercise,
   updateSubmissionFilePaths,
   getSubmission,
 } from '@/lib/db/queries/submissions';
@@ -29,7 +28,10 @@ import {
   getHintDepthForExercise,
   getLatestHintForExerciseAfter,
 } from '@/lib/db/queries/hint-requests';
-import { getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
+import { getConceptAttempts, getConceptMasteryMap, hasFailedConceptForSubmission } from '@/lib/db/queries/mastery';
+import { isProgrammeComplete } from '@/lib/tutor/mastery';
+import { decideNextMonthStatus, nextMonthMessage, type NextMonthStatus } from '@/lib/chat/next-month-status';
+import { getScoredAt } from '@/lib/db/queries/scoring-results';
 import { currentMajorModule } from '@/lib/tutor/major-modules';
 import { correctionInviteLine, isCorrectionOpen } from '@/lib/tutor/correction-round';
 import { inngest } from '@/lib/jobs/client';
@@ -217,11 +219,29 @@ const STILL_SCORING_MESSAGE =
 const FILES_SAVED_NOT_STARTED_MESSAGE =
   "I saved your files, but couldn't start checking them just now. Nothing you did wrong. Press Send again in a moment and I'll pick up from there.";
 
-// Shown when the displayed exercise already has a scored submission: the next
-// batch is generated a few minutes after scoring, and in that window the old
-// exercise is still the latest one (see hasScoredSubmissionForExercise).
-const ALREADY_SCORED_MESSAGE =
-  "This exercise has already been scored, so I won't take a second submission for it. Your next batch is being prepared and will appear here in a minute or two. Refresh the page if it hasn't shown up.";
+// The shown exercise already has a scored submission and no correction is
+// open: the next month is being prepared, is late, or will never come
+// because every topic is mastered (2026-09-30). One answer for all three
+// callers, decided from the rows, never stored. The clock runs from the
+// scoring row, not the upload. A read failure here must not turn a plain
+// refusal into a crash: it reads as still preparing.
+async function nextMonthStatusFor(
+  supabase: Parameters<typeof getConceptAttempts>[0],
+  learnerId: string,
+  scored: { id: string; created_at: string },
+): Promise<NextMonthStatus> {
+  try {
+    const [attempts, mastery, scoredAt] = await Promise.all([
+      getConceptAttempts(supabase, learnerId),
+      getConceptMasteryMap(supabase, learnerId),
+      getScoredAt(supabase, scored.id),
+    ]);
+    return decideNextMonthStatus({ scoredAt: scoredAt ?? scored.created_at, now: Date.now(), programmeComplete: isProgrammeComplete(attempts, mastery) });
+  } catch (error) {
+    console.error('[next-month] status read failed, treating as preparing:', error instanceof Error ? error.message : error);
+    return 'preparing';
+  }
+}
 
 // Server Action: authenticates, uploads both XML files to learner-scoped
 // Storage paths, creates (or joins, for a multi-part exercise where a
@@ -292,7 +312,7 @@ export async function submitFiles(formData: FormData): Promise<SubmitFilesResult
       anyConceptFailed,
     });
     if (!open) {
-      return { status: 'error', error: ALREADY_SCORED_MESSAGE };
+      return { status: 'error', error: nextMonthMessage(await nextMonthStatusFor(supabase, user.id, latestScored)) };
     }
     correctionRound = latestScored.correction_round + 1;
   }
@@ -416,8 +436,9 @@ export async function submitTextPart(text: string, expectedExerciseId?: string):
   if (!partType) {
     return { status: 'error', error: "This exercise is scored from your Tally exports, so I can't take a typed answer for it. If that was a question for me, just ask it again and I'll answer. When you're ready to submit, attach the Day Book and Trial Balance XMLs." };
   }
-  if (await hasScoredSubmissionForExercise(supabase, user.id, exercise.id)) {
-    return { status: 'error', error: ALREADY_SCORED_MESSAGE };
+  const scoredAlready = await getLatestScoredSubmissionForExercise(supabase, user.id, exercise.id);
+  if (scoredAlready) {
+    return { status: 'error', error: nextMonthMessage(await nextMonthStatusFor(supabase, user.id, scoredAlready)) };
   }
 
   const existingSubmission = await getOpenSubmissionForExercise(supabase, user.id, exercise.id);
@@ -680,6 +701,9 @@ export type GetNextExerciseResult =
   // corrected exports. Carried on this result rather than a second poll,
   // because the client is already polling here after every scoring.
   | { status: 'correction'; hint: Hint; inviteLine: string; round: number }
+  // No next month is coming, or it is late (2026-09-30): the chat shows the
+  // message and stops polling.
+  | { status: 'note'; message: string }
   | { status: 'not-found' };
 
 // Called by PendingSubmission once its Realtime subscription observes a
@@ -724,7 +748,11 @@ export async function getNextExercise(previousExerciseId: string): Promise<GetNe
         anyConceptFailed,
       })
     ) {
-      return { status: 'not-found' };
+      // Only a finished programme ends the poll from here; a late month is
+      // the client's own budget to call, so a healthy slow run is never
+      // cut short by the server.
+      const status = await nextMonthStatusFor(supabase, user.id, latestScored);
+      return status === 'completed' ? { status: 'note', message: nextMonthMessage(status) } : { status: 'not-found' };
     }
 
     // The job writes the hint a moment after scoring flips the status, so a
