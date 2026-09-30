@@ -21,6 +21,10 @@ Update this file after every meaningful implementation change.
 - **Unit 15R — Free-form Q&A in chat**: composer accepts free text anytime; new `qa` call type + schema, grounded per architecture.md.
 - AIA transition and capstone re-slot after these.
 
+## Session log — 2026-09-30 (later): PACK COMPANY MASTER NOW SAYS BOOKS BEGIN 1 APRIL 2024
+
+Owner instruction. The Company Master sheet of the April pack said "Books beginning from 1-January-2024" while the walkthrough, the Day 1 message and the app say 1 April 2024 (found by the 2026-09-29 pack check). Both stored copies were replaced in the `packs` bucket, `variant-a/1-opening-tb.xlsx` and `variant-a-edu/1-opening-tb.xlsx`: cell B11 of "Company Master" only, every other cell of every sheet compared equal before and after, uploaded with `cacheControl: '0'`, re-downloaded and confirmed (the first re-download after the upload still served the old bytes from the CDN cache; the listing's size and timestamp, and a download a minute later, showed the new file). Originals backed up in `%TEMP%\pack-backup-2026-09-30\`. The owner's own source folder (`Downloads\BlossomRetail_Variant_A`, read by `scripts/seed-pack.mjs`) is not on this machine and still carries the old value: correct it before any re-seed. Learners who already downloaded the sheet keep their copy; the three interns created their companies long ago.
+
 ## Session log — 2026-09-30: PRODUCTION AUDIT, AND THE THREE FIXES BEFORE PRATHIBA STARTS
 
 **Audit.** Six ECC reviewers (security, silent failures, database, scoring edge cases, screens, test coverage) plus an operations pass, all read-only. The security reviewer did not finish (session restart); the other five reported. Top items, each confirmed in the code before being reported to the owner:
